@@ -1,0 +1,15 @@
+; $Id: simpletest_switch.info,v 1.1.2.1 2009/11/10 02:30:08 boombatower Exp $
+
+name = Testing switch
+description = Provides an easy method to switch between 1.x and 2.x testing APIs.
+package = Testing
+core = 7.x
+files[] = simpletest_switch.module
+dependencies[] = simpletest
+
+; Information added by drupal.org packaging script on 2009-12-16
+version = "7.x-2.x-dev"
+core = "7.x"
+project = "simpletest"
+datestamp = "1260965862"
+

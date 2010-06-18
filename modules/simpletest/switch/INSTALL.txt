@@ -1,0 +1,13 @@
+$Id: INSTALL.txt,v 1.1.2.1 2009/11/10 02:30:08 boombatower Exp $
+
+AUTHOR
+------
+
+  Jimmy Berry ("boombatower", http://drupal.org/user/214218)
+
+INSTALLATION
+------------
+
+1.  Apply system_modules_hook.patch to Drupal 7 core.
+
+2.  Enable module.
