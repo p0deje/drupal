@@ -384,13 +384,24 @@ function simpletest_registry_files_alter(&$files, $modules) {
   foreach ($modules as $module) {
     // Only add test files for disabled modules, as enabled modules should
     // already include any test files they provide.
-    if (!$module->status) {
-      $dir = $module->dir;
-      if (!empty($module->info['files'])) {
-        foreach ($module->info['files'] as $file) {
-          if (substr($file, -5) == '.test') {
-            $files["$dir/$file"] = array('module' => $module->name, 'weight' => $module->weight);
+    if (!empty($module->info['testing_api']) && $module->info['testing_api'] == '2.x') {
+      if (!$module->status) {
+        $dir = $module->dir;
+        if (!empty($module->info['files'])) {
+          foreach ($module->info['files'] as $file) {
+            if (substr($file, -5) == '.test') {
+              $files["$dir/$file"] = array('module' => $module->name, 'weight' => $module->weight);
+            }
           }
+        }
+      }
+    }
+    else {
+      // Remove non 2.x compatible test files.
+      foreach ($module->info['files'] as $file) {
+        if (substr($file, -5) == '.test') {
+          $dir = $module->dir;
+          unset($files["$dir/$file"]);
         }
       }
     }

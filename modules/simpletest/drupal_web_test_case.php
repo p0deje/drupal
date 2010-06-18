@@ -2,6 +2,11 @@
 // $Id: drupal_web_test_case.php,v 1.182 2009/12/15 05:25:47 webchick Exp $
 
 /**
+ * @file
+ * Provides DrupalTestCase, DrupalUnitTestCase, and DrupalWebTestCase classes.
+ */
+
+/**
  * Base class for Drupal tests.
  *
  * Do not extend this class, use one of the subclasses in this file.
@@ -184,12 +189,12 @@ abstract class DrupalTestCase {
 
   /**
    * Delete an assertion record by message ID.
-   * 
+   *
    * @param $message_id
    *   Message ID of the assertion to delete.
    * @return
    *   TRUE if the assertion was deleted, FALSE otherwise.
-   * 
+   *
    * @see DrupalTestCase::insertAssert()
    */
   public static function deleteAssert($message_id) {
@@ -1067,6 +1072,7 @@ class DrupalWebTestCase extends DrupalTestCase {
     $this->originalPrefix = $db_prefix;
     $this->originalFileDirectory = file_directory_path();
     $this->originalProfile = drupal_get_profile();
+    $this->removeTables = variable_get('simpletest_remove_tables', TRUE);
     $clean_url_original = variable_get('clean_url', 0);
 
     // Generate temporary prefixed database to ensure that tests have a clean starting point.
@@ -1209,11 +1215,12 @@ class DrupalWebTestCase extends DrupalTestCase {
       // Delete temporary files directory.
       file_unmanaged_delete_recursive($this->originalFileDirectory . '/simpletest/' . substr($db_prefix, 10));
 
-      // Remove all prefixed tables (all the tables in the schema).
-      $schema = drupal_get_schema(NULL, TRUE);
-      $ret = array();
-      foreach ($schema as $name => $table) {
-        db_drop_table($name);
+      if ($this->removeTables) {
+        // Remove all prefixed tables (all the tables in the schema).
+        $schema = drupal_get_schema(NULL, TRUE);
+        foreach ($schema as $name => $table) {
+          db_drop_table($name);
+        }
       }
 
       // Return the database prefix to the original.
