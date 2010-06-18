@@ -1,5 +1,5 @@
 <?php
-// $Id: install.inc,v 1.4 2009/08/01 20:31:50 dries Exp $
+// $Id: install.inc,v 1.8 2010/06/15 16:12:06 dries Exp $
 
 /**
  * @file
@@ -18,6 +18,10 @@ class DatabaseTasks_pgsql extends DatabaseTasks {
       'arguments' => array(),
     );
     $this->tasks[] = array(
+      'function' => 'checkPHPVersion',
+      'arguments' => array(),
+    );
+    $this->tasks[] = array(
       'function' => 'initializeDatabase',
       'arguments' => array(),
     );
@@ -32,21 +36,49 @@ class DatabaseTasks_pgsql extends DatabaseTasks {
    */
   protected function checkEncoding() {
     try {
-      if (db_query('SHOW server_encoding')->fetchField() == 'UTF8') { 
+      if (db_query('SHOW server_encoding')->fetchField() == 'UTF8') {
         $this->pass(st('Database is encoded in UTF-8'));
       }
       else {
         $replacements = array(
-          '%encoding' => 'UTF8', 
-          '%driver' => $this->name(), 
+          '%encoding' => 'UTF8',
+          '%driver' => $this->name(),
           '!link' => '<a href="INSTALL.pgsql.txt">INSTALL.pgsql.txt</a>'
         );
         $text  = 'The %driver database must use %encoding encoding to work with Drupal.';
-        $text .= 'Please recreate the database with %encoding encoding. See !link for more details.';
+        $text .= 'Recreate the database with %encoding encoding. See !link for more details.';
         $this->fail(st($text, $replacements));
       }
     } catch (Exception $e) {
       $this->fail(st('Drupal could not determine the encoding of the database was set to UTF-8'));
+    }
+  }
+
+  /**
+   * Check PHP version.
+   *
+   * There is a bug in PHP versions < 5.2.11 and < 5.3.1 that prevents
+   * PostgreSQL from inserting integer values into numeric columns that exceed
+   * the PHP_INT_MAX value (value varies dependant on 32 or 64 bit CPU).
+   */
+  function checkPHPVersion() {
+    try {
+      $txn = db_transaction();
+      db_query("CREATE TABLE test_php_version ( test_int INT NOT NULL )");
+      // See http://bugs.php.net/bug.php?id=48924 as to why this query may 
+      // fail. The error will throw an Exception so there is no need to test to
+      // see if the row inserted or not.
+      db_query("INSERT INTO test_php_version ( test_int ) VALUES (:big_int)", array(':big_int' => PHP_INT_MAX + 1));
+      db_query("DROP TABLE test_php_version"); 
+      $this->pass(st('PHP is at the correct version to run on PostgreSQL.'));
+    }
+    catch (Exception $e) {
+      // Failing is not fatal but the user should still be warned of the
+      // limitations of running PostgreSQL on the current version of PHP.
+      $text  = 'The version of PHP you are using has known issues with PostgreSQL. You can see more at ';
+      $text .= l('http://drupal.org/node/515310', 'http://drupal.org/node/515310') . '. ';
+      $text .= 'We suggest you upgrade PHP to 5.2.11, 5.3.1 or greater. Failing to do so may result in serious data corruption later.';
+      drupal_set_message(st($text), 'warning');
     }
   }
 
@@ -84,14 +116,6 @@ class DatabaseTasks_pgsql extends DatabaseTasks {
           LANGUAGE \'sql\''
         );
       }
-      db_query('CREATE OR REPLACE FUNCTION "if"(boolean, text, text) RETURNS text AS
-        \'SELECT CASE WHEN $1 THEN $2 ELSE $3 END;\'
-        LANGUAGE \'sql\''
-      );
-      db_query('CREATE OR REPLACE FUNCTION "if"(boolean, integer, integer) RETURNS integer AS
-        \'SELECT CASE WHEN $1 THEN $2 ELSE $3 END;\'
-        LANGUAGE \'sql\''
-      );
 
       db_query('CREATE OR REPLACE FUNCTION "substring_index"(text, text, integer) RETURNS text AS
         \'SELECT array_to_string((string_to_array($1, $2)) [1:$3], $2);\'
@@ -100,7 +124,7 @@ class DatabaseTasks_pgsql extends DatabaseTasks {
       $this->pass(st('PostgreSQL has initialized itself.'));
     }
     catch (Exception $e) {
-      $this->fail(st('Drupal could not be correctly setup with the existing database. Please revise any errors.'));
+      $this->fail(st('Drupal could not be correctly setup with the existing database. Revise any errors.'));
     }
   }
 }

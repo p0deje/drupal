@@ -1,14 +1,19 @@
 <?php
-// $Id: cache-install.inc,v 1.6 2009/11/03 05:18:06 webchick Exp $
+// $Id: cache-install.inc,v 1.9 2010/05/18 18:26:30 dries Exp $
 
 /**
- * A stub cache implementation to be used during the installation
- * process when database access is not yet available. Because Drupal's
- * caching system never requires that cached data be present, these
- * stub functions can short-circuit the process and sidestep the
- * need for any persistent storage. Obviously, using this cache
- * implementation during normal operations would have a negative impact
- * on performance.
+ * @file
+ * Provides a stub cache implementation to be used during installation.
+ */
+
+/**
+ * A stub cache implementation to be used during the installation process.
+ *
+ * The stub implementation is needed when database access is not yet available.
+ * Because Drupal's caching system never requires that cached data be present,
+ * these stub functions can short-circuit the process and sidestep the need for
+ * any persistent storage. Obviously, using this cache implementation during
+ * normal operations would have a negative impact on performance.
  */
 class DrupalFakeCache extends DrupalDatabaseCache implements DrupalCacheInterface {
   function get($cid) {
@@ -19,7 +24,7 @@ class DrupalFakeCache extends DrupalDatabaseCache implements DrupalCacheInterfac
     return array();
   }
 
-  function set($cid, $data, $expire = CACHE_PERMANENT, array $headers = NULL) {
+  function set($cid, $data, $expire = CACHE_PERMANENT) {
   }
 
   function clear($cid = NULL, $wildcard = FALSE) {
@@ -36,8 +41,7 @@ class DrupalFakeCache extends DrupalDatabaseCache implements DrupalCacheInterfac
     // subtle bugs, some of which would not be fixed unless the site
     // administrator cleared the cache manually.
     try {
-      if (function_exists('drupal_install_initialize_database')) {
-        drupal_install_initialize_database();
+      if (class_exists('Database')) {
         parent::clear($cid, $wildcard);
       }
     }

@@ -1,5 +1,5 @@
 <?php
-// $Id: trigger.admin.inc,v 1.21 2009/11/06 03:59:06 webchick Exp $
+// $Id: trigger.admin.inc,v 1.26 2010/05/01 08:12:23 dries Exp $
 
 /**
  * @file
@@ -130,7 +130,7 @@ function trigger_assign_form($form, $form_state, $module, $hook, $label) {
   $functions = array();
   // Restrict the options list to actions that declare support for this hook.
   foreach (actions_list() as $func => $metadata) {
-    if (in_array('any', $metadata['triggers']) || in_array($hook, $metadata['triggers'])) {
+    if (isset($metadata['triggers']) && array_intersect(array($hook, 'any'), $metadata['triggers'])) {
       $functions[] = $func;
     }
   }
@@ -153,15 +153,27 @@ function trigger_assign_form($form, $form_state, $module, $hook, $label) {
   $form[$hook]['assigned']['#type'] = 'value';
   $form[$hook]['assigned']['#value'] = array();
   foreach ($actions as $aid => $info) {
-    $form[$hook]['assigned']['#value'][$aid] = array(
-      'label' => $info['label'],
-      'link' => l(t('unassign'), "admin/structure/trigger/unassign/$module/$hook/" . md5($aid)),
-    );
+    // If action is defined unassign it, otherwise offer to delete all orphaned
+    // actions.
+    $hash = drupal_hash_base64($aid, TRUE);
+    if (actions_function_lookup($hash)) {
+      $form[$hook]['assigned']['#value'][$aid] = array(
+        'label' => $info['label'],
+        'link' => l(t('unassign'), "admin/structure/trigger/unassign/$module/$hook/$hash"),
+      );
+    }
+    else {
+      // Link to system_actions_remove_orphans() to do the clean up.
+      $form[$hook]['assigned']['#value'][$aid] = array(
+        'label' => $info['label'],
+        'link' => l(t('Remove orphaned actions'), "admin/config/system/actions/orphan"),
+      );
+    }
   }
 
   $form[$hook]['parent'] = array(
-    '#prefix' => "<div class='container-inline'>",
-    '#suffix' => '</div>',
+    '#type' => 'container',
+    '#attributes' => array('class' => array('container-inline')),
   );
   // List possible actions that may be assigned.
   if (count($options) != 0) {
@@ -261,14 +273,11 @@ function trigger_assign_form_submit($form, &$form_state) {
 }
 
 /**
- * Displays actions assigned to this hook in a table.
+ * Returns HTML for the form showing actions assigned to a trigger.
  *
  * @param $variables
  *   An associative array containing:
  *   - element: The fieldset including all assigned actions.
- *
- * @return
- *   The rendered form with the table prepended.
  *
  * @ingroup themeable
  */

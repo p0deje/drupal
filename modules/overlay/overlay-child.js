@@ -1,45 +1,37 @@
-// $Id: overlay-child.js,v 1.2 2009/12/10 17:26:04 webchick Exp $
+// $Id: overlay-child.js,v 1.9 2010/06/08 05:16:29 webchick Exp $
 
 (function ($) {
-
-/**
- * Overlay object for child windows.
- */
-Drupal.overlayChild = Drupal.overlayChild || { processed: false, behaviors: {} };
 
 /**
  * Attach the child dialog behavior to new content.
  */
 Drupal.behaviors.overlayChild = {
   attach: function (context, settings) {
-    var self = Drupal.overlayChild;
-    var settings = settings.overlayChild || {};
-
     // Make sure this behavior is not processed more than once.
-    if (self.processed) {
+    if (this.processed) {
       return;
     }
-    self.processed = true;
+    this.processed = true;
 
-    // If we cannot reach the parent window, then we have nothing else to do
-    // here.
-    if (!$.isObject(parent.Drupal) || !$.isObject(parent.Drupal.overlay)) {
-      return;
+    // If we cannot reach the parent window, break out of the overlay.
+    if (!parent.Drupal || !parent.Drupal.overlay) {
+      window.location = window.location.href.replace(/([?&]?)render=overlay&?/g, '$1').replace(/\?$/, '');
     }
+
+    var settings = settings.overlayChild || {};
 
     // If a form has been submitted successfully, then the server side script
     // may have decided to tell us the parent window to close the popup dialog.
     if (settings.closeOverlay) {
       parent.Drupal.overlay.bindChild(window, true);
-      // Close the child window from a separate thread because the current
-      // one is busy processing Drupal behaviors.
+      // Use setTimeout to close the child window from a separate thread,
+      // because the current one is busy processing Drupal behaviors.
       setTimeout(function () {
-        // We need to store the parent variable locally because it will
-        // disappear as soon as we close the iframe.
-        var p = parent;
-        p.Drupal.overlay.close(settings.args, settings.statusMessages);
         if (typeof settings.redirect == 'string') {
-          p.Drupal.overlay.redirect(settings.redirect);
+          parent.Drupal.overlay.redirect(settings.redirect);
+        }
+        else {
+          parent.Drupal.overlay.close();
         }
       }, 1);
       return;
@@ -54,18 +46,22 @@ Drupal.behaviors.overlayChild = {
     // Ok, now we can tell the parent window we're ready.
     parent.Drupal.overlay.bindChild(window);
 
-    // Install onBeforeUnload callback, if module is present.
-    if ($.isObject(Drupal.onBeforeUnload) && !Drupal.onBeforeUnload.callbackExists('overlayChild')) {
-      Drupal.onBeforeUnload.addCallback('overlayChild', function () {
-        // Tell the parent window we're unloading.
-        parent.Drupal.overlay.unbindChild(window);
-      });
-    }
+    // IE8 crashes on certain pages if this isn't called; reason unknown.
+    window.scrollTo(window.scrollX, window.scrollY);
 
     // Attach child related behaviors to the iframe document.
-    self.attachBehaviors(context, settings);
+    Drupal.overlayChild.attachBehaviors(context, settings);
   }
 };
+
+/**
+ * Overlay object for child windows.
+ */
+Drupal.overlayChild = Drupal.overlayChild || {
+  behaviors: {}
+};
+
+Drupal.overlayChild.prototype = {};
 
 /**
  * Attach child related behaviors to the iframe document.
@@ -77,69 +73,102 @@ Drupal.overlayChild.attachBehaviors = function (context, settings) {
 };
 
 /**
- * Scroll to the top of the page.
+ * Capture and handle clicks.
  *
- * This makes the overlay visible to users even if it is not as tall as the
- * previously shown overlay was.
+ * Instead of binding a click event handler to every link we bind one to the
+ * document and handle events that bubble up. This also allows other scripts
+ * to bind their own handlers to links and also to prevent overlay's handling.
  */
-Drupal.overlayChild.behaviors.scrollToTop = function (context, settings) {
-  window.scrollTo(0, 0);
+Drupal.overlayChild.behaviors.addClickHandler = function (context, settings) {
+  $(document).bind('click.drupal-overlay mouseup.drupal-overlay', $.proxy(parent.Drupal.overlay, 'eventhandlerOverrideLink'));
 };
 
 /**
- * Modify links and forms depending on their relation to the overlay.
+ * Modify forms depending on their relation to the overlay.
  *
- * By default, forms and links are assumed to keep the flow in the overlay.
- * Thus their action and href attributes respectively get a ?render=overlay
- * suffix. Non-administrative links should however close the overlay and
- * redirect the parent page to the given link. This would include links in a
- * content listing, where administration options are mixed with links to the
- * actual content to be shown on the site out of the overlay.
- *
- * @see Drupal.overlay.isAdminLink()
+ * By default, forms are assumed to keep the flow in the overlay. Thus their
+ * action attribute get a ?render=overlay suffix.
  */
-Drupal.overlayChild.behaviors.parseLinks = function (context, settings) {
-  $('a:not(.overlay-exclude)', context).once('overlay').each(function () {
-    // Non-admin links should close the overlay and open in the main window.
-    if (!parent.Drupal.overlay.isAdminLink(this.href)) {
-      $(this).click(function () {
-        // We need to store the parent variable locally because it will
-        // disappear as soon as we close the iframe.
-        var parentWindow = parent;
-        if (parentWindow.Drupal.overlay.close(false)) {
-          parentWindow.Drupal.overlay.redirect($(this).attr('href'));
-        }
-        return false;
-      });
-      return;
-    }
-    else {
-      var href = $(this).attr('href');
-      if (href.indexOf('http') > 0 || href.indexOf('https') > 0) {
-        $(this).attr('target', '_new');
-      }
-      else {
-        $(this).each(function(){
-          this.href = parent.Drupal.overlay.fragmentizeLink(this);
-        }).click(function () {
-          parent.window.location.href = this.href;
-          return false;
-        });
-      }
-    }
-  });
-  $('form:not(.overlay-processed)', context).addClass('overlay-processed').each(function () {
+Drupal.overlayChild.behaviors.parseForms = function (context, settings) {
+  $('form', context).once('overlay', function () {
     // Obtain the action attribute of the form.
     var action = $(this).attr('action');
-    if (action.indexOf('http') != 0 && action.indexOf('https') != 0) {
-      // Keep internal forms in the overlay.
+    // Keep internal forms in the overlay.
+    if (action == undefined || (action.indexOf('http') != 0 && action.indexOf('https') != 0)) {
       action += (action.indexOf('?') > -1 ? '&' : '?') + 'render=overlay';
       $(this).attr('action', action);
     }
+    // Submit external forms into a new window.
     else {
       $(this).attr('target', '_new');
     }
   });
+};
+
+/**
+ * Replace the overlay title with a message while loading another page.
+ */
+Drupal.overlayChild.behaviors.loading = function (context, settings) {
+  var $title;
+  var text = Drupal.t('Loading');
+  var dots = '';
+
+  $(document).bind('drupalOverlayBeforeLoad.drupal-overlay.drupal-overlay-child-loading', function () {
+    $title = $('#overlay-title').text(text);
+    var id = setInterval(function () {
+      dots = (dots.length > 10) ? '' : dots + '.';
+      $title.text(text + dots);
+    }, 500);
+  });
+};
+
+/**
+ * Switch active tab immediately.
+ */
+Drupal.overlayChild.behaviors.tabs = function (context, settings) {
+  var $tabsLinks = $('#overlay-tabs > li > a');
+
+  $('#overlay-tabs > li > a').bind('click.drupal-overlay', function () {
+    var active_tab = Drupal.t('(active tab)');
+    $tabsLinks.parent().siblings().removeClass('active').find('element-invisible:contains(' + active_tab + ')').appendTo(this);
+    $(this).parent().addClass('active');
+  });
+};
+
+/**
+ * If the shortcut add/delete button exists, move it to the overlay titlebar.
+ */
+Drupal.overlayChild.behaviors.shortcutAddLink = function (context, settings) {
+  // Remove any existing shortcut button markup from the titlebar.
+  $('#overlay-titlebar').find('.add-or-remove-shortcuts').remove();
+  // If the shortcut add/delete button exists, move it to the titlebar.
+  var $addToShortcuts = $('.add-or-remove-shortcuts');
+  if ($addToShortcuts.length) {
+    $addToShortcuts.insertAfter('#overlay-title');
+  }
+
+  $(document).bind('drupalOverlayBeforeLoad.drupal-overlay.drupal-overlay-child-loading', function () {
+    $('#overlay-titlebar').find('.add-or-remove-shortcuts').remove();
+  });
+};
+
+/**
+ * Use displacement from parent window.
+ */
+Drupal.overlayChild.behaviors.alterTableHeaderOffset = function (context, settings) {
+  if (Drupal.settings.tableHeaderOffset) {
+    Drupal.overlayChild.prevTableHeaderOffset = Drupal.settings.tableHeaderOffset;
+  }
+  Drupal.settings.tableHeaderOffset = 'Drupal.overlayChild.tableHeaderOffset';
+};
+
+/**
+ * Callback for Drupal.settings.tableHeaderOffset.
+ */
+Drupal.overlayChild.tableHeaderOffset = function () {
+  var topOffset = Drupal.overlayChild.prevTableHeaderOffset ? eval(Drupal.overlayChild.prevTableHeaderOffset + '()') : 0;
+
+  return topOffset + parseInt($(document.body).css('marginTop'));
 };
 
 })(jQuery);

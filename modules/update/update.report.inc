@@ -1,5 +1,5 @@
 <?php
-// $Id: update.report.inc,v 1.27 2009/10/23 22:24:19 webchick Exp $
+// $Id: update.report.inc,v 1.31 2010/04/13 15:23:03 dries Exp $
 
 /**
  * @file
@@ -21,7 +21,11 @@ function update_status() {
 }
 
 /**
- * Theme project status report.
+ * Returns HTML for the project status report.
+ *
+ * @param $variables
+ *   An associative array containing:
+ *   - data: An array of data about each project's status.
  *
  * @ingroup themeable
  */
@@ -164,7 +168,7 @@ function theme_update_report($variables) {
       foreach ($project['extra'] as $key => $value) {
         $row .= '<div class="' . implode(' ', $value['class']) . '">';
         $row .= check_plain($value['label']) . ': ';
-        $row .= theme('placeholder', array('text' => $value['data']));
+        $row .= drupal_placeholder(array('text' => $value['data']));
         $row .= "</div>\n";
       }
       $row .= "</div>\n";  // extra div.
@@ -197,9 +201,9 @@ function theme_update_report($variables) {
           case UPDATE_NOT_SUPPORTED:
             $base_themes[] = t('%base_theme (!base_label)', array('%base_theme' => $base_theme, '!base_label' => theme('update_status_label', array('status' => $status[$base_key]))));
             break;
-            
+
           default:
-            $base_themes[] = theme('placeholder', array('text' => $base_theme));
+            $base_themes[] = drupal_placeholder(array('text' => $base_theme));
         }
       }
       $row .= t('Depends on: !basethemes', array('!basethemes' => implode(', ', $base_themes)));
@@ -244,7 +248,7 @@ function theme_update_report($variables) {
 }
 
 /**
- * Generate the HTML for the label to display for a project's update status.
+ * Returns HTML for a label to display for a project's update status.
  *
  * @param $variables
  *   An associative array containing:
@@ -273,7 +277,17 @@ function theme_update_status_label($variables) {
 }
 
 /**
- * Theme the version display of a project.
+ * Returns HTML for the version display of a project.
+ *
+ * @param $variables
+ *   An associative array containing:
+ *   - version: An array of data about the latest released version, containing:
+ *     - version: The version number.
+ *     - release_link: The URL for the release notes.
+ *     - date: The date of the release.
+ *     - download_link: The URL for the downloadable file.
+ *   - tag: The title of the project.
+ *   - class: A string containing extra classes for the wrapping table.
  *
  * @ingroup themeable
  */
@@ -300,7 +314,7 @@ function theme_update_version($variables) {
     'title' => t('Release notes'),
     'href' => $version['release_link'],
   );
-  $output .= theme('links', array('links' => $links));
+  $output .= theme('links__update_version', array('links' => $links));
   $output .= '</td>';
   $output .= '</tr>';
   $output .= "</table>\n";

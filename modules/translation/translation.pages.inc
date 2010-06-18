@@ -1,5 +1,5 @@
 <?php
-// $Id: translation.pages.inc,v 1.13 2009/12/02 19:26:22 dries Exp $
+// $Id: translation.pages.inc,v 1.15 2010/01/30 07:59:26 dries Exp $
 
 /**
  * @file
@@ -33,7 +33,7 @@ function translation_node_overview($node) {
       // Existing translation in the translation set: display status.
       // We load the full node to check whether the user can edit it.
       $translation_node = node_load($translations[$language->language]->nid);
-      $title = l($translation_node->title[LANGUAGE_NONE][0]['value'], 'node/' . $translation_node->nid);
+      $title = l($translation_node->title, 'node/' . $translation_node->nid);
       if (node_access('update', $translation_node)) {
         $options[] = l(t('edit'), "node/$translation_node->nid/edit");
       }
@@ -54,13 +54,13 @@ function translation_node_overview($node) {
     $rows[] = array($language_name, $title, $status, implode(" | ", $options));
   }
 
-  drupal_set_title(t('Translations of %title', array('%title' => $node->title[LANGUAGE_NONE][0]['value'])), PASS_THROUGH);
-  
+  drupal_set_title(t('Translations of %title', array('%title' => $node->title)), PASS_THROUGH);
+
   $build['translation_node_overview'] = array(
-    '#theme' => 'table', 
-    '#header' => $header, 
+    '#theme' => 'table',
+    '#header' => $header,
     '#rows' => $rows,
   );
-  
+
   return $build;
 }

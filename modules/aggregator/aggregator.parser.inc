@@ -1,5 +1,5 @@
 <?php
-// $Id: aggregator.parser.inc,v 1.7 2009/12/04 16:49:45 dries Exp $
+// $Id: aggregator.parser.inc,v 1.9 2010/05/20 08:51:24 dries Exp $
 
 /**
  * @file
@@ -24,7 +24,7 @@ function aggregator_aggregator_parse($feed) {
 
   // Filter the input data.
   if (aggregator_parse_feed($feed->source_string, $feed)) {
-    $modified = empty($feed->http_headers['Last-Modified']) ? 0 : strtotime($feed->http_headers['Last-Modified']);
+    $modified = empty($feed->http_headers['last-modified']) ? 0 : strtotime($feed->http_headers['last-modified']);
 
     // Prepare the channel data.
     foreach ($channel as $key => $value) {
@@ -43,7 +43,7 @@ function aggregator_aggregator_parse($feed) {
       $image = '';
     }
 
-    $etag = empty($feed->http_headers['ETag']) ? '' : $feed->http_headers['ETag'];
+    $etag = empty($feed->http_headers['etag']) ? '' : $feed->http_headers['etag'];
 
     // Add parsed data to the feed object.
     $feed->link = !empty($channel['LINK']) ? $channel['LINK'] : '';
@@ -157,7 +157,7 @@ function aggregator_parse_feed(&$data, $feed) {
     if (empty($item['author']) && !empty($item['dc:creator'])) {
       $item['author'] = $item['dc:creator'];
     }
-     
+
     $item += array('author' => '', 'description' => '');
 
     // Store on $feed object. This is where processors will look for parsed items.

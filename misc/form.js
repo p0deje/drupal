@@ -1,10 +1,10 @@
-// $Id: form.js,v 1.13 2009/12/05 15:04:33 webchick Exp $
+// $Id: form.js,v 1.15 2010/04/09 12:24:53 dries Exp $
 (function ($) {
 
 /**
  * Retrieves the summary for the first element.
  */
-$.fn.getSummary = function () {
+$.fn.drupalGetSummary = function () {
   var callback = this.data('summaryCallback');
   return (this[0] && callback) ? $.trim(callback(this[0])) : '';
 };
@@ -16,7 +16,7 @@ $.fn.getSummary = function () {
  *   Either a function that will be called each time the summary is
  *   retrieved or a string (which is returned each time).
  */
-$.fn.setSummary = function (callback) {
+$.fn.drupalSetSummary = function (callback) {
   var self = this;
 
   // To facilitate things, the callback should always be a function. If it's
@@ -55,23 +55,6 @@ Drupal.behaviors.formUpdated = {
       .unbind(events).bind(events, function () {
         $(this).trigger('formUpdated');
       });
-  }
-};
-
-/**
- * Automatically display the guidelines of the selected text format.
- */
-Drupal.behaviors.filterGuidelines = {
-  attach: function (context) {
-    $('.filter-guidelines', context).once('filter-guidelines')
-      .find('label').hide()
-      .parents('.filter-wrapper').find('select.filter-list')
-      .bind('change', function () {
-        $(this).parents('.filter-wrapper')
-          .find('.filter-guidelines-item').hide()
-          .siblings('#filter-guidelines-' + this.value).show();
-      })
-      .change();
   }
 };
 

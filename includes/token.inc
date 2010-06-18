@@ -1,5 +1,5 @@
 <?php
-// $Id: token.inc,v 1.7 2009/12/05 03:49:17 webchick Exp $
+// $Id: token.inc,v 1.9 2010/03/12 14:33:02 dries Exp $
 
 /**
  * @file
@@ -50,7 +50,7 @@
  * Replace all tokens in a given string with appropriate values.
  *
  * @param $text
- *   A string potentially containing replacable tokens.
+ *   A string potentially containing replaceable tokens.
  * @param $data
  *   (optional) An array of keyed objects. For simple replacement scenarios
  *   'node', 'user', and others are common keys, with an accompanying node or
@@ -78,6 +78,9 @@ function token_replace($text, array $data = array(), array $options = array()) {
   $replacements = array();
   foreach (token_scan($text) as $type => $tokens) {
     $replacements += token_generate($type, $tokens, $data, $options);
+    if (!empty($options['clear'])) {
+      $replacements += array_fill_keys($tokens, '');
+    }
   }
 
   // Optionally alter the list of replacement values.

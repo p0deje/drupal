@@ -1,5 +1,5 @@
 <?php
-// $Id: dashboard.module,v 1.11 2009/12/14 20:38:15 dries Exp $
+// $Id: dashboard.module,v 1.31 2010/06/17 13:16:57 dries Exp $
 
 /**
  * Implements hook_help().
@@ -9,7 +9,7 @@ function dashboard_help($path, $arg) {
     case 'admin/help#dashboard':
       $output = '';
       $output .= '<h3>' . t('About') . '</h3>';
-      $output .= '<p>' . t('The Dashboard module provides a <a href="@dashboard">Dashboard page</a> in the administrative interface for organizing administrative tasks and navigation, and tracking information within your site. The Dashboard page contains blocks, which you can add to and arrange using the drag and drop interface that appears when you click on the <em>Customize</em> link. For more information, see the online handbook entry for <a href="@handbook">Dashboard module</a>.', array('@handbook' => 'http://drupal.org/handbook/modules/dashboard', '@dashboard' => url('admin/dashboard'))) . '</p>';
+      $output .= '<p>' . t('The Dashboard module provides a <a href="@dashboard">Dashboard page</a> in the administrative interface for organizing administrative tasks and navigation, and tracking information within your site. The Dashboard page contains blocks, which you can add to and arrange using the drag and drop interface that appears when you click on the <em>Customize dashboard</em> link. For more information, see the online handbook entry for <a href="@handbook">Dashboard module</a>.', array('@handbook' => 'http://drupal.org/handbook/modules/dashboard', '@dashboard' => url('admin/dashboard'))) . '</p>';
       $output .= '<h3>' . t('Uses') . '</h3>';
       $output .= '<dl>';
       $output .= '<dt>' . t('Tracking user activity') . '</dt>';
@@ -27,17 +27,19 @@ function dashboard_help($path, $arg) {
 function dashboard_menu() {
   $items['admin/dashboard'] = array(
     'title' => 'Dashboard',
+    'description' => 'View and customize your dashboard',
     'page callback' => 'dashboard_admin',
-    'access arguments' => array('access dashboard'),
+    'access arguments' => array('access administration pages'),
     // Make this appear first, so for example, in admin menus, it shows up on
     // the top corner of the window as a convinient "home link".
     'weight' => -100,
   );
   $items['admin/dashboard/customize'] = array(
     'title' => 'Dashboard',
+    'description' => 'View and customize your dashboard',
     'page callback' => 'dashboard_admin',
     'page arguments' => array(TRUE),
-    'access arguments' => array('access dashboard'),
+    'access arguments' => array('access administration pages'),
     'type' => MENU_CALLBACK,
   );
   $items['admin/dashboard/drawer'] = array(
@@ -60,13 +62,24 @@ function dashboard_menu() {
 }
 
 /**
- * Implements hook_block_info_alter().
+ * Implements hook_menu_alter().
+ */
+function dashboard_menu_alter(&$items) {
+  // Make the dashboard the default local task on /admin.
+  $items['admin']['title'] = 'Dashboard';
+  $items['admin']['page callback'] = 'dashboard_admin';
+  $items['admin/dashboard']['type'] = MENU_DEFAULT_LOCAL_TASK;
+  $items['admin/by-task']['type'] = MENU_LOCAL_TASK;
+}
+
+/**
+ * Implements hook_block_list_alter().
  *
  * Skip rendering dashboard blocks when not on the dashboard page itself. This
  * prevents expensive dashboard blocks from causing performance issues on pages
  * where they will never be displayed.
  */
-function dashboard_block_info_alter(&$blocks) {
+function dashboard_block_list_alter(&$blocks) {
   if (!dashboard_is_visible()) {
     foreach ($blocks as $key => $block) {
       if (in_array($block->region, dashboard_regions())) {
@@ -141,18 +154,6 @@ function dashboard_page_build(&$page) {
 }
 
 /**
- * Implements hook_permission().
- */
-function dashboard_permission() {
-  return array(
-    'access dashboard' => array(
-      'title' => t('View the administrative dashboard'),
-      'description' => t('Note: modifying the dashboard requires the !administer_blocks permission.', array('!administer_blocks' => l(t('Administer blocks'), 'admin/config/people/permissions', array('fragment' => 'module-block')))),
-    ),
-  );
-}
-
-/**
  * Implements hook_system_info_alter().
  *
  * Add regions to each theme to store the dashboard blocks.
@@ -160,9 +161,10 @@ function dashboard_permission() {
 function dashboard_system_info_alter(&$info, $file, $type) {
   if ($type == 'theme') {
     $info['regions'] += dashboard_region_descriptions();
-    if (module_exists('overlay')) {
-      $info['overlay_regions'] = !empty($info['overlay_regions']) ? array_merge($info['overlay_regions'], dashboard_regions()) : dashboard_regions();
-    }
+    // Indicate that these regions are intended to be displayed whenever the
+    // dashboard is displayed in an overlay. This information is provided for
+    // any module that might need to use it, not just the core Overlay module.
+    $info['overlay_regions'] = !empty($info['overlay_regions']) ? array_merge($info['overlay_regions'], dashboard_regions()) : dashboard_regions();
   }
 }
 
@@ -196,6 +198,14 @@ function dashboard_theme() {
  *   Whether to launch in customization mode right away. TRUE or FALSE.
  */
 function dashboard_admin($launch_customize = FALSE) {
+  // Only continue if provided arguments are expected. This function serves
+  // as the callback for the top-level admin/ page, so any unexpected arguments
+  // are likely the result of someone typing in the URL of an administrative
+  // page that doesn't actually exist; for example, admin/some/random/page.
+  if (!is_bool($launch_customize)) {
+    return MENU_NOT_FOUND;
+  }
+
   $js_settings = array(
     'dashboard' => array(
       'drawer' => url('admin/dashboard/drawer'),
@@ -204,14 +214,14 @@ function dashboard_admin($launch_customize = FALSE) {
       'formToken' => drupal_get_token('dashboard-update'),
       'launchCustomize' => $launch_customize,
       'dashboard' => url('admin/dashboard'),
-      'emptyBlockText' => _dashboard_get_default_string('dashboard_empty_block_text'),
-      'emptyRegionTextInactive' => _dashboard_get_default_string('dashboard_empty_region_text_inactive'),
-      'emptyRegionTextActive' => _dashboard_get_default_string('dashboard_empty_region_text_active'),
+      'emptyBlockText' => t('(empty)'),
+      'emptyRegionTextInactive' => t('This dashboard region is empty. Click <em>Customize dashboard</em> to add blocks to it.'),
+      'emptyRegionTextActive' => t('DRAG HERE'),
     ),
   );
   $build = array(
     '#theme' => 'dashboard_admin',
-    '#message' => t('To customize the dashboard page, move blocks to the dashboard regions on !block-admin, or enable JavaScript on this page to use the drag-and-drop interface.', array('!block-admin' => l('the block administration page', 'admin/structure/block'))),
+    '#message' => t('To customize the dashboard page, move blocks to the dashboard regions on the <a href="@blocks">Blocks administration page</a>, or enable JavaScript on this page to use the drag-and-drop interface.', array('@blocks' => url('admin/structure/block'))),
     '#access' => user_access('administer blocks'),
     '#attached' => array(
       'js' => array(
@@ -225,13 +235,35 @@ function dashboard_admin($launch_customize = FALSE) {
 }
 
 /**
- * Returns TRUE if the user is currently viewing the dashboard.
+ * Determines if the dashboard should be displayed on the current page.
+ *
+ * This function checks if the user is currently viewing the dashboard and has
+ * access to see it. It is used by other functions in the dashboard module to
+ * decide whether or not the dashboard content should be displayed to the
+ * current user.
+ *
+ * Although the menu system normally handles the above tasks, it only does so
+ * for the main page content. However, the dashboard is not part of the main
+ * page content, but rather is displayed in special regions of the page (so it
+ * can interface with the Block module's method of managing page regions). We
+ * therefore need to maintain this separate function to check the menu item for
+ * us.
+ *
+ * @return
+ *   TRUE if the dashboard should be visible on the current page, FALSE
+ *   otherwise.
+ *
+ * @see dashboard_block_list_alter()
+ * @see dashboard_page_build()
  */
 function dashboard_is_visible() {
   static $is_visible;
   if (!isset($is_visible)) {
+    // If the current menu item represents the page on which we want to display
+    // the dashboard, and if the current user has access to see it, return
+    // TRUE.
     $menu_item = menu_get_item();
-    $is_visible = isset($menu_item['page_callback']) && $menu_item['page_callback'] == 'dashboard_admin';
+    $is_visible = isset($menu_item['page_callback']) && $menu_item['page_callback'] == 'dashboard_admin' && !empty($menu_item['access']);
   }
   return $is_visible;
 }
@@ -331,7 +363,7 @@ function dashboard_update() {
       foreach ($blocks as $weight => $block_string) {
         // Parse the query string to determine the block's module and delta.
         preg_match('/block-([^-]+)-(.+)/', $block_string, $matches);
-        $block = new stdClass;
+        $block = new stdClass();
         $block->module = $matches[1];
         $block->delta = $matches[2];
 
@@ -359,18 +391,18 @@ function dashboard_update() {
           ->execute();
       }
     }
+    drupal_set_message(t('The configuration options have been saved.'), 'status', FALSE);
   }
   drupal_exit();
 }
 
 /**
- * Theme the entire dashboard.
+ * Returns HTML for the entire dashboard.
  *
  * @param $variables
- *   - element: An associative array containing the properties of the dashboard region
- *              element. Properties used: #dashboard_region, #children
- * @return
- *   A string representing the themed dashboard.
+ *   An associative array containing:
+ *   - element: A render element containing the properties of the dashboard
+ *     region element, #dashboard_region and #children.
  *
  * @ingroup themeable
  */
@@ -381,15 +413,11 @@ function theme_dashboard($variables) {
 }
 
 /**
- * Theme the page containing the dashboard.
+ * Returns HTML for the non-customizable part of the dashboard page.
  *
  * @param $variables
  *   An associative array containing:
- *   - elements: An associative array containing the properties of the element.
- *     Properties used: #message
- * @return
- *   A themed HTML string representing the non-customizable part of the
- *   dashboard page.
+ *   - element: A render element containing a #message.
  *
  * @ingroup themeable
  */
@@ -400,13 +428,12 @@ function theme_dashboard_admin($variables) {
 }
 
 /**
- * Theme a generic dashboard region.
+ * Returns HTML for a generic dashboard region.
  *
  * @param $variables
- *   - element: An associative array containing the properties of the dashboard region
- *              element. Properties used: #dashboard_region, #children
- * @return
- *   A string representing the themed dashboard region.
+ *   An associative array containing:
+ *   - element: A render element containing the properties of the dashboard
+ *     region element, #dashboard_region and #children.
  *
  * @ingroup themeable
  */
@@ -423,20 +450,18 @@ function theme_dashboard_region($variables) {
 }
 
 /**
- * Theme a set of disabled blocks, for display in dashboard customization mode.
+ * Returns HTML for a set of disabled blocks, for display in dashboard customization mode.
  *
  * @param $variables
+ *   An associative array containing:
  *   - blocks: An array of block objects from _block_rehash().
- * @return
- *   A string representing the disabled blocks region of the dashboard
- *   customization page.
  *
  * @ingroup themeable
  */
 function theme_dashboard_disabled_blocks($variables) {
   extract($variables);
-  $output = '<div class="canvas-content"><p>' . t('Drag and drop these to the columns below. Changes are automatically saved.') . '</p>';
-  $output .= '<div id="disabled-blocks"><div class="section region disabled-blocks clearfix">';
+  $output = '<div class="canvas-content"><p>' . t('Drag and drop these blocks to the columns below. Changes are automatically saved.') . '</p>';
+  $output .= '<div id="disabled-blocks"><div class="region disabled-blocks clearfix">';
   foreach ($blocks as $block) {
     $output .= theme('dashboard_disabled_block', array('block' => $block));
   }
@@ -445,12 +470,11 @@ function theme_dashboard_disabled_blocks($variables) {
 }
 
 /**
- * Theme a disabled block, for display in dashboard customization mode.
+ * Returns HTML for a disabled block, for display in dashboard customization mode.
  *
  * @param $variables
+ *   An associative array containing:
  *   - block: A block object from _block_rehash().
- * @return
- *   A string representing the disabled block.
  *
  * @ingroup themeable
  */
@@ -461,26 +485,10 @@ function theme_dashboard_disabled_block($variables) {
     $output .= '<div id="block-' . $block['module'] . '-' . $block['delta']
     . '" class="disabled-block block block-' . $block['module'] . '-' . $block['delta']
     . ' module-' . $block['module'] . ' delta-' . $block['delta'] . '">'
-    . '<h2>' . (!empty($block['title']) && $block['title'] != '<none>' ? $block['title'] : $block['info']) . '</h2>'
+    . '<h2>' . (!empty($block['title']) && $block['title'] != '<none>' ? check_plain($block['title']) : check_plain($block['info'])) . '</h2>'
     . '<div class="content"></div>'
     . '</div>';
   }
   return $output;
-}
-
-/**
- * Central storage for strings.
- *
- * @param <type> $key
- * @return string
- */
-function _dashboard_get_default_string($key) {
-  $defaults = array(
-    'dashboard_empty_region_text_inactive' => 'This dashboard region is empty, click customize to add blocks to it.',
-    'dashboard_empty_block_text' => '(empty)',
-    'dashboard_empty_region_text_active' => 'DRAG HERE',
-  );
-  return t(variable_get($key, $defaults[$key]));
-
 }
 

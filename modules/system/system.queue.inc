@@ -1,5 +1,5 @@
 <?php
-// $Id: system.queue.inc,v 1.7 2009/10/31 13:53:48 dries Exp $
+// $Id: system.queue.inc,v 1.13 2010/06/14 13:10:31 dries Exp $
 
 /**
  * @file
@@ -22,9 +22,10 @@
  * long you want to have a lease for working on that item. When finished
  * processing, the item needs to be deleted by calling
  * DrupalQueueInterface::deleteItem(). If the consumer dies, the item will be
- * made available again by the DrapalQueueInterface implementation once the
+ * made available again by the DrupalQueueInterface implementation once the
  * lease expires. Another consumer will then be able to receive it when calling
- * DrupalQueueInterface::claimItem().
+ * DrupalQueueInterface::claimItem(). Due to this, the processing code should
+ * be aware that an item might be handed over for processing more than once.
  *
  * The $item object used by the DrupalQueueInterface can contain arbitrary
  * metadata depending on the implementation. Systems using the interface should
@@ -33,18 +34,23 @@
  * DrupalQueueInterface::claimItem() needs to be passed to
  * DrupalQueueInterface::deleteItem() once processing is completed.
  *
- * While the queue system makes a best effort to preserve order in messages,
- * due to the pluggable nature of the queue, there is no guarantee that items
- * will be delivered on claim in the order they were sent. For example, some
- * implementations like beanstalkd or others with distributed back-ends like
+ * There are two kinds of queue backends available: reliable, which preserves
+ * the order of messages and guarantees that every item will be executed at
+ * least once. The non-reliable kind only does a best effort to preserve order
+ * in messages and to execute them at least once but there is a small chance
+ * that some items get lost. For example, some distributed back-ends like
  * Amazon SQS will be managing jobs for a large set of producers and consumers
- * where a strict FIFO ordering will likely not be preserved.
- *
- * The system also makes no guarantees about a task only being executed once:
- * callers that have non-idempotent tasks either need to live with the
- * possiblity of the task being invoked multiple times in cases where a claim
- * lease expires, or need to implement their own transactions to make their
- * tasks idempotent.
+ * where a strict FIFO ordering will likely not be preserved. Another example
+ * would be an in-memory queue backend which might lose items if it crashes.
+ * However, such a backend would be able to deal with significantly more writes
+ * than a reliable queue and for many tasks this is more important. See
+ * aggregator_cron() for an example of how can this not be a problem. Another
+ * example is doing Twitter statistics -- the small possibility of losing a few
+ * items is insignificant next to power of the queue being able to keep up with
+ * writes. As described in the processing section, regardless of the queue
+ * being reliable or not, the processing code should be aware that an item
+ * might be handed over for processing more than once (because the processing
+ * code might time out before it finishes).
  */
 
 /**
@@ -52,18 +58,38 @@
  */
 class DrupalQueue {
   /**
-   * Get a queue object for a given name.
+   * Returns the queue object for a given name.
+   *
+   * The following variables can be set by variable_set or $conf overrides:
+   * - queue_class_$name: the class to be used for the queue $name.
+   * - queue_default_class: the class to use when queue_class_$name is not
+   *   defined. Defaults to SystemQueue, a reliable backend using SQL.
+   * - queue_default_reliable_class: the class to use when queue_class_$name is
+   *   not defined and the queue_default_class is not reliable. Defaults to
+   *   SystemQueue.
    *
    * @param $name
    *   Arbitrary string. The name of the queue to work with.
+   * @param $reliable
+   *   TRUE if the ordering of items and guaranteeing every item executes at
+   *   least once is important, FALSE if scalability is the main concern.
+   *
    * @return
    *   The queue object for a given name.
    */
-  public static function get($name) {
+  public static function get($name, $reliable = FALSE) {
     static $queues;
     if (!isset($queues[$name])) {
-      $class = variable_get('queue_module_' . $name, 'System') . 'Queue';
-      $queues[$name] = new $class($name);
+      $class = variable_get('queue_class_' . $name, NULL);
+      if (!$class) {
+        $class = variable_get('queue_default_class', 'SystemQueue');
+      }
+      $object = new $class($name);
+      if ($reliable && !$object instanceof DrupalReliableQueueInterface) {
+        $class = variable_get('queue_default_reliable_class', 'SystemQueue');
+        $object = new $class($name);
+      }
+      $queues[$name] = $object;
     }
     return $queues[$name];
   }
@@ -86,8 +112,8 @@ interface DrupalQueueInterface {
    * @return
    *   TRUE if the item was successfully created and was (best effort) added
    *   to the queue, otherwise FALSE. We don't guarantee the item was
-   *   committed to disk, that your disk wasn't hit by a meteor, etc, but as
-   *   far as we know, the item is now in the queue.
+   *   committed to disk etc, but as far as we know, the item is now in the
+   *   queue.
    */
   public function createItem($data);
 
@@ -136,6 +162,15 @@ interface DrupalQueueInterface {
   public function deleteItem($item);
 
   /**
+   * Release an item that the worker could not process, so another
+   * worker can come in and process it before the timeout expires.
+   *
+   * @param $item
+   * @return boolean
+   */
+  public function releaseItem($item);
+
+  /**
    * Create a queue.
    *
    * Called during installation and should be used to perform any necessary
@@ -155,9 +190,18 @@ interface DrupalQueueInterface {
 }
 
 /**
+ * Reliable queue interface.
+ *
+ * Classes implementing this interface preserve the order of messages and
+ * guarantee that every item will be executed at least once.
+ */
+interface DrupalReliableQueueInterface extends DrupalQueueInterface {
+}
+
+/**
  * Default queue implementation.
  */
-class SystemQueue implements DrupalQueueInterface {
+class SystemQueue implements DrupalReliableQueueInterface {
   /**
    * The name of the queue this instance is working with.
    *
@@ -170,13 +214,17 @@ class SystemQueue implements DrupalQueueInterface {
   }
 
   public function createItem($data) {
-    $record = new stdClass();
-    $record->name = $this->name;
-    $record->data = $data;
-    // We cannot rely on REQUEST_TIME because many items might be created by a
-    // single request which takes longer than 1 second.
-    $record->created = time();
-    return drupal_write_record('queue', $record) !== FALSE;
+    // During a Drupal 6.x to 7.x update, drupal_get_schema() does not contain
+    // the queue table yet, so we cannot rely on drupal_write_record().
+    $query = db_insert('queue')
+      ->fields(array(
+        'name' => $this->name,
+        'data' => serialize($data),
+        // We cannot rely on REQUEST_TIME because many items might be created
+        // by a single request which takes longer than 1 second.
+        'created' => time(),
+      ));
+    return (bool) $query->execute();
   }
 
   public function numberOfItems() {
@@ -216,6 +264,15 @@ class SystemQueue implements DrupalQueueInterface {
     }
   }
 
+  public function releaseItem($item) {
+    $update = db_update('queue')
+      ->fields(array(
+        'expire' => 0,
+      ))
+      ->condition('item_id', $item->item_id);
+      return $update->execute();
+  }
+
   public function deleteItem($item) {
     db_delete('queue')
       ->condition('item_id', $item->item_id)
@@ -232,6 +289,79 @@ class SystemQueue implements DrupalQueueInterface {
     db_delete('queue')
       ->condition('name', $this->name)
       ->execute();
+  }
+}
+
+/**
+ * Static queue implementation.
+ *
+ * This allows "undelayed" variants of processes relying on the Queue
+ * interface. The queue data resides in memory. It should only be used for
+ * items that will be queued and dequeued within a given page request.
+ */
+class MemoryQueue implements DrupalQueueInterface {
+  /**
+   * The queue data.
+   *
+   * @var array
+   */
+  protected $queue;
+
+  /**
+   * Counter for item ids.
+   *
+   * @var int
+   */
+  protected $id_sequence;
+
+  public function __construct($name) {
+    $this->queue = array();
+    $this->id_sequence = 0;
+  }
+
+  public function createItem($data) {
+    $item = new stdClass();
+    $item->item_id = $this->id_sequence++;
+    $item->data = $data;
+    $item->created = time();
+    $item->expire = 0;
+    $this->queue[$item->item_id] = $item;
+  }
+
+  public function numberOfItems() {
+    return count($this->queue);
+  }
+
+  public function claimItem($lease_time = 30) {
+    foreach ($this->queue as $key => $item) {
+      if ($item->expire == 0) {
+        $item->expire = time() + $lease_time;
+        $this->queue[$key] = $item;
+        return $item;
+      }
+    }
+    return FALSE;
+  }
+
+  public function deleteItem($item) {
+    unset($this->queue[$item->item_id]);
+  }
+
+  public function releaseItem($item) {
+    if (isset($this->queue[$item->item_id]) && $this->queue[$item->item_id]->expire != 0) {
+      $this->queue[$item->item_id]->expire = 0;
+      return TRUE;
+    }
+    return FALSE;
+  }
+
+  public function createQueue() {
+    // Nothing needed here.
+  }
+
+  public function deleteQueue() {
+    $this->queue = array();
+    $this->id_sequence = 0;
   }
 }
 

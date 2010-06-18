@@ -1,4 +1,4 @@
-// $Id: tabledrag.js,v 1.33 2009/12/08 03:10:51 dries Exp $
+// $Id: tabledrag.js,v 1.38 2010/05/18 06:46:45 dries Exp $
 (function ($) {
 
 /**
@@ -73,10 +73,10 @@ Drupal.tableDrag = function (table, tableSettings) {
     // manually append 2 indentations in the first draggable row, measure
     // the offset, then remove.
     var indent = Drupal.theme('tableDragIndentation');
-    // Match immediate children of the parent element to allow nesting.
-    var testCell = $('> tbody > tr.draggable:first td:first, > tr.draggable:first td:first', table).prepend(indent).prepend(indent);
+    var testRow = $('<tr/>').addClass('draggable').appendTo(table);
+    var testCell = $('<td/>').appendTo(testRow).prepend(indent).prepend(indent);
     this.indentAmount = $('.indentation', testCell).get(1).offsetLeft - $('.indentation', testCell).get(0).offsetLeft;
-    $('.indentation', testCell).slice(0, 2).remove();
+    testRow.remove();
   }
 
   // Make each applicable row draggable.
@@ -169,7 +169,8 @@ Drupal.tableDrag.prototype.makeDraggable = function (item) {
   // Create the handle.
   var handle = $('<a href="#" class="tabledrag-handle"><div class="handle">&nbsp;</div></a>').attr('title', Drupal.t('Drag to re-order'));
   // Insert the handle after indentations (if any).
-  if ($('td:first .indentation:last', item).after(handle).size()) {
+  if ($('td:first .indentation:last', item).length) {
+    $('td:first .indentation:last', item).after(handle);
     // Update the total width of indentation in this entire table.
     self.indentCount = Math.max($('.indentation', item).size(), self.indentCount);
   }
@@ -515,7 +516,7 @@ Drupal.tableDrag.prototype.getMouseOffset = function (target, event) {
  *   The y coordinate of the mouse on the page (not the screen).
  */
 Drupal.tableDrag.prototype.findDropTargetRow = function (x, y) {
-  var rows = this.table.tBodies[0].rows;
+  var rows = $(this.table.tBodies[0].rows).not(':hidden');
   for (var n = 0; n < rows.length; n++) {
     var row = rows[n];
     var indentDiff = 0;
@@ -639,7 +640,7 @@ Drupal.tableDrag.prototype.updateField = function (changedRow, group) {
       // Use the first row in the table as source, because it's guaranteed to
       // be at the root level. Find the first item, then compare this row
       // against it as a sibling.
-      sourceRow = $('tr.draggable:first').get(0);
+      sourceRow = $(this.table).find('tr.draggable:first').get(0);
       if (sourceRow == this.rowObject.element) {
         sourceRow = $(this.rowObject.group[this.rowObject.group.length - 1]).next('tr.draggable').get(0);
       }
@@ -997,7 +998,7 @@ Drupal.tableDrag.prototype.row.prototype.findSiblings = function (rowSettings) {
   var siblings = [];
   var directions = ['prev', 'next'];
   var rowIndentation = this.indents;
-  for (var d in directions) {
+  for (var d = 0; d < directions.length; d++) {
     var checkRow = $(this.element)[directions[d]]();
     while (checkRow.length) {
       // Check that the sibling contains a similar target field.

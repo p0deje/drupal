@@ -1,5 +1,5 @@
 <?php
-// $Id: profile.module,v 1.284 2009/12/14 20:38:15 dries Exp $
+// $Id: profile.module,v 1.291 2010/05/29 11:37:33 dries Exp $
 
 /**
  * @file
@@ -46,7 +46,7 @@ function profile_help($path, $arg) {
       $output .= '</dl>';
       return $output;
     case 'admin/config/people/profile':
-      return '<p>' . t("This page displays a list of the existing custom profile fields to be displayed on a user's <em>My account</em> page. To provide structure, similar or related fields may be placed inside a category. To add a new category (or edit an existing one), edit a profile field and provide a new category name. Remember that your changes will not be saved until you click the <em>Save configuration</em> button at the bottom of the page.") . '</p>';
+      return '<p>' . t("This page displays a list of the existing custom profile fields to be displayed on a user's <em>My account</em> page. To provide structure, similar or related fields may be placed inside a category. To add a new category (or edit an existing one), edit a profile field and provide a new category name.") . '</p>';
   }
 }
 
@@ -179,12 +179,12 @@ function profile_block_view($delta = '') {
     $output = '';
     if ((arg(0) == 'node') && is_numeric(arg(1)) && (arg(2) == NULL)) {
       $node = node_load(arg(1));
-      $account = user_load(array('uid' => $node->uid));
+      $account = user_load($node->uid);
 
       if ($use_fields = variable_get('profile_block_author_fields', array())) {
         // Compile a list of fields to show.
         $fields = array();
-        $result = db_query('SELECT name, title, weight, visibility FROM {profile_field} WHERE visibility IN (:visibility) ORDER BY weight', array(':visibility' => array(PROFILE_PUBLIC, PROFILE_PUBLIC_LISTINGS)));
+        $result = db_query('SELECT * FROM {profile_field} WHERE visibility IN (:visibility) ORDER BY weight', array(':visibility' => array(PROFILE_PUBLIC, PROFILE_PUBLIC_LISTINGS)));
         foreach ($result as $record) {
           // Ensure that field is displayed only if it is among the defined block fields and, if it is private, the user has appropriate permissions.
           if (isset($use_fields[$record->name]) && $use_fields[$record->name]) {
@@ -233,12 +233,19 @@ function profile_user_insert(&$edit, $account, $category) {
 function profile_user_cancel(&$edit, $account, $method) {
   switch ($method) {
     case 'user_cancel_reassign':
-    case 'user_cancel_delete':
       db_delete('profile_value')
         ->condition('uid', $account->uid)
         ->execute();
-      break;
   }
+}
+
+/**
+ * Implements hook_user_delete().
+ */
+function profile_user_delete($account) {
+  db_delete('profile_value')
+    ->condition('uid', $account->uid)
+    ->execute();
 }
 
 /**
@@ -266,8 +273,6 @@ function profile_save_profile(&$edit, $account, $category, $register = FALSE) {
       ))
       ->fields(array('value' => $edit[$field->name]))
       ->execute();
-    // Mark field as handled (prevents saving to user->data).
-    $edit[$field->name] = NULL;
   }
 }
 
@@ -355,7 +360,7 @@ function profile_user_view($account) {
 }
 
 function _profile_form_explanation($field) {
-  $output = $field->explanation;
+  $output = filter_xss_admin($field->explanation);
 
   if ($field->type == 'list') {
     $output .= ' ' . t('Put each item on a separate line or separate them by commas. No HTML allowed.');
@@ -585,8 +590,7 @@ function template_preprocess_profile_wrapper(&$variables) {
   $variables['current_field'] = '';
   if ($field = arg(1)) {
     $variables['current_field'] = $field;
-    // Supply an alternate template suggestion based on the browsable field.
-    $variables['template_files'][] = 'profile-wrapper-' . $field;
+    $variables['theme_hook_suggestions'][] = 'profile_wrapper__' . $field;
   }
 }
 
@@ -611,8 +615,7 @@ function _profile_get_fields($category, $register = FALSE) {
     $query->condition('register', 1);
   }
   else {
-    // Use LOWER(:category) instead of PHP's strtolower() to avoid UTF-8 conversion issues.
-    $query->where('LOWER(category) = LOWER(:category)', array(':category' => $category));
+    $query->condition('category', db_like($category), 'LIKE');
   }
   if (!user_access('administer users')) {
     $query->condition('visibility', PROFILE_HIDDEN, '<>');
@@ -623,4 +626,3 @@ function _profile_get_fields($category, $register = FALSE) {
     ->orderBy('weight', 'ASC')
     ->execute();
 }
-

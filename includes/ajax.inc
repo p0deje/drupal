@@ -1,5 +1,5 @@
 <?php
-// $Id: ajax.inc,v 1.19 2009/11/22 02:48:37 webchick Exp $
+// $Id: ajax.inc,v 1.31 2010/04/30 08:07:54 dries Exp $
 
 /**
  * @file
@@ -19,28 +19,96 @@
  * instruct JavaScript to perform actions on the client browser. When using
  * forms, it can be used with the #ajax property.
  * The #ajax property can be used to bind events to the AJAX framework. By
- * default, #ajax uses 'system/ajax' as path, along with its defined page
- * callback. However, you may optionally specify a different path to request or
- * a different callback function to invoke, which can return updated HTML or can
- * also return a richer set of AJAX framework commands.
+ * default, #ajax uses 'system/ajax' as its path for submission and thus calls
+ * ajax_form_callback() and a defined #ajax['callback'] function.
+ * However, you may optionally specify a different path to request or a
+ * different callback function to invoke, which can return updated HTML or can
+ * also return a richer set of @link ajax_commands AJAX framework commands @endlink.
  *
- * See @link ajax_commands AJAX framework commands @endlink
+ * Standard form handling is as follows:
+ *   - A form element has a #ajax member.
+ *   - On the specified element, AJAX processing is triggered by a change to
+ *     that element.
+ *   - The form is submitted and rebuilt.
+ *   - The function named by #ajax['callback'] is called, which returns content
+ *     or an array of AJAX framework commands.
+ *   - The content returned by the callback replaces the div on the page
+ *     referenced by #ajax['wrapper'].
  *
- * To implement AJAX handling in a normal form, add '#ajax' to the form
+ * A simple example of basic AJAX use from the
+ * @link http://drupal.org/project/examples Examples module @endlink follows:
+ * @code
+ * function main_page() {
+ *   return drupal_get_form('ajax_example_simplest');
+ * }
+ *
+ * function ajax_example_simplest($form, &$form_state) {
+ *   $form = array();
+ *   $form['changethis'] = array(
+ *     '#type' => 'select',
+ *     '#options' => array(
+ *       'one' => 'one',
+ *       'two' => 'two',
+ *       'three' => 'three',
+ *     ),
+ *     '#ajax' => array(
+ *       'callback' => 'ajax_example_simplest_callback',
+ *       'wrapper' => 'replace_textfield_div',
+ *      ),
+ *   );
+
+ *   // This entire form element will be replaced with an updated value.
+ *   $form['replace_textfield'] = array(
+ *     '#type' => 'textfield',
+ *     '#title' => t("The default value will be changed"),
+ *     '#description' => t("Say something about why you chose") . "'" .
+ *       (!empty($form_state['values']['changethis'])
+ *       ? $form_state['values']['changethis'] : t("Not changed yet")) . "'",
+ *     '#prefix' => '<div id="replace_textfield_div">',
+ *     '#suffix' => '</div>',
+ *   );
+ *   return $form;
+ * }
+ *
+ * function ajax_example_simplest_callback($form, $form_state) {
+ *   // The form has already been submitted and updated. We can return the replaced
+ *   // item as it is.
+ *   return $form['replace_textfield'];
+ * }
+ * @endcode
+ *
+ * In the above example, the 'changethis' element is AJAX-enabled. The default
+ * #ajax['event'] is 'change', so when the 'changethis' element changes,
+ * an AJAX call is made. The form is submitted and reprocessed, and then the
+ * callback is called.  In this case, the form has been automatically
+ * built changing $form['replace_textfield']['#description'], so the callback
+ * just returns that part of the form.
+ *
+ * To implement AJAX handling in a form, add '#ajax' to the form
  * definition of a field. That field will trigger an AJAX event when it is
  * clicked (or changed, depending on the kind of field). #ajax supports
  * the following parameters (either 'path' or 'callback' is required at least):
- * - #ajax['path']: The menu path to use for the request. This path should map
- *   to a menu page callback that returns data using ajax_render(). Defaults to
- *   'system/ajax', which invokes ajax_form_callback(). If you use a custom
- *   path, you must set up the menu entry and handle the entire callback in your
- *   own code.
  * - #ajax['callback']: The callback to invoke to handle the server side of the
  *   AJAX event, which will receive a $form and $form_state as arguments, and
- *   should return a HTML string to replace the original element named in
- *   #ajax['wrapper'] or a list of AJAX commands.
- * - #ajax['wrapper']: The CSS ID of the area to be replaced by the HTML
- *   returned by the #ajax['callback'] function. The HTML string returned from
+ *   returns a renderable array (most often a form or form fragment), an HTML
+ *   string, or an array of AJAX commands. If returning a renderable array or
+ *   a string, the value will replace the original element named in
+ *   #ajax['wrapper'], and
+ *   theme_status_messages()
+ *   will be prepended to that
+ *   element. (If the status messages are not wanted, return an array
+ *   of AJAX commands instead.)
+ *   #ajax['wrapper']. If an array of AJAX commands is returned, it will be
+ *   executed by the calling code.
+ * - #ajax['path']: The menu path to use for the request. This is often omitted
+ *   and the default is used. This path should map
+ *   to a menu page callback that returns data using ajax_render(). Defaults to
+ *   'system/ajax', which invokes ajax_form_callback(), eventually calling
+ *   the function named in #ajax['callback']. If you use a custom
+ *   path, you must set up the menu entry and handle the entire callback in your
+ *   own code.
+ * - #ajax['wrapper']: The CSS ID of the area to be replaced by the content
+ *   returned by the #ajax['callback'] function. The content returned from
  *   the callback will replace the entire element named by #ajax['wrapper'].
  *   The wrapper is usually created using #prefix and #suffix properties in the
  *   form. Note that this is the wrapper ID, not a CSS selector. So to replace
@@ -55,9 +123,10 @@
  *   selected automatically for the type of form widget being used, and
  *   is only needed if you need to override the default behavior.
  * - #ajax['method']: The jQuery method to use to place the new HTML.
- *   Defaults to 'replace'. May be: 'replace', 'append', 'prepend',
- *   'before', 'after', or 'html'. See the jQuery documentation for more
- *   information on these methods.
+ *   Defaults to 'replaceWith'. May be: 'replaceWith', 'append', 'prepend',
+ *   'before', 'after', or 'html'. See the
+ *   @link http://api.jquery.com/category/manipulation/ jQuery manipulators documentation @endlink
+ *   for more information on these methods.
  * - #ajax['progress']: Choose either a throbber or progress bar that is
  *   displayed while awaiting a response from the callback, and add an optional
  *   message. Possible keys: 'type', 'message', 'url', 'interval'.
@@ -83,10 +152,11 @@
  * be converted to a JSON object and returned to the client, which will then
  * iterate over the array and process it like a macro language.
  *
- * Each command is an object. $object->command is the type of command and will
- * be used to find the method (it will correlate directly to a method in
- * the Drupal.ajax[command] space). The object may contain any other data that
- * the command needs to process.
+ * Each command item is an associative array which will be converted to a command
+ * object on the JavaScript side. $command_item['command'] is the type of
+ * command, e.g. 'alert' or 'replace', and will correspond to a method in the
+ * Drupal.ajax[command] space. The command array may contain any other data
+ * that the command needs to process, e.g. 'method', 'selector', 'settings', etc.
  *
  * Commands are usually created with a couple of helper functions, so they
  * look like this:
@@ -96,48 +166,33 @@
  *   $commands[] = ajax_command_replace('#object-1', 'some html here');
  *   // Add a visual "changed" marker to the '#object-1' element.
  *   $commands[] = ajax_command_changed('#object-1');
- *   // Output new markup to the browser and end the request.
- *   // Note: Only custom AJAX paths/page callbacks need to do this manually.
- *   ajax_render($commands);
+ *   // Menu 'page callback' and #ajax['callback'] functions are supposed to
+ *   // return render arrays. If returning an AJAX commands array, it must be
+ *   // encapsulated in a render array structure.
+ *   return array('#type' => 'ajax', '#commands' => $commands);
  * @endcode
  *
- * When the system's default #ajax['path'] is used, the invoked callback
- * function can either return a HTML string or an AJAX command structure.
- *
- * In case an AJAX callback returns a HTML string instead of an AJAX command
- * structure, ajax_form_callback() automatically replaces the original container
- * by using the ajax_command_replace() command and additionally prepends the
- * returned output with any status messages.
- *
- * When returning an AJAX command structure, it is likely that any status
- * messages shall be output with the given HTML. To achieve the same result
- * using an AJAX command structure, the AJAX callback may use the following:
+ * When returning an AJAX command array, it is often useful to have
+ * status messages rendered along with other tasks in the command array.
+ * In that case the the AJAX commands array may be constructed like this:
  * @code
  *   $commands = array();
  *   $commands[] = ajax_command_replace(NULL, $output);
  *   $commands[] = ajax_command_prepend(NULL, theme('status_messages'));
- *   return $commands;
+ *   return array('#type' => 'ajax', '#commands' => $commands);
  * @endcode
  *
  * See @link ajax_commands AJAX framework commands @endlink
  */
 
 /**
- * Render a commands array into JSON and exit.
- *
- * Commands are immediately handed back to the AJAX requester. This function
- * will render and immediately exit.
+ * Render a commands array into JSON.
  *
  * @param $commands
  *   A list of macro commands generated by the use of ajax_command_*()
  *   functions.
- * @param $header
- *   If set to FALSE the 'text/javascript' header used by drupal_json_output()
- *   will not be used, which is necessary when using an IFRAME. If set to
- *   'multipart' the output will be wrapped in a textarea, which can also be
- *   used as an alternative method when uploading files.
  */
-function ajax_render($commands = array(), $header = TRUE) {
+function ajax_render($commands = array()) {
   // Automatically extract any 'settings' added via drupal_add_js() and make
   // them the first command.
   $scripts = drupal_add_js(NULL, NULL);
@@ -148,36 +203,7 @@ function ajax_render($commands = array(), $header = TRUE) {
   // Allow modules to alter any AJAX response.
   drupal_alter('ajax_render', $commands);
 
-  // Use === here so that bool TRUE doesn't match 'multipart'.
-  if ($header === 'multipart') {
-    // We do not use drupal_json_output() here because the header is not true.
-    // We are not really returning JSON, strictly-speaking, but rather JSON
-    // content wrapped in a textarea as per the "file uploads" example here:
-    // http://malsup.com/jquery/form/#code-samples
-    print '<textarea>' . drupal_json_encode($commands) . '</textarea>';
-  }
-  elseif ($header) {
-    drupal_json_output($commands);
-  }
-  else {
-    print drupal_json_encode($commands);
-  }
-  drupal_exit();
-}
-
-/**
- * Send an error response back via AJAX and immediately exit.
- *
- * This function can be used to quickly create a command array with an error
- * string and send it, short-circuiting the error handling process.
- *
- * @param $error
- *   A string to display in an alert.
- */
-function ajax_render_error($error = '') {
-  $commands = array();
-  $commands[] = ajax_command_alert(empty($error) ? t('An error occurred while handling the request: The server received invalid input.') : $error);
-  ajax_render($commands);
+  return drupal_json_encode($commands);
 }
 
 /**
@@ -231,28 +257,12 @@ function ajax_get_form() {
  * The Form API #ajax property can be set both for buttons and other input
  * elements.
  *
- * ajax_process_form() defines an additional 'formPath' JavaScript setting
- * that is used by Drupal.ajax.prototype.beforeSubmit() to automatically inject
- * an additional field 'ajax_triggering_element' to the submitted form values,
- * which contains the array #parents of the element in the form structure.
- * This additional field allows ajax_form_callback() to determine which
- * element triggered the action, as non-submit form elements do not
- * provide this information in $form_state['clicked_button'], which can
- * also be used to determine triggering element, but only submit-type
- * form elements.
- *
  * This function is also the canonical example of how to implement
  * #ajax['path']. If processing is required that cannot be accomplished with
  * a callback, re-implement this function and set #ajax['path'] to the
  * enhanced function.
  */
 function ajax_form_callback() {
-  // Find the triggering element, which was set up for us on the client side.
-  if (!empty($_REQUEST['ajax_triggering_element'])) {
-    $triggering_element_path = $_REQUEST['ajax_triggering_element'];
-    // Remove the value for form validation.
-    unset($_REQUEST['ajax_triggering_element']);
-  }
   list($form, $form_state, $form_id, $form_build_id) = ajax_get_form();
 
   // Build, validate and if possible, submit the form.
@@ -260,34 +270,13 @@ function ajax_form_callback() {
 
   // This call recreates the form relying solely on the $form_state that
   // drupal_process_form() set up.
-  $form = drupal_rebuild_form($form_id, $form_state, $form_build_id);
+  $form = drupal_rebuild_form($form_id, $form_state, $form);
 
-  // $triggering_element_path in a simple form might just be 'myselect', which
-  // would mean we should use the element $form['myselect']. For nested form
-  // elements we need to recurse into the form structure to find the triggering
-  // element, so we can retrieve the #ajax['callback'] from it.
-  if (!empty($triggering_element_path)) {
-    if (!isset($form['#access']) || $form['#access']) {
-      $triggering_element = $form;
-      foreach (explode('/', $triggering_element_path) as $key) {
-        if (!empty($triggering_element[$key]) && (!isset($triggering_element[$key]['#access']) || $triggering_element[$key]['#access'])) {
-          $triggering_element = $triggering_element[$key];
-        }
-        else {
-          // We did not find the $triggering_element or do not have #access,
-          // so break out and do not provide it.
-          $triggering_element = NULL;
-          break;
-        }
-      }
-    }
-  }
-  if (empty($triggering_element)) {
-    $triggering_element = $form_state['clicked_button'];
-  }
-  // Now that we have the element, get a callback if there is one.
-  if (!empty($triggering_element)) {
-    $callback = $triggering_element['#ajax']['callback'];
+  // As part of drupal_process_form(), the element that triggered the form
+  // submission is determined, and in the case of AJAX, it might not be a
+  // button. This lets us route to the appropriate callback.
+  if (!empty($form_state['triggering_element'])) {
+    $callback = $form_state['triggering_element']['#ajax']['callback'];
   }
   if (!empty($callback) && function_exists($callback)) {
     return $callback($form, $form_state);
@@ -306,6 +295,10 @@ function ajax_form_callback() {
  */
 function ajax_deliver($page_callback_result) {
   $commands = array();
+  $header = TRUE;
+
+  // Normalize whatever was returned by the page callback to an AJAX commands
+  // array.
   if (!isset($page_callback_result)) {
     // Simply delivering an empty commands array is sufficient. This results
     // in the AJAX request being completed, but nothing being done to the page.
@@ -326,24 +319,78 @@ function ajax_deliver($page_callback_result) {
         break;
     }
   }
-  elseif (is_array($page_callback_result) && isset($page_callback_result['#type']) && ($page_callback_result['#type'] == 'ajax_commands')) {
-    // Complex AJAX callbacks can return a result that contains a specific
-    // set of commands to send to the browser. 
-    if (isset($page_callback_result['#ajax_commands'])) {
-      $commands = $page_callback_result['#ajax_commands'];
+  elseif (is_array($page_callback_result) && isset($page_callback_result['#type']) && ($page_callback_result['#type'] == 'ajax')) {
+    // Complex AJAX callbacks can return a result that contains an error message
+    // or a specific set of commands to send to the browser.
+    $page_callback_result += element_info('ajax');
+    $header = $page_callback_result['#header'];
+    $error = $page_callback_result['#error'];
+    if (isset($error) && $error !== FALSE) {
+      if ((empty($error) || $error === TRUE)) {
+        $error = t('An error occurred while handling the request: The server received invalid input.');
+      }
+      $commands[] = ajax_command_alert($error);
+    }
+    else {
+      $commands = $page_callback_result['#commands'];
     }
   }
   else {
-    // Like normal page callbacks, simple AJAX callbacks can return html
-    // content, as a string or renderable array, to replace what was previously
-    // there in the wrapper. In this case, in addition to the content, we want
-    // to add the status messages, but inside the new wrapper, so that they get
-    // replaced on subsequent AJAX calls for the same wrapper.
+    // Like normal page callbacks, simple AJAX callbacks can return HTML
+    // content, as a string or render array. This HTML is inserted in some
+    // relationship to #ajax['wrapper'], as determined by which jQuery DOM
+    // manipulation method is used. The method used is specified by
+    // #ajax['method']. The default method is 'replaceWith', which completely
+    // replaces the old wrapper element and its content with the new HTML.
     $html = is_string($page_callback_result) ? $page_callback_result : drupal_render($page_callback_result);
-    $commands[] = ajax_command_replace(NULL, $html);
+    $commands[] = ajax_command_insert(NULL, $html);
+    // Add the status messages inside the new content's wrapper element, so that
+    // on subsequent AJAX requests, it is treated as old content.
     $commands[] = ajax_command_prepend(NULL, theme('status_messages'));
   }
-  ajax_render($commands);
+
+  // This function needs to do the same thing that drupal_deliver_html_page()
+  // does: add any needed http headers, print rendered output, and perform
+  // end-of-request tasks. By default, $header=TRUE, and we add a
+  // 'text/javascript' header. The page callback can override $header by
+  // returning an 'ajax' element with a #header property. This can be set to
+  // FALSE to prevent the 'text/javascript' header from being output, necessary
+  // when outputting to an IFRAME. This can also be set to 'multipart', in which
+  // case, we don't output JSON, but JSON content wrapped in a textarea, making
+  // a 'text/javascript' header incorrect.
+  if ($header && $header !== 'multipart') {
+    drupal_add_http_header('Content-Type', 'text/javascript; charset=utf-8');
+  }
+  $output = ajax_render($commands);
+  if ($header === 'multipart') {
+    // jQuery file uploads: http://malsup.com/jquery/form/#code-samples
+    $output = '<textarea>' . $output . '</textarea>';
+  }
+  print $output;
+  ajax_footer();
+}
+
+/**
+ * Perform end-of-AJAX-request tasks.
+ *
+ * This function is the equivalent of drupal_page_footer(), but for AJAX
+ * requests.
+ *
+ * @see drupal_page_footer()
+ */
+function ajax_footer() {
+  // Even for AJAX requests, invoke hook_exit() implementations. There may be
+  // modules that need very fast AJAX responses, and therefore, run AJAX
+  // requests with an early bootstrap.
+  if (drupal_get_bootstrap_phase() == DRUPAL_BOOTSTRAP_FULL && (!defined('MAINTENANCE_MODE') || MAINTENANCE_MODE != 'update')) {
+    module_invoke_all('exit');
+  }
+
+  // Commit the user session. See above comment about the possibility of this
+  // function running without session.inc loaded.
+  if (function_exists('drupal_session_commit')) {
+    drupal_session_commit();
+  }
 }
 
 /**
@@ -367,7 +414,10 @@ function ajax_deliver($page_callback_result) {
  *   drupal_add_js().
  */
 function ajax_process_form($element, &$form_state) {
-  $js_added = &drupal_static(__FUNCTION__, array());
+  // Nothing to do if there is neither a callback nor a path.
+  if (!(isset($element['#ajax']['callback']) || isset($element['#ajax']['path']))) {
+    return $element;
+  }
 
   // Add a reasonable default event handler if none was specified.
   if (isset($element['#ajax']) && !isset($element['#ajax']['event'])) {
@@ -401,42 +451,79 @@ function ajax_process_form($element, &$form_state) {
     }
   }
 
-  // Adding the same JavaScript settings twice will cause a recursion error,
-  // we avoid the problem by checking if the JavaScript has already been added.
-  if (!isset($js_added[$element['#id']]) && (isset($element['#ajax']['callback']) || isset($element['#ajax']['path'])) && isset($element['#ajax']['event'])) {
-    drupal_add_library('system', 'form');
-    $element['#attached']['js'][] = 'misc/ajax.js';
+  // Attach JavaScript settings to the element.
+  if (isset($element['#ajax']['event'])) {
+    $element['#attached']['library'][] = array('system', 'form');
+    $element['#attached']['js']['misc/ajax.js'] = array('weight' => JS_LIBRARY + 2);
 
-    $ajax_binding = array(
-      'url'      => isset($element['#ajax']['callback']) ? url('system/ajax') : url($element['#ajax']['path']),
-      'event'    => $element['#ajax']['event'],
-      'keypress' => empty($element['#ajax']['keypress']) ? NULL : $element['#ajax']['keypress'],
-      'wrapper'  => empty($element['#ajax']['wrapper']) ? NULL : $element['#ajax']['wrapper'],
-      'selector' => empty($element['#ajax']['selector']) ? '#' . $element['#id'] : $element['#ajax']['selector'],
-      'effect'   => empty($element['#ajax']['effect']) ? 'none' : $element['#ajax']['effect'],
-      'speed'    => empty($element['#ajax']['effect']) ? 'none' : $element['#ajax']['effect'],
-      'method'   => empty($element['#ajax']['method']) ? 'replace' : $element['#ajax']['method'],
-      'progress' => empty($element['#ajax']['progress']) ? array('type' => 'throbber') : $element['#ajax']['progress'],
-      'button'   => isset($element['#executes_submit_callback']) ? array($element['#name'] => $element['#value']) : FALSE,
-      'formPath' => implode('/', $element['#array_parents']),
+    $settings = $element['#ajax'];
+
+    // Assign default settings.
+    $settings += array(
+      'selector' => '#' . $element['#id'],
+      'effect' => 'none',
+      'speed' => 'none',
+      'method' => 'replaceWith',
+      'progress' => array('type' => 'throbber'),
     );
 
-    // Convert a simple #ajax['progress'] type string into an array.
-    if (is_string($ajax_binding['progress'])) {
-      $ajax_binding['progress'] = array('type' => $ajax_binding['progress']);
+    // @todo Legacy support. Remove in Drupal 8.
+    if ($settings['method'] == 'replace') {
+      $settings['method'] = 'replaceWith';
+    }
+
+    // Change path to url.
+    $settings['url'] = isset($settings['path']) ? url($settings['path']) : url('system/ajax');
+    unset($settings['path']);
+
+    // Add special data to $settings['submit'] so that when this element
+    // triggers an AJAX submission, Drupal's form processing can determine which
+    // element triggered it.
+    // @see _form_element_triggered_scripted_submission()
+    if (isset($settings['trigger_as'])) {
+      // An element can add a 'trigger_as' key within #ajax to make the element
+      // submit as though another one (for example, a non-button can use this
+      // to submit the form as though a button were clicked). When using this,
+      // the 'name' key is always required to identify the element to trigger
+      // as. The 'value' key is optional, and only needed when multiple elements
+      // share the same name, which is commonly the case for buttons.
+      $settings['submit']['_triggering_element_name'] = $settings['trigger_as']['name'];
+      if (isset($settings['trigger_as']['value'])) {
+        $settings['submit']['_triggering_element_value'] = $settings['trigger_as']['value'];
+      }
+      unset($settings['trigger_as']);
+    }
+    else {
+      // Most of the time, elements can submit as themselves, in which case the
+      // 'trigger_as' key isn't needed, and the element's name is used.
+      $settings['submit']['_triggering_element_name'] = $element['#name'];
+      // If the element is a (non-image) button, its name may not identify it
+      // uniquely, in which case a match on value is also needed.
+      // @see _form_button_was_clicked()
+      if (isset($element['#button_type']) && empty($element['#has_garbage_value'])) {
+        $settings['submit']['_triggering_element_value'] = $element['#value'];
+      }
+    }
+
+    // Convert a simple #ajax['progress'] string into an array.
+    if (is_string($settings['progress'])) {
+      $settings['progress'] = array('type' => $settings['progress']);
     }
     // Change progress path to a full URL.
-    if (isset($ajax_binding['progress']['path'])) {
-      $ajax_binding['progress']['url'] = url($ajax_binding['progress']['path']);
+    if (isset($settings['progress']['path'])) {
+      $settings['progress']['url'] = url($settings['progress']['path']);
+      unset($settings['progress']['path']);
     }
     // Add progress.js if we're doing a bar display.
-    if ($ajax_binding['progress']['type'] == 'bar') {
-      drupal_add_js('misc/progress.js', array('cache' => FALSE));
+    if ($settings['progress']['type'] == 'bar') {
+      $element['#attached']['js']['misc/progress.js'] = array('cache' => FALSE);
     }
 
-    drupal_add_js(array('ajax' => array($element['#id'] => $ajax_binding)), 'setting');
+    $element['#attached']['js'][] = array(
+      'type' => 'setting',
+      'data' => array('ajax' => array($element['#id'] => $settings)),
+    );
 
-    $js_added[$element['#id']] = TRUE;
     $form_state['cache'] = TRUE;
   }
   return $element;
@@ -461,7 +548,7 @@ function ajax_process_form($element, &$form_state) {
  * defined in misc/ajax.js.
  *
  * @param $text
- *   The message string to dipslay to the user.
+ *   The message string to display to the user.
  *
  * @return
  *   An array suitable for use with the ajax_render() function.
@@ -470,6 +557,37 @@ function ajax_command_alert($text) {
   return array(
     'command' => 'alert',
     'text' => $text,
+  );
+}
+
+/**
+ * Creates a Drupal AJAX 'insert' command using the method in #ajax['method'].
+ *
+ * This command instructs the client to insert the given HTML using whichever
+ * jQuery DOM manipulation method has been specified in the #ajax['method']
+ * variable of the element that triggered the request.
+ *
+ * This command is implemented by Drupal.ajax.prototype.commands.insert()
+ * defined in misc/ajax.js.
+ *
+ * @param $selector
+ *   A jQuery selector string. If the command is a response to a request from
+ *   an #ajax form element then this value can be NULL.
+ * @param $html
+ *   The data to use with the jQuery method.
+ * @param $settings
+ *   An optional array of settings that will be used for this command only.
+ *
+ * @return
+ *   An array suitable for use with the ajax_render() function.
+ */
+function ajax_command_insert($selector, $html, $settings = NULL) {
+  return array(
+    'command' => 'insert',
+    'method' => NULL,
+    'selector' => $selector,
+    'data' => $html,
+    'settings' => $settings,
   );
 }
 
@@ -494,7 +612,7 @@ function ajax_command_alert($text) {
  * @return
  *   An array suitable for use with the ajax_render() function.
  *
- * @see http://docs.jquery.com/Manipulation/replaceWith#content
+ * See @link http://docs.jquery.com/Manipulation/replaceWith#content jQuery replaceWith command @endlink
  */
 function ajax_command_replace($selector, $html, $settings = NULL) {
   return array(
@@ -755,8 +873,9 @@ function ajax_command_css($selector, $argument) {
 /**
  * Creates a Drupal AJAX 'settings' command.
  *
- * The 'settings' command instructs the client to extend Drupal.settings with
- * the given array.
+ * The 'settings' command instructs the client either to use the given array as
+ * the settings for ajax-loaded content or to extend Drupal.settings with the
+ * given array, depending on the value of the $merge parameter.
  *
  * This command is implemented by Drupal.ajax.prototype.commands.settings()
  * defined in misc/ajax.js.
@@ -765,14 +884,20 @@ function ajax_command_css($selector, $argument) {
  *   An array of key/value pairs to add to the settings. This will be utilized
  *   for all commands after this if they do not include their own settings
  *   array.
+ * @param $merge
+ *   Whether or not the passed settings in $argument should be merged into the
+ *   global Drupal.settings on the page. By default (FALSE), the settings that
+ *   are passed to Drupal.attachBehaviors will not include the global
+ *   Drupal.settings.
  *
  * @return
  *   An array suitable for use with the ajax_render() function.
  */
-function ajax_command_settings($argument) {
+function ajax_command_settings($argument, $merge = FALSE) {
   return array(
     'command' => 'settings',
     'settings' => $argument,
+    'merge' => $merge,
   );
 }
 
@@ -792,7 +917,7 @@ function ajax_command_settings($argument) {
  *   The name or key (in the key value pair) of the data attached to this
  *   selector.
  * @param $value
- *  The value of the data. Not just limited to strings can be any format.
+ *   The value of the data. Not just limited to strings can be any format.
  *
  * @return
  *   An array suitable for use with the ajax_render() function.
@@ -812,7 +937,7 @@ function ajax_command_data($selector, $name, $value) {
  * Creates a Drupal AJAX 'restripe' command.
  *
  * The 'restripe' command instructs the client to restripe a table. This is
- * usually used after a table has been modifed by a replace or append command.
+ * usually used after a table has been modified by a replace or append command.
  *
  * This command is implemented by Drupal.ajax.prototype.commands.restripe()
  * defined in misc/ajax.js.

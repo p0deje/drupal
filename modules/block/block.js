@@ -1,4 +1,4 @@
-// $Id: block.js,v 1.12 2009/12/07 21:16:31 dries Exp $
+// $Id: block.js,v 1.16 2010/05/09 13:57:59 dries Exp $
 (function ($) {
 
 /**
@@ -6,7 +6,14 @@
  */
 Drupal.behaviors.blockSettingsSummary = {
   attach: function (context) {
-    $('fieldset#edit-path', context).setSummary(function (context) {
+    // The drupalSetSummary method required for this behavior is not available
+    // on the Blocks administration page, so we need to make sure this
+    // behavior is processed only if drupalSetSummary is defined.
+    if (typeof jQuery.fn.drupalSetSummary == 'undefined') {
+      return;
+    }
+
+    $('fieldset#edit-path', context).drupalSetSummary(function (context) {
       if (!$('textarea[name="pages"]', context).val()) {
         return Drupal.t('Not restricted');
       }
@@ -15,7 +22,7 @@ Drupal.behaviors.blockSettingsSummary = {
       }
     });
 
-    $('fieldset#edit-node-type', context).setSummary(function (context) {
+    $('fieldset#edit-node-type', context).drupalSetSummary(function (context) {
       var vals = [];
       $('input[type="checkbox"]:checked', context).each(function () {
         vals.push($.trim($(this).next('label').text()));
@@ -26,7 +33,7 @@ Drupal.behaviors.blockSettingsSummary = {
       return vals.join(', ');
     });
 
-    $('fieldset#edit-role', context).setSummary(function (context) {
+    $('fieldset#edit-role', context).drupalSetSummary(function (context) {
       var vals = [];
       $('input[type="checkbox"]:checked', context).each(function () {
         vals.push($.trim($(this).next('label').text()));
@@ -37,7 +44,7 @@ Drupal.behaviors.blockSettingsSummary = {
       return vals.join(', ');
     });
 
-    $('fieldset#edit-user', context).setSummary(function (context) {
+    $('fieldset#edit-user', context).drupalSetSummary(function (context) {
       var $radio = $('input[name="custom"]:checked', context);
       if ($radio.val() == 0) {
         return Drupal.t('Not customizable');
@@ -57,8 +64,8 @@ Drupal.behaviors.blockSettingsSummary = {
  */
 Drupal.behaviors.blockDrag = {
   attach: function (context, settings) {
-    // tableDrag is required for this behavior.
-    if (typeof Drupal.tableDrag == 'undefined') {
+    // tableDrag is required and we should be on the blocks admin page.
+    if (typeof Drupal.tableDrag == 'undefined' || typeof Drupal.tableDrag.blocks == 'undefined') {
       return;
     }
 
@@ -72,7 +79,7 @@ Drupal.behaviors.blockDrag = {
 
     // A custom message for the blocks page specifically.
     Drupal.theme.tableDragChangedWarning = function () {
-      return '<div class="warning">' + Drupal.theme('tableDragChangedMarker') + ' ' + Drupal.t('The changes to these blocks will not be saved until the <em>Save blocks</em> button is clicked.') + '</div>';
+      return '<div class="messages warning">' + Drupal.theme('tableDragChangedMarker') + ' ' + Drupal.t('The changes to these blocks will not be saved until the <em>Save blocks</em> button is clicked.') + '</div>';
     };
 
     // Add a handler so when a row is dropped, update fields dropped into new regions.

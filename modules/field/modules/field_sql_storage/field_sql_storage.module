@@ -1,5 +1,5 @@
 <?php
-// $Id: field_sql_storage.module,v 1.36 2009/12/15 05:22:05 webchick Exp $
+// $Id: field_sql_storage.module,v 1.47 2010/06/14 15:41:02 dries Exp $
 
 /**
  * @file
@@ -40,7 +40,12 @@ function field_sql_storage_field_storage_info() {
  *   A string containing the generated name for the database table
  */
 function _field_sql_storage_tablename($field) {
-  return "field_data_{$field['field_name']}" . ($field['deleted'] ? "_{$field['id']}" : '');
+  if ($field['deleted']) {
+    return "field_deleted_data_{$field['id']}";
+  }
+  else {
+    return "field_data_{$field['field_name']}";
+  }
 }
 
 /**
@@ -52,7 +57,12 @@ function _field_sql_storage_tablename($field) {
  *   A string containing the generated name for the database table
  */
 function _field_sql_storage_revision_tablename($field) {
-  return "field_revision_{$field['field_name']}" . ($field['deleted'] ? "_{$field['id']}" : '');
+  if ($field['deleted']) {
+    return "field_deleted_revision_{$field['id']}";
+  }
+  else {
+    return "field_revision_{$field['field_name']}";
+  }
 }
 
 /**
@@ -86,20 +96,19 @@ function _field_sql_storage_indexname($name, $index) {
 }
 
 /**
- * Retrieve or assign an entity type id for an object type.
+ * Retrieve or assign an entity type id for an entity type.
  *
- * @param $obj_type
- *   The object type, such as 'node' or 'user'.
+ * @param $entity_type
+ *   The entity type, such as 'node' or 'user'.
  * @return
  *   The entity type id.
  *
- * TODO: We need to decide on 'entity' or 'object'.
  */
-function _field_sql_storage_etid($obj_type) {
-  $etid = variable_get('field_sql_storage_' . $obj_type . '_etid', NULL);
+function _field_sql_storage_etid($entity_type) {
+  $etid = variable_get('field_sql_storage_' . $entity_type . '_etid', NULL);
   if (is_null($etid)) {
-    $etid = db_insert('field_config_entity_type')->fields(array('type' => $obj_type))->execute();
-    variable_set('field_sql_storage_' . $obj_type . '_etid', $etid);
+    $etid = db_insert('field_config_entity_type')->fields(array('type' => $entity_type))->execute();
+    variable_set('field_sql_storage_' . $entity_type . '_etid', $etid);
   }
   return $etid;
 }
@@ -128,7 +137,7 @@ function _field_sql_storage_schema($field) {
       ),
       'bundle' => array(
         'type' => 'varchar',
-        'length' => 32,
+        'length' => 128,
         'not null' => TRUE,
         'default' => '',
         'description' => 'The field instance bundle to which this row belongs, used when deleting a field instance',
@@ -219,7 +228,7 @@ function field_sql_storage_field_storage_create_field($field) {
 }
 
 /**
- * Implements hook_field_update_field_forbid().
+ * Implements hook_field_update_forbid().
  *
  * Forbid any field update that changes column definitions if there is
  * any data.
@@ -299,8 +308,8 @@ function field_sql_storage_field_storage_delete_field($field) {
 /**
  * Implements hook_field_storage_load().
  */
-function field_sql_storage_field_storage_load($obj_type, $objects, $age, $fields, $options) {
-  $etid = _field_sql_storage_etid($obj_type);
+function field_sql_storage_field_storage_load($entity_type, $entities, $age, $fields, $options) {
+  $etid = _field_sql_storage_etid($entity_type);
   $load_current = $age == FIELD_LOAD_CURRENT;
 
   foreach ($fields as $field_id => $ids) {
@@ -312,7 +321,7 @@ function field_sql_storage_field_storage_load($obj_type, $objects, $age, $fields
       ->fields('t')
       ->condition('etid', $etid)
       ->condition($load_current ? 'entity_id' : 'revision_id', $ids, 'IN')
-      ->condition('language', field_multilingual_available_languages($obj_type, $field), 'IN')
+      ->condition('language', field_available_languages($entity_type, $field), 'IN')
       ->orderBy('delta');
 
     if (empty($options['deleted'])) {
@@ -337,7 +346,7 @@ function field_sql_storage_field_storage_load($obj_type, $objects, $age, $fields
         }
 
         // Add the item to the field values for the entity.
-        $objects[$row->entity_id]->{$field_name}[$row->language][] = $item;
+        $entities[$row->entity_id]->{$field_name}[$row->language][] = $item;
         $delta_count[$row->entity_id][$row->language]++;
       }
     }
@@ -347,9 +356,9 @@ function field_sql_storage_field_storage_load($obj_type, $objects, $age, $fields
 /**
  * Implements hook_field_storage_write().
  */
-function field_sql_storage_field_storage_write($obj_type, $object, $op, $fields) {
-  list($id, $vid, $bundle) = entity_extract_ids($obj_type, $object);
-  $etid = _field_sql_storage_etid($obj_type);
+function field_sql_storage_field_storage_write($entity_type, $entity, $op, $fields) {
+  list($id, $vid, $bundle) = entity_extract_ids($entity_type, $entity);
+  $etid = _field_sql_storage_etid($entity_type);
 
   foreach ($fields as $field_id) {
     $field = field_info_field_by_id($field_id);
@@ -357,14 +366,14 @@ function field_sql_storage_field_storage_write($obj_type, $object, $op, $fields)
     $table_name = _field_sql_storage_tablename($field);
     $revision_name = _field_sql_storage_revision_tablename($field);
 
-    $all_languages = field_multilingual_available_languages($obj_type, $field);
-    $field_languages = array_intersect($all_languages, array_keys((array) $object->$field_name));
+    $all_languages = field_available_languages($entity_type, $field);
+    $field_languages = array_intersect($all_languages, array_keys((array) $entity->$field_name));
 
     // Delete and insert, rather than update, in case a value was added.
     if ($op == FIELD_STORAGE_UPDATE) {
-      // Delete languages present in the incoming $object->$field_name.
-      // Delete all languages if $object->$field_name is empty.
-      $languages = !empty($object->$field_name) ? $field_languages : $all_languages;
+      // Delete languages present in the incoming $entity->$field_name.
+      // Delete all languages if $entity->$field_name is empty.
+      $languages = !empty($entity->$field_name) ? $field_languages : $all_languages;
       if ($languages) {
         db_delete($table_name)
           ->condition('etid', $etid)
@@ -394,7 +403,7 @@ function field_sql_storage_field_storage_write($obj_type, $object, $op, $fields)
     }
 
     foreach ($field_languages as $langcode) {
-      $items = (array) $object->{$field_name}[$langcode];
+      $items = (array) $entity->{$field_name}[$langcode];
       $delta_count = 0;
       foreach ($items as $delta => $item) {
         // We now know we have someting to insert.
@@ -434,16 +443,16 @@ function field_sql_storage_field_storage_write($obj_type, $object, $op, $fields)
 /**
  * Implements hook_field_storage_delete().
  *
- * This function deletes data for all fields for an object from the database.
+ * This function deletes data for all fields for an entity from the database.
  */
-function field_sql_storage_field_storage_delete($obj_type, $object, $fields) {
-  list($id, $vid, $bundle) = entity_extract_ids($obj_type, $object);
-  $etid = _field_sql_storage_etid($obj_type);
+function field_sql_storage_field_storage_delete($entity_type, $entity, $fields) {
+  list($id, $vid, $bundle) = entity_extract_ids($entity_type, $entity);
+  $etid = _field_sql_storage_etid($entity_type);
 
-  foreach (field_info_instances($obj_type, $bundle) as $instance) {
+  foreach (field_info_instances($entity_type, $bundle) as $instance) {
     if (isset($fields[$instance['field_id']])) {
       $field = field_info_field_by_id($instance['field_id']);
-      field_sql_storage_field_storage_purge($obj_type, $object, $field, $instance);
+      field_sql_storage_field_storage_purge($entity_type, $entity, $field, $instance);
     }
   }
 }
@@ -452,11 +461,11 @@ function field_sql_storage_field_storage_delete($obj_type, $object, $fields) {
  * Implements hook_field_storage_purge().
  *
  * This function deletes data from the database for a single field on
- * an object.
+ * an entity.
  */
-function field_sql_storage_field_storage_purge($obj_type, $object, $field, $instance) {
-  list($id, $vid, $bundle) = entity_extract_ids($obj_type, $object);
-  $etid = _field_sql_storage_etid($obj_type);
+function field_sql_storage_field_storage_purge($entity_type, $entity, $field, $instance) {
+  list($id, $vid, $bundle) = entity_extract_ids($entity_type, $entity);
+  $etid = _field_sql_storage_etid($entity_type);
 
   $table_name = _field_sql_storage_tablename($field);
   $revision_name = _field_sql_storage_revision_tablename($field);
@@ -473,123 +482,114 @@ function field_sql_storage_field_storage_purge($obj_type, $object, $field, $inst
 /**
  * Implements hook_field_storage_query().
  */
-function field_sql_storage_field_storage_query($field_id, $conditions, $options) {
-  $load_current = $options['age'] == FIELD_LOAD_CURRENT;
-
-  $field = field_info_field_by_id($field_id);
-  $field_name = $field['field_name'];
-  $table = $load_current ? _field_sql_storage_tablename($field) : _field_sql_storage_revision_tablename($field);
-  $field_columns = array_keys($field['columns']);
-
-  // Build the query.
-  $query = db_select($table, 't');
-  $query->join('field_config_entity_type', 'e', 't.etid = e.etid');
-
-  // Add conditions.
-  foreach ($conditions as $condition) {
-    // A condition is either a (column, value, operator) triple, or a
-    // (column, value) pair with implied operator.
-    @list($column, $value, $operator) = $condition;
-    // Translate operator and value if needed.
-    switch ($operator) {
-      case 'STARTS_WITH':
-        $operator = 'LIKE';
-        $value .= '%';
-        break;
-
-      case 'ENDS_WITH':
-        $operator = 'LIKE';
-        $value = "$value%";
-        break;
-
-      case 'CONTAINS':
-        $operator = 'LIKE';
-        $value = "%$value%";
-        break;
+function field_sql_storage_field_storage_query(EntityFieldQuery $query) {
+  $groups = array();
+  if ($query->age == FIELD_LOAD_CURRENT) {
+    $tablename_function = '_field_sql_storage_tablename';
+    $id_key = 'entity_id';
+  }
+  else {
+    $tablename_function = '_field_sql_storage_revision_tablename';
+    $id_key = 'revision_id';
+  }
+  $table_aliases = array();
+  // Add tables for the fields used.
+  foreach ($query->fields as $key => $field) {
+    $tablename = $tablename_function($field);
+    // Every field needs a new table.
+    $table_alias = $tablename . $key;
+    $table_aliases[$key] = $table_alias;
+    if ($key) {
+      $select_query->join($tablename, $table_alias, "$table_alias.etid = $field_base_table.etid AND $table_alias.$id_key = $field_base_table.$id_key");
     }
-    // Translate field columns into prefixed db columns.
-    if (in_array($column, $field_columns)) {
-      $column = _field_sql_storage_columnname($field_name, $column);
+    else {
+      $select_query = db_select($tablename, $table_alias);
+      $select_query->fields($table_alias, array('entity_id', 'revision_id', 'bundle'));
+      // As only a numeric ID is stored instead of the entity type add the
+      // field_config_entity_type table to resolve the etid to a more readable
+      // name.
+      $select_query->join('field_config_entity_type', 'fcet', "fcet.etid = $table_alias.etid");
+      $select_query->addField('fcet', 'type', 'entity_type');
+      $field_base_table = $table_alias;
     }
-    // Translate entity types into numeric ids. Expressing the condition on the
-    // local 'etid' column rather than the JOINed 'type' column avoids a
-    // filesort.
-    if ($column == 'type') {
-      $column = 't.etid';
-      if (is_array($value)) {
-        foreach (array_keys($value) as $key) {
-          $value[$key] = _field_sql_storage_etid($value[$key]);
+    if ($field['cardinality'] != 1) {
+      $select_query->distinct();
+    }
+  }
+
+  // Add field conditions.
+  foreach ($query->fieldConditions as $key => $condition) {
+    $table_alias = $table_aliases[$key];
+    $field = $condition['field'];
+    // Add the specified condition.
+    $sql_field = "$table_alias." . _field_sql_storage_columnname($field['field_name'], $condition['column']);
+    $query->addCondition($select_query, $sql_field, $condition);
+    // Add delta / language group conditions.
+    foreach (array('delta', 'language') as $column) {
+      if (isset($condition[$column . '_group'])) {
+        $group_name = $condition[$column . '_group'];
+        if (!isset($groups[$column][$group_name])) {
+          $groups[$column][$group_name] = $table_alias;
+        }
+        else {
+          $select_query->where("$table_alias.$column = " . $groups[$column][$group_name] . ".$column");
         }
       }
-      else {
-        $value = _field_sql_storage_etid($value);
-      }
     }
-    // Track condition on 'deleted'.
-    if ($column == 'deleted') {
-      $condition_deleted = TRUE;
-    }
-
-    $query->condition($column, $value, $operator);
   }
 
-  // Exclude deleted data unless we have a condition on it.
-  if (!isset($condition_deleted)) {
-    $query->condition('deleted', 0);
+  // Add field orders.
+  foreach ($query->fieldOrder as $key => $order) {
+    $table_alias = $table_aliases[$key];
+    $field = $order['field'];
+    $sql_field = "$table_alias." . _field_sql_storage_columnname($field['field_name'], $order['column']);
+    $select_query->orderBy($sql_field, $order['direction']);
   }
 
-  // For a count query, return the count now.
-  if ($options['count']) {
-    $query->addExpression('COUNT(DISTINCT e.type,t.entity_id,t.revision_id)');
-    return $query->execute()->fetchField();
+  if (isset($query->deleted)) {
+    $select_query->condition("$field_base_table.deleted", (int) $query->deleted);
   }
-
-  // For a data query, add fields.
-  $query
-    ->fields('t', array('bundle', 'entity_id', 'revision_id'))
-    ->fields('e', array('type'))
-    // We need to ensure objects arrive in a consistent order for the
-    // range() operation to work.
-    ->orderBy('t.etid')
-    ->orderBy('t.entity_id');
-
-  // Initialize results array
-  $return = array();
-
-  // Getting $count objects possibly requires reading more than $count rows
-  // since fields with multiple values span over several rows. We query for
-  // batches of $count rows until we've either read $count objects or received
-  // less rows than asked for.
-  $obj_count = 0;
-  do {
-    if ($options['limit'] != FIELD_QUERY_NO_LIMIT) {
-      $query->range($options['cursor'], $options['limit']);
+  if ($query->propertyConditions || $query->propertyOrder) {
+    if (empty($query->entityConditions['entity_type']['value'])) {
+      throw new EntityFieldQueryException('Property conditions and orders must have an entity type defined.');
     }
-    $results = $query->execute();
-
-    $row_count = 0;
-    foreach ($results as $row) {
-      $row_count++;
-      $options['cursor']++;
-      // If querying all revisions and the entity type has revisions, we need
-      // to key the results by revision_ids.
-      $entity_type = entity_get_info($row->type);
-      $id = ($load_current || empty($entity_type['object keys']['revision'])) ? $row->entity_id : $row->revision_id;
-
-      if (!isset($return[$row->type][$id])) {
-        $return[$row->type][$id] = entity_create_stub_entity($row->type, array($row->entity_id, $row->revision_id, $row->bundle));
-        $obj_count++;
-      }
-    }
-  } while ($options['limit'] != FIELD_QUERY_NO_LIMIT && $row_count == $options['limit'] && $obj_count < $options['limit']);
-
-  // The query is complete when the last batch returns less rows than asked
-  // for.
-  if ($row_count < $options['limit']) {
-    $options['cursor'] = FIELD_QUERY_COMPLETE;
+    $entity_type = $query->entityConditions['entity_type']['value'];
+    $entity_base_table = _field_sql_storage_query_join_entity($select_query, $entity_type, $field_base_table);
+    $query->entityConditions['entity_type']['operator'] = '=';
+    $query->processProperty($select_query, $entity_base_table);
   }
+  foreach ($query->entityConditions as $key => $condition) {
+    $sql_field = $key == 'entity_type' ? 'fcet.type' : "$field_base_table.$key";
+    $query->addCondition($select_query, $sql_field, $condition);
+  }
+  foreach ($query->entityOrder as $key => $direction) {
+    $sql_field = $key == 'entity_type' ? 'fcet.type' : "$field_base_table.$key";
+    $query->orderBy($sql_field, $direction);
+  }
+  return $query->finishQuery($select_query, $id_key);
+}
 
-  return $return;
+/**
+ * Adds the base entity table to a field query object.
+ *
+ * @param SelectQuery $select_query
+ *   A SelectQuery containing at least one table as specified by
+ *   _field_sql_storage_tablename().
+ * @param $entity_type
+ *   The entity type for which the base table should be joined.
+ * @param $field_base_table
+ *   Name of a table in $select_query. As only INNER JOINs are used, it does
+ *   not matter which.
+ *
+ * @return
+ *   The name of the entity base table joined in.
+ */
+function _field_sql_storage_query_join_entity(SelectQuery $select_query, $entity_type, $field_base_table) {
+  $entity_info = entity_get_info($entity_type);
+  $entity_base_table = $entity_info['base table'];
+  $entity_field = $entity_info['entity keys']['id'];
+  $select_query->join($entity_base_table, $entity_base_table, "$entity_base_table.$entity_field = $field_base_table.entity_id");
+  return $entity_base_table;
 }
 
 /**
@@ -597,9 +597,9 @@ function field_sql_storage_field_storage_query($field_id, $conditions, $options)
  *
  * This function actually deletes the data from the database.
  */
-function field_sql_storage_field_storage_delete_revision($obj_type, $object, $fields) {
-  list($id, $vid, $bundle) = entity_extract_ids($obj_type, $object);
-  $etid = _field_sql_storage_etid($obj_type);
+function field_sql_storage_field_storage_delete_revision($entity_type, $entity, $fields) {
+  list($id, $vid, $bundle) = entity_extract_ids($entity_type, $entity);
+  $etid = _field_sql_storage_etid($entity_type);
 
   if (isset($vid)) {
     foreach ($fields as $field_id) {
@@ -620,7 +620,7 @@ function field_sql_storage_field_storage_delete_revision($obj_type, $object, $fi
  * This function simply marks for deletion all data associated with the field.
  */
 function field_sql_storage_field_storage_delete_instance($instance) {
-  $etid = _field_sql_storage_etid($instance['object_type']);
+  $etid = _field_sql_storage_etid($instance['entity_type']);
   $field = field_info_field($instance['field_name']);
   $table_name = _field_sql_storage_tablename($field);
   $revision_name = _field_sql_storage_revision_tablename($field);
@@ -639,10 +639,10 @@ function field_sql_storage_field_storage_delete_instance($instance) {
 /**
  * Implements hook_field_attach_rename_bundle().
  */
-function field_sql_storage_field_attach_rename_bundle($obj_type, $bundle_old, $bundle_new) {
-  $etid = _field_sql_storage_etid($obj_type);
+function field_sql_storage_field_attach_rename_bundle($entity_type, $bundle_old, $bundle_new) {
+  $etid = _field_sql_storage_etid($entity_type);
   // We need to account for deleted or inactive fields and instances.
-  $instances = field_read_instances(array('object_type' => $obj_type, 'bundle' => $bundle_new), array('include_deleted' => TRUE, 'include_inactive' => TRUE));
+  $instances = field_read_instances(array('entity_type' => $entity_type, 'bundle' => $bundle_new), array('include_deleted' => TRUE, 'include_inactive' => TRUE));
   foreach ($instances as $instance) {
     $field = field_info_field_by_id($instance['field_id']);
     if ($field['storage']['type'] == 'field_sql_storage') {
@@ -678,7 +678,7 @@ function field_sql_storage_field_storage_purge_field($field) {
 /**
  * Implements hook_field_storage_details().
  */
-function field_sql_storage_field_storage_details($field, $instance) {
+function field_sql_storage_field_storage_details($field) {
   $details = array();
 
   // Add field columns.

@@ -1,5 +1,5 @@
 <?php
-// $Id: cache.inc,v 1.42 2009/12/04 16:31:04 dries Exp $
+// $Id: cache.inc,v 1.48 2010/05/18 18:26:30 dries Exp $
 
 /**
  * Get the cache object for a cache bin.
@@ -18,7 +18,7 @@
 function _cache_get_object($bin) {
   // We do not use drupal_static() here because we do not want to change the
   // storage of a cache bin mid-request.
-  static $cache_objects, $default_class;
+  static $cache_objects;
   if (!isset($cache_objects[$bin])) {
     $class = variable_get('cache_class_' . $bin);
     if (!isset($class)) {
@@ -30,9 +30,10 @@ function _cache_get_object($bin) {
 }
 
 /**
- * Return data from the persistent cache. Data may be stored as either plain
- * text or as serialized data. cache_get will automatically return
- * unserialized objects and arrays.
+ * Return data from the persistent cache
+ *
+ * Data may be stored as either plain text or as serialized data. cache_get
+ * will automatically return unserialized objects and arrays.
  *
  * @param $cid
  *   The cache ID of the data to retrieve.
@@ -42,7 +43,8 @@ function _cache_get_object($bin) {
  *   'cache_menu', 'cache_page', 'cache_path', 'cache_update' or 'cache' for
  *   the default cache.
  *
- * @return The cache or FALSE on failure.
+ * @return
+ *   The cache or FALSE on failure.
  */
 function cache_get($cid, $bin = 'cache') {
   return _cache_get_object($bin)->get($cid);
@@ -107,10 +109,10 @@ function cache_get_multiple(array &$cids, $bin = 'cache') {
  *
  * - smaller bins mean smaller database tables and allow for faster selects and
  *   inserts
- * - we try to put fast changing cache items and rather static ones into different
- *   bins. The effect is that only the fast changing bins will need a lot of
- *   writes to disk. The more static bins will also be better cacheable with
- *   MySQL's query cache.
+ * - we try to put fast changing cache items and rather static ones into
+ *   different bins. The effect is that only the fast changing bins will need a
+ *   lot of writes to disk. The more static bins will also be better cacheable
+ *   with MySQL's query cache.
  *
  * @param $cid
  *   The cache ID of the data to store.
@@ -131,11 +133,9 @@ function cache_get_multiple(array &$cids, $bin = 'cache') {
  *     general cache wipe.
  *   - A Unix timestamp: Indicates that the item should be kept at least until
  *     the given time, after which it behaves like CACHE_TEMPORARY.
- * @param $headers
- *   A string containing HTTP header information for cached pages.
  */
-function cache_set($cid, $data, $bin = 'cache', $expire = CACHE_PERMANENT, array $headers = NULL) {
-  return _cache_get_object($bin)->set($cid, $data, $expire, $headers);
+function cache_set($cid, $data, $bin = 'cache', $expire = CACHE_PERMANENT) {
+  return _cache_get_object($bin)->set($cid, $data, $expire);
 }
 
 /**
@@ -188,21 +188,22 @@ function cache_is_empty($bin) {
 /**
  * Interface for cache implementations.
  *
- * All cache implementations have to implement this interface. DrupalDatabaseCache
- * provides the default implementation, which can be consulted as an example.
+ * All cache implementations have to implement this interface.
+ * DrupalDatabaseCache provides the default implementation, which can be
+ * consulted as an example.
  *
  * To make Drupal use your implementation for a certain cache bin, you have to
- * set a variable with the name of the cache bin as its key and the name of your
- * class as its value. For example, if your implementation of DrupalCacheInterface
- * was called MyCustomCache, the following line would make Drupal use it for the
- * 'cache_page' bin:
+ * set a variable with the name of the cache bin as its key and the name of
+ * your class as its value. For example, if your implementation of
+ * DrupalCacheInterface was called MyCustomCache, the following line would make
+ * Drupal use it for the 'cache_page' bin:
  * @code
  *  variable_set('cache_page', 'MyCustomCache');
  * @endcode
  *
- * Additionally, you can register your cache implementation to be used by default
- * for all cache bins by setting the variable 'cache_default_class' to the name
- * of your implementation of the DrupalCacheInterface, e.g.
+ * Additionally, you can register your cache implementation to be used by
+ * default for all cache bins by setting the variable 'cache_default_class' to
+ * the name of your implementation of the DrupalCacheInterface, e.g.
  * @code
  *  variable_set('cache_default_class', 'MyCustomCache');
  * @endcode
@@ -226,7 +227,8 @@ interface DrupalCacheInterface {
    *
    * @param $cid
    *   The cache ID of the data to retrieve.
-   * @return The cache or FALSE on failure.
+   * @return
+   *   The cache or FALSE on failure.
    */
   function get($cid);
 
@@ -259,10 +261,8 @@ interface DrupalCacheInterface {
    *     general cache wipe.
    *   - A Unix timestamp: Indicates that the item should be kept at least until
    *     the given time, after which it behaves like CACHE_TEMPORARY.
-   * @param $headers
-   *   A string containing HTTP header information for cached pages.
    */
-  function set($cid, $data, $expire = CACHE_PERMANENT, array $headers = NULL);
+  function set($cid, $data, $expire = CACHE_PERMANENT);
 
 
   /**
@@ -305,29 +305,42 @@ class DrupalDatabaseCache implements DrupalCacheInterface {
   }
 
   function get($cid) {
-    // Garbage collection necessary when enforcing a minimum cache lifetime.
-    $this->garbageCollection($this->bin);
-    $cache = db_query("SELECT data, created, headers, expire, serialized FROM {" . $this->bin . "} WHERE cid = :cid", array(':cid' => $cid))->fetchObject();
-
-    return $this->prepareItem($cache);
+    try {
+      // Garbage collection necessary when enforcing a minimum cache lifetime.
+      $this->garbageCollection($this->bin);
+      $cache = db_query("SELECT data, created, expire, serialized FROM {" . $this->bin . "} WHERE cid = :cid", array(':cid' => $cid))->fetchObject();
+      return $this->prepareItem($cache);
+    }
+    catch (Exception $e) {
+      // If the database is never going to be available, cache requests should
+      // return FALSE in order to allow exception handling to occur.
+      return FALSE;
+    }
   }
 
   function getMultiple(&$cids) {
-    // Garbage collection necessary when enforcing a minimum cache lifetime.
-    $this->garbageCollection($this->bin);
-    $query = db_select($this->bin);
-    $query->fields($this->bin, array('cid', 'data', 'created', 'headers', 'expire', 'serialized'));
-    $query->condition($this->bin . '.cid', $cids, 'IN');
-    $result = $query->execute();
-    $cache = array();
-    foreach ($result as $item) {
-      $item = $this->prepareItem($item);
-      if ($item) {
-        $cache[$item->cid] = $item;
+    try {
+      // Garbage collection necessary when enforcing a minimum cache lifetime.
+      $this->garbageCollection($this->bin);
+      $query = db_select($this->bin);
+      $query->fields($this->bin, array('cid', 'data', 'created', 'expire', 'serialized'));
+      $query->condition($this->bin . '.cid', $cids, 'IN');
+      $result = $query->execute();
+      $cache = array();
+      foreach ($result as $item) {
+        $item = $this->prepareItem($item);
+        if ($item) {
+          $cache[$item->cid] = $item;
+        }
       }
+      $cids = array_diff($cids, array_keys($cache));
+      return $cache;
     }
-    $cids = array_diff($cids, array_keys($cache));
-    return $cache;
+    catch (Exception $e) {
+      // If the database is never going to be available, cache requests should
+      // return FALSE in order to allow exception handling to occur.
+      return array();
+    }
   }
 
   /**
@@ -370,13 +383,6 @@ class DrupalDatabaseCache implements DrupalCacheInterface {
     if (!isset($cache->data)) {
       return FALSE;
     }
-    // If the data is permanent or we are not enforcing a minimum cache lifetime
-    // always return the cached data.
-    if ($cache->expire == CACHE_PERMANENT || !variable_get('cache_lifetime', 0)) {
-      if ($cache->serialized) {
-        $cache->data = unserialize($cache->data);
-      }
-    }
     // If enforcing a minimum cache lifetime, validate that the data is
     // currently valid for this user before we return it by making sure the cache
     // entry was created before the timestamp in the current session's cache
@@ -388,19 +394,18 @@ class DrupalDatabaseCache implements DrupalCacheInterface {
       return FALSE;
     }
 
-    if (isset($cache->headers)) {
-      $cache->headers = unserialize($cache->headers);
+    if ($cache->serialized) {
+      $cache->data = unserialize($cache->data);
     }
 
     return $cache;
   }
 
-  function set($cid, $data, $expire = CACHE_PERMANENT, array $headers = NULL) {
+  function set($cid, $data, $expire = CACHE_PERMANENT) {
     $fields = array(
       'serialized' => 0,
       'created' => REQUEST_TIME,
       'expire' => $expire,
-      'headers' => isset($headers) ? serialize($headers) : NULL,
     );
     if (!is_string($data)) {
       $fields['data'] = serialize($data);
@@ -411,10 +416,15 @@ class DrupalDatabaseCache implements DrupalCacheInterface {
       $fields['serialized'] = 0;
     }
 
-    db_merge($this->bin)
-      ->key(array('cid' => $cid))
-      ->fields($fields)
-      ->execute();
+    try {
+      db_merge($this->bin)
+        ->key(array('cid' => $cid))
+        ->fields($fields)
+        ->execute();
+    }
+    catch (Exception $e) {
+      // The database may not be available, so we'll ignore cache_set requests.
+    }
   }
 
   function clear($cid = NULL, $wildcard = FALSE) {
@@ -458,7 +468,7 @@ class DrupalDatabaseCache implements DrupalCacheInterface {
         }
         else {
           db_delete($this->bin)
-            ->condition('cid', $cid . '%', 'LIKE')
+            ->condition('cid', db_like($cid) . '%', 'LIKE')
             ->execute();
         }
       }

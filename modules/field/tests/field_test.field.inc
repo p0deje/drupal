@@ -1,5 +1,5 @@
 <?php
-// $Id: field_test.field.inc,v 1.5 2009/12/13 12:41:08 dries Exp $
+// $Id: field_test.field.inc,v 1.11 2010/06/14 15:41:02 dries Exp $
 
 /**
  * @file
@@ -12,7 +12,7 @@
 function field_test_field_info() {
   return array(
     'test_field' => array(
-      'label' => t('Test Field'),
+      'label' => t('Test field'),
       'description' => t('Dummy field type used for tests.'),
       'settings' => array(
         'test_field_setting' => 'dummy test string',
@@ -26,6 +26,23 @@ function field_test_field_info() {
       'default_widget' => 'test_field_widget',
       'default_formatter' => 'field_test_default',
     ),
+    'shape' => array(
+      'label' => t('Shape'),
+      'description' => t('Another dummy field type.'),
+      'settings' => array(),
+      'instance_settings' => array(),
+      'default_widget' => 'test_field_widget',
+      'default_formatter' => 'field_test_default',
+    ),
+    'hidden_test_field' => array(
+      'no_ui' => TRUE,
+      'label' => t('Hidden from UI test field'),
+      'description' => t('Dummy hidden field type used for tests.'),
+      'settings' => array(),
+      'instance_settings' => array(),
+      'default_widget' => 'test_field_widget',
+      'default_formatter' => 'field_test_default',
+    ),
   );
 }
 
@@ -33,18 +50,36 @@ function field_test_field_info() {
  * Implements hook_field_schema().
  */
 function field_test_field_schema($field) {
-  return array(
-    'columns' => array(
-      'value' => array(
-        'type' => 'int',
-        'size' => 'tiny',
-        'not null' => FALSE,
+  if ($field['type'] == 'test_field') {
+    return array(
+      'columns' => array(
+        'value' => array(
+          'type' => 'int',
+          'size' => 'medium',
+          'not null' => FALSE,
+        ),
       ),
-    ),
-    'indexes' => array(
-      'value' => array('value'),
-    ),
-  );
+      'indexes' => array(
+        'value' => array('value'),
+      ),
+    );
+  }
+  else {
+    return array(
+      'columns' => array(
+        'shape' => array(
+          'type' => 'varchar',
+          'length' => 32,
+          'not null' => FALSE,
+        ),
+        'color' => array(
+          'type' => 'varchar',
+          'length' => 32,
+          'not null' => FALSE,
+        ),
+      ),
+    );
+  }
 }
 
 /**
@@ -59,7 +94,7 @@ function field_test_field_update_forbid($field, $prior_field, $has_data) {
 /**
  * Implements hook_field_load().
  */
-function field_test_field_load($obj_type, $objects, $field, $instances, $langcode, &$items, $age) {
+function field_test_field_load($entity_type, $entities, $field, $instances, $langcode, &$items, $age) {
   foreach ($items as $id => $item) {
     // To keep the test non-intrusive, only act for instances with the
     // test_hook_field_load setting explicitly set to TRUE.
@@ -80,7 +115,7 @@ function field_test_field_load($obj_type, $objects, $field, $instances, $langcod
  * Possible error codes:
  * - 'field_test_invalid': The value is invalid.
  */
-function field_test_field_validate($obj_type, $object, $field, $instance, $langcode, $items, &$errors) {
+function field_test_field_validate($entity_type, $entity, $field, $instance, $langcode, $items, &$errors) {
   foreach ($items as $delta => $item) {
     if ($item['value'] == -1) {
       $errors[$field['field_name']][$langcode][$delta][] = array(
@@ -139,7 +174,7 @@ function field_test_field_widget_info() {
   return array(
     'test_field_widget' => array(
       'label' => t('Test field'),
-      'field types' => array('test_field'),
+      'field types' => array('test_field', 'hidden_test_field'),
       'settings' => array('test_widget_setting' => 'dummy test string'),
     ),
     'test_field_widget_multiple' => array(
@@ -154,9 +189,9 @@ function field_test_field_widget_info() {
 }
 
 /**
- * Implements hook_field_widget().
+ * Implements hook_field_widget_form().
  */
-function field_test_field_widget(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+function field_test_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
   switch ($instance['widget']['type']) {
     case 'test_field_widget':
       $element += array(
@@ -194,7 +229,7 @@ function field_test_widget_multiple_validate($element, &$form_state) {
 /**
  * Implements hook_field_widget_error().
  */
-function field_test_field_widget_error($element, $error) {
+function field_test_field_widget_error($element, $error, $form, &$form_state) {
   // @todo No easy way to differenciate widget types, we should receive it as a
   // parameter.
   if (isset($element['value'])) {
@@ -248,7 +283,7 @@ function field_test_field_formatter_info() {
         'test_formatter_setting_multiple' => 'dummy test string',
       ),
     ),
-    'field_test_needs_additional_data' => array(
+    'field_test_with_prepare_view' => array(
       'label' => t('Tests hook_field_formatter_prepare_view()'),
       'field types' => array('test_field'),
       'settings' => array(
@@ -261,11 +296,11 @@ function field_test_field_formatter_info() {
 /**
  * Implements hook_field_formatter_prepare_view().
  */
-function field_test_field_formatter_prepare_view($obj_type, $objects, $field, $instances, $langcode, &$items, $displays) {
+function field_test_field_formatter_prepare_view($entity_type, $entities, $field, $instances, $langcode, &$items, $displays) {
   foreach ($items as $id => $item) {
     // To keep the test non-intrusive, only act on the
-    // 'field_test_needs_additional_data' formatter.
-    if ($displays[$id]['type'] == 'field_test_needs_additional_data') {
+    // 'field_test_with_prepare_view' formatter.
+    if ($displays[$id]['type'] == 'field_test_with_prepare_view') {
       foreach ($item as $delta => $value) {
         // Don't add anything on empty values.
         if ($value) {
@@ -277,9 +312,9 @@ function field_test_field_formatter_prepare_view($obj_type, $objects, $field, $i
 }
 
 /**
- * Implements hook_field_formatter().
+ * Implements hook_field_formatter_view().
  */
-function field_test_field_formatter($object_type, $object, $field, $instance, $langcode, $items, $display) {
+function field_test_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
   $element = array();
   $settings = $display['settings'];
 
@@ -290,7 +325,7 @@ function field_test_field_formatter($object_type, $object, $field, $instance, $l
       }
       break;
 
-    case 'field_test_needs_additional_data':
+    case 'field_test_with_prepare_view':
       foreach ($items as $delta => $item) {
         $element[$delta] = array('#markup' => $settings['test_formatter_setting_additional'] . '|' . $item['value'] . '|' . $item['additional_formatter_value']);
       }
@@ -311,14 +346,14 @@ function field_test_field_formatter($object_type, $object, $field, $instance, $l
 /**
  * Sample 'default value' callback.
  */
-function field_test_default_value($obj_type, $object, $field, $instance) {
+function field_test_default_value($entity_type, $entity, $field, $instance) {
   return array(array('value' => 99));
 }
 
 /**
  * Implements hook_field_access().
  */
-function field_test_field_access($op, $field, $obj_type, $object, $account) {
+function field_test_field_access($op, $field, $entity_type, $entity, $account) {
   if ($field['field_name'] == "field_no_{$op}_access") {
     return FALSE;
   }

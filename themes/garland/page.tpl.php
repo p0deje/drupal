@@ -1,5 +1,5 @@
 <?php
-// $Id: page.tpl.php,v 1.39 2009/11/22 23:44:09 webchick Exp $
+// $Id: page.tpl.php,v 1.42 2010/01/30 07:59:26 dries Exp $
 ?>
   <?php print render($page['header']); ?>
 
@@ -15,8 +15,8 @@
               <img src="<?php print $logo ?>" alt="<?php print $site_name_and_slogan ?>" id="logo" />
             <?php endif; ?>
             <?php print $site_html ?>
-            </a></strong></div>           
-          <?php else: /* Use h1 when the content title is empty */ ?>  
+            </a></strong></div>
+          <?php else: /* Use h1 when the content title is empty */ ?>
             <h1 id="branding"><a href="<?php print $front_page ?>" title="<?php print $site_name_and_slogan ?>">
             <?php if ($logo): ?>
               <img src="<?php print $logo ?>" alt="<?php print $site_name_and_slogan ?>" id="logo" />
@@ -40,9 +40,13 @@
       <div id="center"><div id="squeeze"><div class="right-corner"><div class="left-corner">
           <?php print $breadcrumb; ?>
           <?php if ($page['highlight']): ?><div id="highlight"><?php render($page['highlight']); ?></div><?php endif; ?>
-          <a name="main-content" id="main-content"></a>
+          <a id="main-content"></a>
           <?php if ($tabs): ?><div id="tabs-wrapper" class="clearfix"><?php endif; ?>
-          <?php if ($title): ?><h1<?php print $tabs ? ' class="with-tabs"' : '' ?>><?php print $title ?></h1><?php endif; ?>
+          <?php print render($title_prefix); ?>
+          <?php if ($title): ?>
+            <h1<?php print $tabs ? ' class="with-tabs"' : '' ?>><?php print $title ?></h1>
+          <?php endif; ?>
+          <?php print render($title_suffix); ?>
           <?php if ($tabs): ?><ul class="tabs primary"><?php print render($tabs) ?></ul></div><?php endif; ?>
           <?php if ($tabs2): ?><ul class="tabs secondary"><?php print render($tabs2) ?></ul><?php endif; ?>
           <?php print $messages; ?>

@@ -1,5 +1,5 @@
 <?php
-// $Id: database.inc,v 1.20 2009/09/18 00:04:21 webchick Exp $
+// $Id: database.inc,v 1.32 2010/06/01 09:24:09 dries Exp $
 
 /**
  * @file
@@ -18,6 +18,23 @@ include_once DRUPAL_ROOT . '/includes/database/prefetch.inc';
  */
 class DatabaseConnection_sqlite extends DatabaseConnection {
 
+  /**
+   * Whether this database connection supports savepoints.
+   *
+   * Version of sqlite lower then 3.6.8 can't use savepoints.
+   * See http://www.sqlite.org/releaselog/3_6_8.html
+   *
+   * @var bool
+   */
+  protected $savepointSupport = FALSE;
+
+  /**
+   * Whether or not the active transaction (if any) will be rolled back.
+   *
+   * @var boolean
+   */
+  protected $willRollback;
+
   public function __construct(array $connection_options = array()) {
     // We don't need a specific PDOStatement class here, we simulate it below.
     $this->statementClass = NULL;
@@ -25,12 +42,18 @@ class DatabaseConnection_sqlite extends DatabaseConnection {
     // This driver defaults to transaction support, except if explicitly passed FALSE.
     $this->transactionSupport = !isset($connection_options['transactions']) || $connection_options['transactions'] !== FALSE;
 
+    $this->connectionOptions = $connection_options;
+
     parent::__construct('sqlite:' . $connection_options['database'], '', '', array(
       // Force column names to lower case.
       PDO::ATTR_CASE => PDO::CASE_LOWER,
     ));
 
     $this->exec('PRAGMA encoding="UTF-8"');
+
+    // Detect support for SAVEPOINT.
+    $version = $this->query('SELECT sqlite_version()')->fetchField();
+    $this->savepointSupport = (version_compare($version, '3.6.8') >= 0);
 
     // Create functions needed by SQLite.
     $this->sqliteCreateFunction('if', array($this, 'sqlFunctionIf'));
@@ -136,7 +159,7 @@ class DatabaseConnection_sqlite extends DatabaseConnection {
   }
 
   public function queryRange($query, $from, $count, array $args = array(), array $options = array()) {
-    return $this->query($query . ' LIMIT ' . $from . ', ' . $count, $args, $options);
+    return $this->query($query . ' LIMIT ' . (int) $from . ', ' . (int) $count, $args, $options);
   }
 
   public function queryTemporary($query, array $args = array(), array $options = array()) {
@@ -155,15 +178,120 @@ class DatabaseConnection_sqlite extends DatabaseConnection {
 
   public function mapConditionOperator($operator) {
     // We don't want to override any of the defaults.
-    return NULL;
+    static $specials = array(
+      'LIKE' => array('postfix' => " ESCAPE '\\'"),
+      'NOT LIKE' => array('postfix' => " ESCAPE '\\'"),
+    );
+    return isset($specials[$operator]) ? $specials[$operator] : NULL;
   }
 
-  public function prepareQuery($query, $cache = TRUE) {
-    // It makes no sense to use the static prepared statement cache here,
-    // because all the work in our implementation is done in
-    // DatabaseStatement_sqlite::execute() and cannot be cached.
+  public function prepareQuery($query) {
     return $this->prepare($this->prefixTables($query));
   }
+
+  public function nextId($existing_id = 0) {
+    $transaction = $this->startTransaction();
+    // We can safely use literal queries here instead of the slower query
+    // builder because if a given database breaks here then it can simply
+    // override nextId. However, this is unlikely as we deal with short strings
+    // and integers and no known databases require special handling for those
+    // simple cases. If another transaction wants to write the same row, it will
+    // wait until this transaction commits.
+    $stmt = $this->query('UPDATE {sequences} SET value = GREATEST(value, :existing_id) + 1', array(
+      ':existing_id' => $existing_id,
+    ));
+    if (!$stmt->rowCount()) {
+      $this->query('INSERT INTO {sequences} (value) VALUES (:existing_id + 1)', array(
+        ':existing_id' => $existing_id,
+      ));
+    }
+    // The transaction gets committed when the transaction object gets destroyed
+    // because it gets out of scope.
+    return (int) $this->query('SELECT value FROM {sequences}')->fetchField();
+  }
+
+  public function rollback($savepoint_name = 'drupal_transaction') {
+    if ($this->savepointSupport) {
+      return parent::rollBack($savepoint_name, $type, $message, $variables, $severity, $link);
+    }
+
+    if (!$this->inTransaction()) {
+      throw new DatabaseTransactionNoActiveException();
+    }
+    // A previous rollback to an earlier savepoint may mean that the savepoint
+    // in question has already been rolled back.
+    if (!in_array($savepoint_name, $this->transactionLayers)) {
+      return;
+    }
+
+    // We need to find the point we're rolling back to, all other savepoints
+    // before are no longer needed.
+    while ($savepoint = array_pop($this->transactionLayers)) {
+      if ($savepoint == $savepoint_name) {
+        // Mark whole stack of transactions as needed roll back.
+        $this->willRollback = TRUE;
+        // If it is the last the transaction in the stack, then it is not a
+        // savepoint, it is the transaction itself so we will need to roll back
+        // the transaction rather than a savepoint.
+        if (empty($this->transactionLayers)) {
+          break;
+        }
+        return;
+      }
+    }
+    if ($this->supportsTransactions()) {
+      PDO::rollBack();
+    }
+  }
+
+  public function pushTransaction($name) {
+    if ($this->savepointSupport) {
+      return parent::pushTransaction($name);
+    }
+    if (!$this->supportsTransactions()) {
+      return;
+    }
+    if (isset($this->transactionLayers[$name])) {
+      throw new DatabaseTransactionNameNonUniqueException($name . " is already in use.");
+    }
+    if (!$this->inTransaction()) {
+      PDO::beginTransaction();
+    }
+    $this->transactionLayers[$name] = $name;
+  }
+
+  public function popTransaction($name) {
+    if ($this->savepointSupport) {
+      return parent::popTransaction($name);
+    }
+    if (!$this->supportsTransactions()) {
+      return;
+    }
+    if (!$this->inTransaction()) {
+      throw new DatabaseTransactionNoActiveException();
+    }
+
+    // Commit everything since SAVEPOINT $name.
+    while($savepoint = array_pop($this->transactionLayers)) {
+      if ($savepoint != $name) continue;
+
+      // If there are no more layers left then we should commit or rollback.
+      if (empty($this->transactionLayers)) {
+        // If there was any rollback() we should roll back whole transaction.
+        if ($this->willRollback) {
+          $this->willRollback = FALSE;
+          PDO::rollBack();
+        }
+        elseif (!PDO::commit()) {
+          throw new DatabaseTransactionCommitFailedException();
+        }
+      }
+      else {
+        break;
+      }
+    }
+  }
+
 }
 
 /**
@@ -194,7 +322,12 @@ class DatabaseStatement_sqlite extends DatabaseStatementPrefetch implements Iter
         $count = 0;
         $new_args = array();
         foreach ($args as $value) {
-          if (is_numeric($value)) {
+          if (is_float($value) || is_int($value)) {
+            if (is_float($value)) {
+              // Force the conversion to float so as not to loose precision
+              // in the automatic cast.
+              $value = sprintf('%F', $value);
+            }
             $query = substr_replace($query, $value, strpos($query, '?'), 1);
           }
           else {
@@ -208,8 +341,14 @@ class DatabaseStatement_sqlite extends DatabaseStatementPrefetch implements Iter
       else {
         // Else, this is using named placeholders.
         foreach ($args as $placeholder => $value) {
-          if (is_numeric($value)) {
-            // We will remove this placeholder from the query and PDO throws an
+          if (is_float($value) || is_int($value)) {
+            if (is_float($value)) {
+              // Force the conversion to float so as not to loose precision
+              // in the automatic cast.
+              $value = sprintf('%F', $value);
+            }
+
+            // We will remove this placeholder from the query as PDO throws an
             // exception if the number of placeholders in the query and the
             // arguments does not match.
             unset($args[$placeholder]);

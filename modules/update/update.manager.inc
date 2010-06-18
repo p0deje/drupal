@@ -1,5 +1,5 @@
 <?php
-// $Id: update.manager.inc,v 1.11 2009/10/29 07:11:50 webchick Exp $
+// $Id: update.manager.inc,v 1.23 2010/05/26 11:50:58 dries Exp $
 
 /**
  * @file
@@ -27,7 +27,7 @@
  * extracting the archive, and verifying the contents. If there are any
  * errors, the user is redirected back to the first page with the error
  * messages. If all downloads were extacted and verified, the user is instead
- * redirected to admin/update/confirm, a landing page which reminds them to
+ * redirected to admin/update/ready, a landing page which reminds them to
  * backup their database and asks if they want to put the site offline during
  * the upgrade. Once the user presses the "Install updates" button, they are
  * redirected to authorize.php to supply their web root file access
@@ -35,7 +35,7 @@
  * sets up a batch to copy each extracted update from the temporary location
  * into the live web root.
  */
- 
+
 /**
  * @defgroup update_manager_update Update manager for updating existing code.
  * @{
@@ -61,16 +61,11 @@ function update_manager_update_form($form, $form_state = array(), $context) {
   $available = update_get_available(TRUE);
   if (empty($available)) {
     $form['message'] = array(
-      '#markup' => t('There was a problem getting update information. Please try again later.'),
+      '#markup' => t('There was a problem getting update information. Try again later.'),
     );
     return $form;
   }
 
-  drupal_add_css('misc/ui/ui.all.css');
-  drupal_add_css('misc/ui/ui.dialog.css');
-  drupal_add_js('misc/ui/ui.core.js', array('weight' => JS_LIBRARY + 5));
-  drupal_add_js('misc/ui/ui.dialog.js', array('weight' => JS_LIBRARY + 6));
-  $form['#attached']['js'][] = drupal_get_path('module', 'update') . '/update.manager.js';
   $form['#attached']['css'][] = drupal_get_path('module', 'update') . '/update.css';
 
   // This will be a nested array. The first key is the kind of project, which
@@ -180,7 +175,7 @@ function update_manager_update_form($form, $form_state = array(), $context) {
         // Core needs manual updates at this time.
         $projects['manual'][$name] = $entry;
         break;
-        
+
       case 'module':
       case 'theme':
         $projects['enabled'][$name] = $entry;
@@ -233,10 +228,10 @@ function update_manager_update_form($form, $form_state = array(), $context) {
   // If either table has been printed yet, we need a submit button and to
   // validate the checkboxes.
   if (!empty($projects['enabled']) || !empty($projects['disabled'])) {
-    $form['submit'] = array(
+    $form['actions'] = array('#type' => 'actions');
+    $form['actions']['submit'] = array(
       '#type' => 'submit',
       '#value' => t('Download these updates'),
-      '#weight' => 10,
     );
     $form['#validate'][] = 'update_manager_update_form_validate';
   }
@@ -248,7 +243,7 @@ function update_manager_update_form($form, $form_state = array(), $context) {
       '#type' => 'markup',
       '#markup' => theme('table', array('header' => $headers, 'rows' => $projects['manual'])),
       '#prefix' => $prefix,
-      '#weight' => 20,
+      '#weight' => 120,
     );
   }
 
@@ -256,10 +251,11 @@ function update_manager_update_form($form, $form_state = array(), $context) {
 }
 
 /**
- * Theme the first page in the update manager wizard to select projects.
+ * Returns HTML for the first page in the update manager wizard to select projects.
  *
  * @param $variables
- *   form: The form
+ *   An associative array containing:
+ *   - form: A render element representing the form.
  *
  * @ingroup themeable
  */
@@ -332,8 +328,9 @@ function update_manager_download_batch_finished($success, $results) {
     drupal_set_message(theme('item_list', $error_list), 'error');
   }
   elseif ($success) {
+    drupal_set_message(t('Updates downloaded successfully.'));
     $_SESSION['update_manager_update_projects'] = $results['projects'];
-    drupal_goto('admin/update/confirm');
+    drupal_goto('admin/update/ready');
   }
   else {
     // Ideally we're catching all Exceptions, so they should never see this,
@@ -343,7 +340,7 @@ function update_manager_download_batch_finished($success, $results) {
 }
 
 /**
- * Build the form to confirm that an update should proceed (after downloading).
+ * Build the form when the site is ready to update (after downloading).
  *
  * This form is an intermediary step in the automated update workflow. It is
  * presented to the site administrator after all the required updates have
@@ -353,42 +350,23 @@ function update_manager_download_batch_finished($success, $results) {
  * After this step, the user is redirected to authorize.php to enter their
  * file transfer credentials and attempt to complete the update.
  */
-function update_manager_confirm_update_form($form, &$form_state) {
-  $form['information']['#weight'] = -100;
-  $form['information']['backup_header'] = array(
-    '#prefix' => '<h3>',
-    '#markup' => t('Step 1: Backup your site'),
-    '#suffix' => '</h3>',
+function update_manager_update_ready_form($form, &$form_state) {
+  $form['backup'] = array(
+    '#prefix' => '<strong>',
+    '#markup' => t('Back up your database and site before you continue. <a href="@backup_url">Learn how</a>.', array('@backup_url' => url('http://drupal.org/node/22281'))),
+    '#suffix' => '</strong>',
   );
 
-  $form['information']['backup_message'] = array(
-    '#prefix' => '<p>',
-    '#markup' => t('We do not currently have a web based backup tool. <a href="@backup_url">Learn more about how to take a backup</a>.', array('@backup_url' => url('http://drupal.org/node/22281'))),
-    '#suffix' => '</p>',
-  );
-
-  $form['information']['maint_header'] = array(
-    '#prefix' => '<h3>',
-    '#markup' => t('Step 2: Enter maintenance mode'),
-    '#suffix' => '</h3>',
-  );
-
-  $form['information']['maint_message'] = array(
-    '#prefix' => '<p>',
-    '#markup' => t('It is strongly recommended that you put your site into maintenance mode while performing an update.'),
-    '#suffix' => '</p>',
-  );
-
-  $form['information']['site_offline'] = array(
-    '#title' => t('Perform updates with site in maintenance mode'),
+  $form['site_offline'] = array(
+    '#title' => t('Perform updates with site in maintenance mode (strongly recommended)'),
     '#type' => 'checkbox',
     '#default_value' => TRUE,
   );
 
-  $form['submit'] = array(
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
     '#type' => 'submit',
-    '#value' => t('Install updates'),
-    '#weight' => 100,
+    '#value' => t('Continue'),
   );
 
   return $form;
@@ -407,7 +385,7 @@ function update_manager_confirm_update_form($form, &$form_state) {
  * @see system_authorized_init()
  * @see system_authorized_get_url()
  */
-function update_manager_confirm_update_form_submit($form, &$form_state) {
+function update_manager_update_ready_form_submit($form, &$form_state) {
   if ($form_state['values']['site_offline'] == TRUE) {
     variable_set('site_offline', TRUE);
   }
@@ -489,14 +467,14 @@ function update_manager_install_form($form, &$form_state, $context) {
   }
   $form['help_text'] = array(
     '#prefix' => '<p>',
-    '#markup' => t('To install a new module or theme, either paste the URL of an archive file you wish to install, or upload the archive file that you have downloaded. You can find <a href="@module_url">modules</a> and <a href="@theme_url">themes</a> at <a href="@drupal_org_url">http://drupal.org</a>. The following archive extensions are supported: %extensions', array('@module_url' => 'http://drupal.org/project/modules', '@theme_url' => 'http://drupal.org/project/themes', '@drupal_org_url' => 'http://drupal.org', '%extensions' => implode(', ', $extensions))),
+    '#markup' => t('To install a new module or theme, either enter the URL of an archive file you wish to install, or upload the archive file that you have downloaded. You can find <a href="@module_url">modules</a> and <a href="@theme_url">themes</a> at <a href="@drupal_org_url">http://drupal.org</a>. The following archive extensions are supported: %extensions', array('@module_url' => 'http://drupal.org/project/modules', '@theme_url' => 'http://drupal.org/project/themes', '@drupal_org_url' => 'http://drupal.org', '%extensions' => implode(', ', $extensions))),
     '#suffix' => '</p>',
   );
 
   $form['project_url'] = array(
     '#type' => 'textfield',
-    '#title' => t('URL'),
-    '#description' => t('Paste the URL to a Drupal module or theme archive to install it (e.g http://ftp.drupal.org/files/projects/projectname.tar.gz).'),
+    '#title' => t('Install from a URL'),
+    '#description' => t('For example: %url', array('%url' => 'http://ftp.drupal.org/files/projects/name.tar.gz')),
   );
 
   $form['information'] = array(
@@ -507,11 +485,12 @@ function update_manager_install_form($form, &$form_state, $context) {
 
   $form['project_upload'] = array(
     '#type' => 'file',
-    '#title' => t('Upload a module or theme'),
-    '#description' => t('Upload a Drupal module or theme archive to install it.'),
+    '#title' => t('Upload a module or theme archive to install'),
+    '#description' => t('For example: %filename from your local computer', array('%filename' => 'name.tar.gz')),
   );
 
-  $form['submit'] = array(
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Install'),
   );
@@ -554,7 +533,7 @@ function update_manager_install_form_submit($form, &$form_state) {
     $field = 'project_url';
     $local_cache = update_manager_file_get($form_state['values']['project_url']);
     if (!$local_cache) {
-      form_set_error($field, t('Unable to retreive Drupal project from %url.', array('%url' => $form_state['values']['project_url'])));
+      form_set_error($field, t('Unable to retrieve Drupal project from %url.', array('%url' => $form_state['values']['project_url'])));
       return;
     }
   }
@@ -565,7 +544,7 @@ function update_manager_install_form_submit($form, &$form_state) {
     // @todo: find out if the module is already instealled, if so, throw an error.
     $local_cache = $finfo->uri;
   }
-  
+
   $directory = _update_manager_extract_directory();
   try {
     $archive = update_manager_archive_extract($local_cache, $directory);
@@ -581,7 +560,7 @@ function update_manager_install_form_submit($form, &$form_state) {
     return;
   }
   // Unfortunately, we can only use the directory name for this. :(
-  $project = drupal_substr($files[0]['filename'], 0, -1);
+  $project = drupal_substr($files[0], 0, -1);
 
   try {
     update_manager_archive_verify($project, $local_cache, $directory);
@@ -601,12 +580,12 @@ function update_manager_install_form_submit($form, &$form_state) {
   if (!$project_title) {
     form_set_error($field, t('Unable to determine %project name.', array('%project' => $project)));
   }
-  
+
   if ($updater->isInstalled()) {
     form_set_error($field, t('%project is already installed.', array('%project' => $project_title)));
     return;
   }
-  
+
   $project_real_location = drupal_realpath($project_location);
   $arguments = array(
     'project' => $project,
@@ -654,7 +633,7 @@ function update_manager_install_form_submit($form, &$form_state) {
 function _update_manager_extract_directory() {
   $directory = &drupal_static(__FUNCTION__, '');
   if (empty($directory)) {
-    $directory = DRUPAL_ROOT . '/' . file_directory_path('temporary') . '/update-extraction';
+    $directory = 'temporary://update-extraction';
     if (!file_exists($directory)) {
       mkdir($directory);
     }
@@ -703,7 +682,7 @@ function update_manager_archive_extract($file, $directory) {
 function update_manager_archive_verify($project, $archive_file, $directory) {
   $failures = module_invoke_all('verify_update_archive', $project, $archive_file, $directory);
   if (!empty($failures)) {
-    throw new Exception(t('Unable to extact %file', array('%file' => $file)));
+    throw new Exception(t('Unable to extract %file', array('%file' => $archive_file)));
   }
 }
 
@@ -727,13 +706,13 @@ function update_manager_file_get($url) {
   }
 
   // Check the cache and download the file if needed.
-  $local = 'temporary://update-cache/' . basename($parsed_url['path']);
-  $cache_directory = DRUPAL_ROOT . '/' . file_directory_path('temporary') . '/update-cache/';
+  $cache_directory = 'temporary://update-cache';
+  $local = $cache_directory . '/' . basename($parsed_url['path']);
 
   if (!file_exists($cache_directory)) {
     mkdir($cache_directory);
   }
-  
+
   if (!file_exists($local)) {
     return system_retrieve_file($url, $local);
   }

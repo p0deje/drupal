@@ -1,21 +1,30 @@
-/* $Id: shortcut.css,v 1.4 2009/12/02 15:09:16 dries Exp $ */
-div#toolbar a#toolbar-customize {
+/* $Id: shortcut.css,v 1.8 2010/05/31 08:18:02 dries Exp $ */
+div#toolbar a#edit-shortcuts {
   float: right;
+  padding: 5px 10px 5px 5px;
+  line-height: 24px;
+  color: #bbb;
+}
+div#toolbar a#edit-shortcuts:focus,
+div#toolbar a#edit-shortcuts:hover,
+div#toolbar a#edit-shortcuts.active {
+  color: #fff;
 }
 
 div#toolbar div.toolbar-shortcuts ul {
-  padding: 5px 0;
-  height: 40px;
-  line-height: 30px;
+  padding: 5px 0 2px 0;
+  height: 28px;
+  line-height: 24px;
   float: left;
   margin-left:5px;
 }
 
 div#toolbar div.toolbar-shortcuts ul li a {
+  padding: 0 5px 0 5px;
+  margin-right: 5px;
+  border-radius: 5px;
   -moz-border-radius: 5px;
   -webkit-border-radius: 5px;
-  padding: 5px 10px 5px 5px;
-  margin-right: 5px;
 }
 
 div#toolbar div.toolbar-shortcuts ul li a:focus,
@@ -35,6 +44,7 @@ div#toolbar div.toolbar-shortcuts span.icon {
   width: 30px;
   height: 30px;
   margin-right: 5px;
+  border-radius: 5px;
   -moz-border-radius: 5px;
   -webkit-border-radius: 5px;
 }
@@ -52,12 +62,14 @@ div.add-or-remove-shortcuts a span.icon {
   margin-left:8px;
 }
 
+div.add-shortcut a:focus span.icon,
 div.add-shortcut a:hover span.icon {
   background-position: 0 -12px;
 }
 div.remove-shortcut a span.icon {
   background-position: -12px 0;
 }
+div.remove-shortcut a:focus span.icon,
 div.remove-shortcut a:hover span.icon {
   background-position: -12px -12px;
 }
@@ -68,6 +80,7 @@ div.add-or-remove-shortcuts a span.text {
   display: none;
 }
 
+div.add-or-remove-shortcuts a:focus span.text,
 div.add-or-remove-shortcuts a:hover span.text {
   font-size: 10px;
   line-height: 12px;
@@ -76,6 +89,8 @@ div.add-or-remove-shortcuts a:hover span.text {
   display: block;
   padding-right: 6px;
   cursor: pointer;
+  border-top-right-radius: 5px;
+  border-bottom-right-radius: 5px;
   -moz-border-radius-topright: 5px;
   -moz-border-radius-bottomright: 5px;
   -webkit-border-top-right-radius: 5px;

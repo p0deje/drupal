@@ -1,5 +1,5 @@
 <?php
-// $Id: update.php,v 1.313 2009/12/08 07:07:15 webchick Exp $
+// $Id: update.php,v 1.323 2010/05/18 18:11:12 dries Exp $
 
 /**
  * Root directory of Drupal installation.
@@ -21,16 +21,17 @@ define('DRUPAL_ROOT', getcwd());
  */
 
 /**
- * Global flag to identify update.php run, and so avoid various unwanted
- * operations, such as hook_init() and hook_exit() invokes, css/js preprocessing
- * and translation, and solve some theming issues. This flag is checked on several
- * places in Drupal code (not just update.php).
+ * Global flag indicating that update.php is being run.
+ *
+ * When this flag is set, various operations do not take place, such as invoking
+ * hook_init() and hook_exit(), css/js preprocessing, and translation.
  */
 define('MAINTENANCE_MODE', 'update');
 
 function update_selection_page() {
   drupal_set_title('Drupal database update');
-  $output = drupal_render(drupal_get_form('update_script_selection_form'));
+  $elements = drupal_get_form('update_script_selection_form');
+  $output = drupal_render($elements);
 
   update_task_list('select');
 
@@ -39,6 +40,7 @@ function update_selection_page() {
 
 function update_script_selection_form($form, &$form_state) {
   $count = 0;
+  $incompatible_count = 0;
   $form['start'] = array(
     '#tree' => TRUE,
     '#type' => 'fieldset',
@@ -46,10 +48,12 @@ function update_script_selection_form($form, &$form_state) {
     '#collapsible' => TRUE,
   );
 
-  // Ensure system.module's updates appear first
+  // Ensure system.module's updates appear first.
   $form['start']['system'] = array();
 
   $updates = update_get_update_list();
+  $starting_updates = array();
+  $incompatible_updates_exist = FALSE;
   foreach ($updates as $module => $update) {
     if (!isset($update['start'])) {
       $form['start'][$module] = array(
@@ -58,20 +62,44 @@ function update_script_selection_form($form, &$form_state) {
         '#prefix' => '<div class="warning">',
         '#suffix' => '</div>',
       );
+      $incompatible_updates_exist = TRUE;
       continue;
     }
     if (!empty($update['pending'])) {
+      $starting_updates[$module] = $update['start'];
       $form['start'][$module] = array(
         '#type' => 'hidden',
         '#value' => $update['start'],
       );
       $form['start'][$module . '_updates'] = array(
-        '#markup' => theme('item_list', array('items' => $update['pending'], 'title' => $module . ' module')),
+        '#theme' => 'item_list',
+        '#items' => $update['pending'],
+        '#title' => $module . ' module',
       );
     }
     if (isset($update['pending'])) {
       $count = $count + count($update['pending']);
     }
+  }
+
+  // Find and label any incompatible updates.
+  foreach (update_resolve_dependencies($starting_updates) as $function => $data) {
+    if (!$data['allowed']) {
+      $incompatible_updates_exist = TRUE;
+      $incompatible_count++;
+      $module_update_key = $data['module'] . '_updates';
+      if (isset($form['start'][$module_update_key]['#items'][$data['number']])) {
+        $text = $data['missing_dependencies'] ? 'This update will been skipped due to the following missing dependencies: <em>' . implode(', ', $data['missing_dependencies']) . '</em>' : "This update will be skipped due to an error in the module's code.";
+        $form['start'][$module_update_key]['#items'][$data['number']] .= '<div class="warning">' . $text . '</div>';
+      }
+      // Move the module containing this update to the top of the list.
+      $form['start'] = array($module_update_key => $form['start'][$module_update_key]) + $form['start'];
+    }
+  }
+
+  // Warn the user if any updates were incompatible.
+  if ($incompatible_updates_exist) {
+    drupal_set_message('Some of the pending updates cannot be applied because their dependencies were not met.', 'warning');
   }
 
   if (empty($count)) {
@@ -86,12 +114,23 @@ function update_script_selection_form($form, &$form_state) {
       '#markup' => '<p>The version of Drupal you are updating from has been automatically detected.</p>',
       '#weight' => -5,
     );
-    $form['start']['#title'] = format_plural($count, '1 pending update', '@count pending updates');
+    if ($incompatible_count) {
+      $form['start']['#title'] = format_plural(
+        $count,
+        '1 pending update (@number_applied to be applied, @number_incompatible skipped)',
+        '@count pending updates (@number_applied to be applied, @number_incompatible skipped)',
+        array('@number_applied' => $count - $incompatible_count, '@number_incompatible' => $incompatible_count)
+      );
+    }
+    else {
+      $form['start']['#title'] = format_plural($count, '1 pending update', '@count pending updates');
+    }
     $form['has_js'] = array(
       '#type' => 'hidden',
       '#default_value' => FALSE,
     );
-    $form['submit'] = array(
+    $form['actions'] = array('#type' => 'actions');
+    $form['actions']['submit'] = array(
       '#type' => 'submit',
       '#value' => 'Apply pending updates',
     );
@@ -100,7 +139,8 @@ function update_script_selection_form($form, &$form_state) {
 }
 
 function update_helpful_links() {
-  // NOTE: we can't use l() here because the URL would point to 'update.php?q=admin'.
+  // NOTE: we can't use l() here because the URL would point to
+  // 'update.php?q=admin'.
   $links[] = '<a href="' . base_path() . '">Front page</a>';
   $links[] = '<a href="' . base_path() . '?q=admin">Administration pages</a>';
   return $links;
@@ -111,7 +151,7 @@ function update_results_page() {
   $links = update_helpful_links();
 
   update_task_list();
-  // Report end result
+  // Report end result.
   if (module_exists('dblog')) {
     $log_message = ' All errors have been <a href="' . base_path() . '?q=admin/reports/dblog">logged</a>.';
   }
@@ -137,14 +177,14 @@ function update_results_page() {
 
   $output .= theme('item_list', array('items' => $links));
 
-  // Output a list of queries executed
+  // Output a list of queries executed.
   if (!empty($_SESSION['update_results'])) {
     $output .= '<div id="update-results">';
     $output .= '<h2>The following updates returned messages</h2>';
     foreach ($_SESSION['update_results'] as $module => $updates) {
-      $output .= '<h3>' . $module . ' module</h3>';
-      foreach ($updates as $number => $queries) {
-        if ($number != '#abort') {
+      if ($module != '#abort') {
+        $output .= '<h3>' . $module . ' module</h3>';
+        foreach ($updates as $number => $queries) {
           $messages = array();
           foreach ($queries as $query) {
             // If there is no message for this update, don't show anything.
@@ -186,7 +226,7 @@ function update_info_page() {
   update_task_list('info');
   drupal_set_title('Drupal database update');
   $token = drupal_get_token('update');
-  $output = '<p>Use this utility to update your database whenever a new release of Drupal or a module is installed.</p><p>For more detailed information, see the <a href="http://drupal.org/node/258">Installation and upgrading handbook</a>. If you are unsure what these terms mean you should probably contact your hosting provider.</p>';
+  $output = '<p>Use this utility to update your database whenever a new release of Drupal or a module is installed.</p><p>For more detailed information, see the <a href="http://drupal.org/upgrade">upgrading handbook</a>. If you are unsure what these terms mean you should probably contact your hosting provider.</p>';
   $output .= "<ol>\n";
   $output .= "<li><strong>Back up your database</strong>. This process will change your database values and in case of emergency you may need to revert to a backup.</li>\n";
   $output .= "<li><strong>Back up your code</strong>. Hint: when backing up module code, do not leave that backup in the 'modules' or 'sites/*/modules' directories as this may confuse Drupal's auto-discovery mechanism.</li>\n";
@@ -200,10 +240,10 @@ function update_info_page() {
 }
 
 function update_access_denied_page() {
-  drupal_add_http_header('403 Forbidden');
+  drupal_add_http_header('Status', '403 Forbidden');
   watchdog('access denied', 'update.php', NULL, WATCHDOG_WARNING);
   drupal_set_title('Access denied');
-  return '<p>Access denied. You are not authorized to access this page. Please log in using either an account with the <em>administer software updates</em> permission or the site maintenance account (the account you created during installation). If you cannot log in, you will have to edit <code>settings.php</code> to bypass this access check. To do this:</p>
+  return '<p>Access denied. You are not authorized to access this page. Log in using either an account with the <em>administer software updates</em> permission or the site maintenance account (the account you created during installation). If you cannot log in, you will have to edit <code>settings.php</code> to bypass this access check. To do this:</p>
 <ol>
  <li>With a text editor find the settings.php file on your system. From the main Drupal directory that you installed all the files into, go to <code>sites/your_site_name</code> if such directory exists, or else to <code>sites/default</code> which applies otherwise.</li>
  <li>There is a line inside your settings.php file that says <code>$update_free_access = FALSE;</code>. Change it to <code>$update_free_access = TRUE;</code>.</li>
@@ -228,7 +268,7 @@ function update_access_allowed() {
   // Calls to user_access() might fail during the Drupal 6 to 7 update process,
   // so we fall back on requiring that the user be logged in as user #1.
   try {
-    require_once drupal_get_path('module', 'user') . '/user.module';
+    require_once DRUPAL_ROOT . '/' . drupal_get_path('module', 'user') . '/user.module';
     return user_access('administer software updates');
   }
   catch (Exception $e) {
@@ -278,7 +318,7 @@ function update_check_requirements() {
     update_task_list('requirements');
     drupal_set_title('Requirements problem');
     $status_report = theme('status_report', array('requirements' => $requirements));
-    $status_report .= 'Please check the error messages and <a href="' . request_uri() . '">try again</a>.';
+    $status_report .= 'Check the error messages and <a href="' . check_url(request_uri()) . '">try again</a>.';
     print theme('update_page', array('content' => $status_report));
     exit();
   }
@@ -293,6 +333,7 @@ ini_set('display_errors', FALSE);
 require_once DRUPAL_ROOT . '/includes/bootstrap.inc';
 require_once DRUPAL_ROOT . '/includes/update.inc';
 require_once DRUPAL_ROOT . '/includes/common.inc';
+require_once DRUPAL_ROOT . '/includes/file.inc';
 require_once DRUPAL_ROOT . '/includes/entity.inc';
 require_once DRUPAL_ROOT . '/includes/unicode.inc';
 update_prepare_d7_bootstrap();
@@ -306,7 +347,6 @@ drupal_bootstrap(DRUPAL_BOOTSTRAP_SESSION);
 $op = isset($_REQUEST['op']) ? $_REQUEST['op'] : '';
 if (empty($op) && update_access_allowed()) {
   require_once DRUPAL_ROOT . '/includes/install.inc';
-  require_once DRUPAL_ROOT . '/includes/file.inc';
   require_once DRUPAL_ROOT . '/modules/system/system.install';
 
   // Load module basics.
@@ -360,7 +400,7 @@ if (update_access_allowed()) {
 
   $op = isset($_REQUEST['op']) ? $_REQUEST['op'] : '';
   switch ($op) {
-    // update.php ops
+    // update.php ops.
 
     case 'selection':
       if (isset($_GET['token']) && $_GET['token'] == drupal_get_token('update')) {
@@ -382,7 +422,7 @@ if (update_access_allowed()) {
       $output = update_results_page();
       break;
 
-    // Regular batch ops : defer to batch processing API
+    // Regular batch ops : defer to batch processing API.
     default:
       update_task_list('run');
       $output = _batch_page();

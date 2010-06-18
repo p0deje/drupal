@@ -1,5 +1,5 @@
 <?php
-// $Id: menu.admin.inc,v 1.68 2009/11/04 04:43:58 webchick Exp $
+// $Id: menu.admin.inc,v 1.79 2010/05/04 20:31:53 dries Exp $
 
 /**
  * @file
@@ -25,7 +25,14 @@ function menu_overview_page() {
 }
 
 /**
- * Theme the menu title and description for admin page
+ * Returns HTML for a menu title and description for the menu overview page.
+ *
+ * @param $variables
+ *   An associative array containing:
+ *   - title: The menu's title.
+ *   - description: The menu's description.
+ *
+ * @ingroup themeable
  */
 function theme_menu_admin_overview($variables) {
   $output = check_plain($variables['title']);
@@ -63,8 +70,10 @@ function menu_overview_form($form, &$form_state, $menu) {
 
   $form = array_merge($form, _menu_overview_tree_form($tree));
   $form['#menu'] =  $menu;
+
   if (element_children($form)) {
-    $form['submit'] = array(
+    $form['actions'] = array('#type' => 'actions');
+    $form['actions']['submit'] = array(
       '#type' => 'submit',
       '#value' => t('Save configuration'),
     );
@@ -172,10 +181,15 @@ function menu_overview_form_submit($form, &$form_state) {
     $item['customized'] = 1;
     menu_link_save($item);
   }
+  drupal_set_message(t('Your configuration has been saved.'));
 }
 
 /**
- * Theme the menu overview form into a table.
+ * Returns HTML for the menu overview form into a table.
+ *
+ * @param $variables
+ *   An associative array containing:
+ *   - form: A render element representing the form.
  *
  * @ingroup themeable
  */
@@ -237,42 +251,33 @@ function theme_menu_overview_form($variables) {
  * Menu callback; Build the menu link editing form.
  */
 function menu_edit_item($form, &$form_state, $type, $item, $menu) {
-
-  $form['menu'] = array(
-    '#type' => 'fieldset',
-    '#title' => t('Menu settings'),
-    '#collapsible' => FALSE,
-    '#tree' => TRUE,
-    '#weight' => -2,
-    '#attributes' => array('class' => array('menu-item-form')),
-    '#item' => $item,
-  );
   if ($type == 'add' || empty($item)) {
     // This is an add form, initialize the menu link.
     $item = array('link_title' => '', 'mlid' => 0, 'plid' => 0, 'menu_name' => $menu['menu_name'], 'weight' => 0, 'link_path' => '', 'options' => array(), 'module' => 'menu', 'expanded' => 0, 'hidden' => 0, 'has_children' => 0);
   }
-  $form['menu']['link_title'] = array('#type' => 'textfield',
+  $form['link_title'] = array(
+    '#type' => 'textfield',
     '#title' => t('Menu link title'),
     '#default_value' => $item['link_title'],
     '#description' => t('The text to be used for this link in the menu.'),
     '#required' => TRUE,
   );
   foreach (array('link_path', 'mlid', 'module', 'has_children', 'options') as $key) {
-    $form['menu'][$key] = array('#type' => 'value', '#value' => $item[$key]);
+    $form[$key] = array('#type' => 'value', '#value' => $item[$key]);
   }
   // Any item created or edited via this interface is considered "customized".
-  $form['menu']['customized'] = array('#type' => 'value', '#value' => 1);
-  $form['menu']['original_item'] = array('#type' => 'value', '#value' => $item);
+  $form['customized'] = array('#type' => 'value', '#value' => 1);
+  $form['original_item'] = array('#type' => 'value', '#value' => $item);
 
   $path = $item['link_path'];
   if (isset($item['options']['query'])) {
-    $path .= '?' . $item['options']['query'];
+    $path .= '?' . drupal_http_build_query($item['options']['query']);
   }
   if (isset($item['options']['fragment'])) {
     $path .= '#' . $item['options']['fragment'];
   }
   if ($item['module'] == 'menu') {
-    $form['menu']['link_path'] = array(
+    $form['link_path'] = array(
       '#type' => 'textfield',
       '#title' => t('Path'),
       '#default_value' => $path,
@@ -288,26 +293,26 @@ function menu_edit_item($form, &$form_state, $type, $item, $menu) {
     );
   }
   else {
-    $form['menu']['_path'] = array(
+    $form['_path'] = array(
       '#type' => 'item',
       '#title' => t('Path'),
       '#description' => l($item['link_title'], $item['href'], $item['options']),
     );
   }
-  $form['menu']['description'] = array(
+  $form['description'] = array(
     '#type' => 'textarea',
     '#title' => t('Description'),
     '#default_value' => isset($item['options']['attributes']['title']) ? $item['options']['attributes']['title'] : '',
     '#rows' => 1,
     '#description' => t('The description displayed when hovering over a menu link.'),
   );
-  $form['menu']['enabled'] = array(
+  $form['enabled'] = array(
     '#type' => 'checkbox',
     '#title' => t('Enabled'),
     '#default_value' => !$item['hidden'],
     '#description' => t('Menu links that are not enabled will not be listed in any menu.'),
   );
-  $form['menu']['expanded'] = array(
+  $form['expanded'] = array(
     '#type' => 'checkbox',
     '#title' => t('Show as expanded'),
     '#default_value' => $item['expanded'],
@@ -320,7 +325,7 @@ function menu_edit_item($form, &$form_state, $type, $item, $menu) {
   if (!isset($options[$default])) {
     $default = 'navigation:0';
   }
-  $form['menu']['parent'] = array(
+  $form['parent'] = array(
     '#type' => 'select',
     '#title' => t('Parent link'),
     '#default_value' => $default,
@@ -328,15 +333,15 @@ function menu_edit_item($form, &$form_state, $type, $item, $menu) {
     '#description' => t('The maximum depth for a link and all its children is fixed at !maxdepth. Some menu links may not be available as parents if selecting them would exceed this limit.', array('!maxdepth' => MENU_MAX_DEPTH)),
     '#attributes' => array('class' => array('menu-title-select')),
   );
-  $form['menu']['weight'] = array(
+  $form['weight'] = array(
     '#type' => 'weight',
     '#title' => t('Weight'),
     '#delta' => 50,
     '#default_value' => $item['weight'],
     '#description' => t('Optional. In the menu, the heavier links will sink and the lighter links will be positioned nearer the top.'),
   );
-  $form['submit'] = array('#type' => 'submit', '#value' => t('Save'));
-
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array('#type' => 'submit', '#value' => t('Save'));
 
   return $form;
 }
@@ -345,7 +350,7 @@ function menu_edit_item($form, &$form_state, $type, $item, $menu) {
  * Validate form values for a menu link being added or edited.
  */
 function menu_edit_item_validate($form, &$form_state) {
-  $item = &$form_state['values']['menu'];
+  $item = &$form_state['values'];
   $normal_path = drupal_get_normal_path($item['link_path']);
   if ($item['link_path'] != $normal_path) {
     drupal_set_message(t('The menu system stores system paths only, but will use the URL alias for display. %link_path has been stored as %normal_path', array('%link_path' => $item['link_path'], '%normal_path' => $normal_path)));
@@ -354,16 +359,24 @@ function menu_edit_item_validate($form, &$form_state) {
   if (!url_is_external($item['link_path'])) {
     $parsed_link = parse_url($item['link_path']);
     if (isset($parsed_link['query'])) {
-      $item['options']['query'] = $parsed_link['query'];
+      $item['options']['query'] = drupal_get_query_array($parsed_link['query']);
+    }
+    else {
+      // Use unset() rather than setting to empty string
+      // to avoid redundant serialized data being stored.
+      unset($item['options']['query']);
     }
     if (isset($parsed_link['fragment'])) {
       $item['options']['fragment'] = $parsed_link['fragment'];
+    }
+    else {
+      unset($item['options']['fragment']);
     }
     if ($item['link_path'] != $parsed_link['path']) {
       $item['link_path'] = $parsed_link['path'];
     }
   }
-  if (!trim($item['link_path']) || !menu_valid_path($item)) {
+  if (!trim($item['link_path']) || !drupal_valid_path($item['link_path'], TRUE)) {
     form_set_error('link_path', t("The path '@link_path' is either invalid or you do not have access to it.", array('@link_path' => $item['link_path'])));
   }
 }
@@ -372,14 +385,14 @@ function menu_edit_item_validate($form, &$form_state) {
  * Submit function for the delete button on the menu item editing form.
  */
 function menu_item_delete_submit($form, &$form_state) {
-  $form_state['redirect'] = 'admin/structure/menu/item/' . $form_state['values']['menu']['mlid'] . '/delete';
+  $form_state['redirect'] = 'admin/structure/menu/item/' . $form_state['values']['mlid'] . '/delete';
 }
 
 /**
  * Process menu and menu item add/edit form submissions.
  */
 function menu_edit_item_submit($form, &$form_state) {
-  $item = &$form_state['values']['menu'];
+  $item = &$form_state['values'];
 
   // The value of "hidden" is the opposite of the value
   // supplied by the "enabled" checkbox.
@@ -390,6 +403,9 @@ function menu_edit_item_submit($form, &$form_state) {
   list($item['menu_name'], $item['plid']) = explode(':', $item['parent']);
   if (!menu_link_save($item)) {
     drupal_set_message(t('There was an error saving the menu link.'), 'error');
+  }
+  else {
+    drupal_set_message(t('Your configuration has been saved.'));
   }
   $form_state['redirect'] = 'admin/structure/menu/manage/' . $item['menu_name'];
 }
@@ -456,12 +472,13 @@ function menu_edit_menu($form, &$form_state, $type, $menu = array()) {
     '#title' => t('Description'),
     '#default_value' => $menu['description'],
   );
-  $form['submit'] = array(
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Save'),
   );
   // Only custom menus may be deleted.
-  $form['delete'] = array(
+  $form['actions']['delete'] = array(
     '#type' => 'submit',
     '#value' => t('Delete'),
     '#access' => $type == 'edit' && !isset($system_menus[$menu['menu_name']]),
@@ -592,6 +609,7 @@ function menu_edit_menu_submit($form, &$form_state) {
       menu_link_save($link);
     }
   }
+  drupal_set_message(t('Your configuration has been saved.'));
   $form_state['redirect'] = $path . $menu['menu_name'];
 }
 
@@ -656,13 +674,6 @@ function menu_configure() {
   );
 
   $menu_options = menu_get_menus();
-  $form['menu_default_node_menu'] = array(
-    '#type' => 'select',
-    '#title' => t('Default menu for content'),
-    '#default_value' => 'navigation',
-    '#options' => $menu_options,
-    '#description' => t('Choose the menu to be the default in the menu options in the content authoring form.'),
-  );
 
   $main = variable_get('menu_main_links_source', 'main-menu');
   $main_options = array_merge($menu_options, array('' => t('No Main links')));

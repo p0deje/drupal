@@ -1,5 +1,5 @@
 <?php
-// $Id: node.tokens.inc,v 1.8 2009/12/04 16:49:46 dries Exp $
+// $Id: node.tokens.inc,v 1.14 2010/04/20 09:48:06 webchick Exp $
 
 /**
  * @file
@@ -14,14 +14,14 @@
 function node_token_info() {
   $type = array(
     'name' => t('Nodes'),
-    'description' => t('Tokens related to individual nodes.'),
+    'description' => t('Tokens related to individual content items, or "nodes".'),
     'needs-data' => 'node',
   );
 
   // Core tokens for nodes.
   $node['nid'] = array(
-    'name' => t("Node ID"),
-    'description' => t("The unique ID of the node."),
+    'name' => t("Content ID"),
+    'description' => t('The unique ID of the content item, or "node".'),
   );
   $node['vid'] = array(
     'name' => t("Revision ID"),
@@ -129,26 +129,6 @@ function node_tokens($type, $tokens, array $data = array(), array $options = arr
           $replacements[$original] = $node->uid;
           break;
 
-        case 'name':
-          $replacements[$original] = $sanitize ? check_plain($node->name) : $node->name;
-          break;
-
-        case 'title':
-          $replacements[$original] = $sanitize ? check_plain($node->title[LANGUAGE_NONE][0]['value']) : $node->title[LANGUAGE_NONE][0]['value'];
-          break;
-
-        case 'body':
-          if (!empty($node->body)) {
-            $replacements[$original] = $sanitize ? $node->body[LANGUAGE_NONE][0]['safe'] : $node->body[LANGUAGE_NONE][0]['value'];
-          }
-          break;
-
-        case 'summary':
-          if (!empty($node->body)) {
-            $replacements[$original] = $sanitize ? $node->body[LANGUAGE_NONE][0]['safe_summary'] : $node->body[LANGUAGE_NONE][0]['summary'];
-          }
-          break;
-
         case 'type':
           $replacements[$original] = $sanitize ? check_plain($node->type) : $node->type;
           break;
@@ -158,16 +138,30 @@ function node_tokens($type, $tokens, array $data = array(), array $options = arr
           $replacements[$original] = $sanitize ? check_plain($type_name) : $type_name;
           break;
 
+        case 'title':
+          $replacements[$original] = $sanitize ? check_plain($node->title) : $node->title;
+          break;
+
+        case 'body':
+        case 'summary':
+          if (!empty($node->body)) {
+            $item = $node->body[$node->language][0];
+            $column = ($name == 'body') ? 'value' : 'summary';
+            $instance = field_info_instance('node', 'body', $node->type);
+            $replacements[$original] = $sanitize ? _text_sanitize($instance, $node->language, $item, $column) : $item[$column];
+          }
+          break;
+
         case 'language':
           $replacements[$original] = $sanitize ? check_plain($node->language) : $node->language;
           break;
 
         case 'url':
-          $replacements[$original] = url('node/' . $node->nid, array('absolute' => TRUE));
+          $replacements[$original] = url('node/' . $node->nid, $url_options);
           break;
 
         case 'edit-url':
-          $replacements[$original] = url('node/' . $node->nid . '/edit', array('absolute' => TRUE));
+          $replacements[$original] = url('node/' . $node->nid . '/edit', $url_options);
           break;
 
         // Default values for the chained tokens handled below.

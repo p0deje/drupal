@@ -1,5 +1,5 @@
 <?php
-// $Id: openid.install,v 1.9 2009/12/04 16:49:47 dries Exp $
+// $Id: openid.install,v 1.11 2010/02/11 15:48:38 webchick Exp $
 
 /**
  * @file
@@ -70,7 +70,7 @@ function openid_requirements($phase) {
       $requirements['bcmath'] = array(
         'value' => t('Not installed'),
         'severity' => REQUIREMENT_ERROR,
-        'description' => t('OpenID requires the BC Math library for PHP which is missing or outdated. Please check the <a href="@url">PHP BC Math Library documentation</a> for information on how to correct this.', array('@url' => 'http://www.php.net/manual/en/book.bc.php')),
+        'description' => t('OpenID requires the BC Math library for PHP which is missing or outdated. Check the <a href="@url">PHP BC Math Library documentation</a> for information on how to correct this.', array('@url' => 'http://www.php.net/manual/en/book.bc.php')),
       );
     }
     else {
@@ -79,7 +79,7 @@ function openid_requirements($phase) {
         'severity' => REQUIREMENT_OK,
       );
     }
-    $requirements['bcmath']['title'] = t('BC Match library');
+    $requirements['bcmath']['title'] = t('BC Math library');
   }
 
   return $requirements;

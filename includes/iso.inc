@@ -1,5 +1,5 @@
 <?php
-// $Id: iso.inc,v 1.6 2009/10/10 18:21:45 dries Exp $
+// $Id: iso.inc,v 1.10 2010/04/30 08:15:56 dries Exp $
 
 /**
  * @file
@@ -9,7 +9,7 @@
 /**
  * Get an array of all country code => country name pairs.
  *
- * Get an array of all country code => country name pairs as layed out
+ * Get an array of all country code => country name pairs as laid out
  * in ISO 3166-1 alpha-2.
  * Grabbed from location project (http://drupal.org/project/location).
  * @return
@@ -376,7 +376,7 @@ function _locale_get_predefined_list() {
     'ku' => array('Kurdish', 'Kurdî'),
     'kv' => array('Komi'),
     'kw' => array('Cornish'),
-    'kg' => array('Kirghiz', 'Кыргыз'),
+    'ky' => array('Kyrgyz', 'Кыргызча'),
     'la' => array('Latin', 'Latina'),
     'lb' => array('Luxembourgish'),
     'lg' => array('Luganda'),

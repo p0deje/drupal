@@ -1,5 +1,5 @@
 <?php
-// $Id: list.test,v 1.1 2009/12/14 20:18:55 dries Exp $
+// $Id: list.test,v 1.5 2010/03/27 12:49:32 dries Exp $
 
 /**
  * @file
@@ -21,7 +21,7 @@ class ListFieldTestCase extends FieldTestCase {
   function setUp() {
     parent::setUp('field_test');
 
-    $this->field_name = 'field_test';
+    $this->field_name = 'test_list';
     $this->field = array(
       'field_name' => $this->field_name,
       'type' => 'list',
@@ -34,7 +34,7 @@ class ListFieldTestCase extends FieldTestCase {
 
     $this->instance = array(
       'field_name' => $this->field_name,
-      'object_type' => 'test_entity',
+      'entity_type' => 'test_entity',
       'bundle' => 'test_bundle',
       'widget' => array(
         'type' => 'options_buttons',
@@ -82,7 +82,7 @@ class ListFieldTestCase extends FieldTestCase {
     $this->field = field_create_field($this->field);
     $this->instance = array(
       'field_name' => $this->field_name,
-      'object_type' => 'test_entity',
+      'entity_type' => 'test_entity',
       'bundle' => 'test_bundle',
       'widget' => array(
         'type' => 'options_buttons',
@@ -117,15 +117,15 @@ class ListFieldUITestCase extends FieldTestCase {
     $this->drupalLogin($admin_user);
 
     // Create content type, with underscores.
-    $type_name = strtolower($this->randomName(8)) . '_' .'test';
+    $type_name = 'test_' . strtolower($this->randomName());
     $type = $this->drupalCreateContentType(array('name' => $type_name, 'type' => $type_name));
     $this->type = $type->type;
     // Store a valid URL name, with hyphens instead of underscores.
     $this->hyphen_type = str_replace('_', '-', $this->type);
 
     // Create random field name.
-    $this->field_label = $this->randomName(8);
-    $this->field_name = 'field_' . strtolower($this->randomName(8));
+    $this->field_label = $this->randomString();
+    $this->field_name = strtolower($this->randomName());
   }
 
   /**
@@ -139,33 +139,21 @@ class ListFieldUITestCase extends FieldTestCase {
     //Check that non-integer keys are rejected.
     $edit = array($element_name => "1.1|one\n");
     $this->drupalPost($admin_path, $edit, t('Save settings'));
-    $this->assertText("keys must be integers", t('Form vaildation failed.'));
+    $this->assertText("keys must be integers", t('Form validation failed.'));
 
     // Test 'List (number)' field type.
     $admin_path = $this->createListFieldAndEdit('list_number');
     //Check that non-numeric keys are rejected.
     $edit = array($element_name => "1|one\nB|two");
     $this->drupalPost($admin_path, $edit, t('Save settings'));
-    $this->assertText("each key must be a valid integer or decimal", t('Form vaildation failed.'));
+    $this->assertText("each key must be a valid integer or decimal", t('Form validation failed.'));
 
     //Test 'List (text)' field type.
     $admin_path = $this->createListFieldAndEdit('list_text');
     //Check that over long keys are rejected.
-    $edit = array($element_name => "1|one\n" . $this->randomName(255) . "|two");
+    $edit = array($element_name => "1|one\n" . $this->randomName(256) . "|two");
     $this->drupalPost($admin_path, $edit, t('Save settings'));
-    $this->assertText("each key must be a string less than 255 characters", t('Form vaildation failed.'));
-
-    // Test 'List (boolean)' field type.
-    $admin_path = $this->createListFieldAndEdit('list_boolean');
-    // Check that invalid option keys are rejected.
-    $edit = array($element_name => "1|one\n2|two");
-    $this->drupalPost($admin_path, $edit, t('Save settings'));
-    $this->assertText("keys must be either 0 or 1", t('Form vaildation failed.'));
-
-    //Check that missing option causes failure.
-    $edit = array($element_name => "1|one");
-    $this->drupalPost($admin_path, $edit, t('Save settings'));
-    $this->assertText("two values are required", t('Form vaildation failed.'));
+    $this->assertText("each key must be a string at most 255 characters long", t('Form validation failed.'));
   }
 
   /**
@@ -184,7 +172,7 @@ class ListFieldUITestCase extends FieldTestCase {
     field_create_field($field);
     $instance = array(
       'field_name' => $field_name,
-      'object_type' => 'node',
+      'entity_type' => 'node',
       'bundle' => $this->type,
     );
     field_create_instance($instance);

@@ -1,4 +1,4 @@
-; $Id: simpletest.info,v 1.15 2009/11/17 21:24:18 dries Exp $
+; $Id: simpletest.info,v 1.17 2010/06/14 15:41:03 dries Exp $
 
 name = Testing
 description = Provides a framework for unit and functional testing.

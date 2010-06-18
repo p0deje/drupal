@@ -1,5 +1,5 @@
 <?php
-// $Id: forum.install,v 1.40 2009/12/10 15:52:56 dries Exp $
+// $Id: forum.install,v 1.47 2010/05/23 19:10:23 dries Exp $
 
 /**
  * @file
@@ -20,43 +20,80 @@ function forum_install() {
   variable_set('node_options_forum', array('status'));
 }
 
+/**
+ * Implements hook_enable().
+ */
 function forum_enable() {
-  // Get info on the field "taxonomy_forums".
-  $field_check = field_info_field("taxonomy_forums");
-  if ($vocabulary = taxonomy_vocabulary_load(variable_get('forum_nav_vocabulary', 0))) {
-    // Save the vocabulary to create the default field instance.
-    taxonomy_vocabulary_save($vocabulary);
-  }
-  // Create fields if info on "taxonomy_forums" field turns out empty.
-  elseif (empty($field_check)) {
-    // Create the forum vocabulary if it does not exist. Assign the vocabulary
-    // a low weight so it will appear first in forum topic create and edit
-    // forms.
+  // Create the forum vocabulary if it does not exist.
+  $vocabulary = taxonomy_vocabulary_load(variable_get('forum_nav_vocabulary', 0));
+  if (!$vocabulary) {
     $edit = array(
       'name' => t('Forums'),
       'machine_name' => 'forums',
       'description' => t('Forum navigation vocabulary'),
       'hierarchy' => 1,
-      'relations' => 0,
       'module' => 'forum',
       'weight' => -10,
     );
     $vocabulary = (object) $edit;
     taxonomy_vocabulary_save($vocabulary);
+    variable_set('forum_nav_vocabulary', $vocabulary->vid);
+  }
+
+  // Create the 'taxonomy_forums' field if it doesn't already exist.
+  if (!field_info_field('taxonomy_forums')) {
+    $field = array(
+      'field_name' => 'taxonomy_' . $vocabulary->machine_name,
+      'type' => 'taxonomy_term_reference',
+      'settings' => array(
+        'allowed_values' => array(
+          array(
+            'vid' => $vocabulary->vid,
+            'parent' => 0,
+          ),
+        ),
+      ),
+    );
+    field_create_field($field);
 
     $instance = array(
       'field_name' => 'taxonomy_' . $vocabulary->machine_name,
-      'object_type' => 'node',
+      'entity_type' => 'node',
       'label' => $vocabulary->name,
       'bundle' => 'forum',
+      'required' => TRUE,
       'widget' => array(
         'type' => 'options_select',
+      ),
+      'display' => array(
+        'default' => array(
+          'type' => 'taxonomy_term_reference_link',
+          'weight' => 10,
+        ),
+        'teaser' => array(
+          'type' => 'taxonomy_term_reference_link',
+          'weight' => 10,
+        ),
       ),
     );
     field_create_instance($instance);
 
     variable_set('forum_nav_vocabulary', $vocabulary->vid);
+
+    // Create a default forum so forum posts can be created.
+    $edit = array(
+      'name' => t('General discussion'),
+      'description' => '',
+      'parent' => array(0),
+      'vid' => $vocabulary->vid,
+    );
+    $term = (object) $edit;
+    taxonomy_term_save($term);
   }
+  // Ensure the forum node type is available.
+  node_types_rebuild();
+  $types = node_type_get_types();
+  node_add_body_field($types['forum']);
 }
 
 /**

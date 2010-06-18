@@ -1,5 +1,5 @@
 <?php
-// $Id: contact.pages.inc,v 1.38 2009/12/14 13:51:57 dries Exp $
+// $Id: contact.pages.inc,v 1.43 2010/04/24 14:49:13 dries Exp $
 
 /**
  * @file
@@ -19,7 +19,7 @@ function contact_site_form($form, &$form_state) {
   $limit = variable_get('contact_threshold_limit', 5);
   $window = variable_get('contact_threshold_window', 3600);
   if (!flood_is_allowed('contact', $limit, $window) && !user_access('administer contact forms')) {
-    drupal_set_message(t("You cannot send more than %limit messages in @interval. Please try again later.", array('%limit' => $limit, '@interval' => format_interval($window))), 'error');
+    drupal_set_message(t("You cannot send more than %limit messages in @interval. Try again later.", array('%limit' => $limit, '@interval' => format_interval($window))), 'error');
     drupal_access_denied();
     drupal_exit();
   }
@@ -101,7 +101,8 @@ function contact_site_form($form, &$form_state) {
     '#title' => t('Send yourself a copy.'),
     '#access' => $user->uid,
   );
-  $form['submit'] = array(
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Send message'),
   );
@@ -135,7 +136,7 @@ function contact_site_form_submit($form, &$form_state) {
 
   // Save the anonymous user information to a cookie for reuse.
   if (!$user->uid) {
-    user_cookie_save($values);
+    user_cookie_save(array_intersect_key($values, array_flip(array('name', 'mail'))));
   }
 
   // Get the to and from e-mail addresses.
@@ -177,7 +178,7 @@ function contact_personal_form($form, &$form_state, $recipient) {
   $limit = variable_get('contact_threshold_limit', 5);
   $window = variable_get('contact_threshold_window', 3600);
   if (!flood_is_allowed('contact', $limit, $window) && !user_access('administer contact forms') && !user_access('administer users')) {
-    drupal_set_message(t("You cannot send more than %limit messages in @interval. Please try again later.", array('%limit' => $limit, '@interval' => format_interval($window))), 'error');
+    drupal_set_message(t("You cannot send more than %limit messages in @interval. Try again later.", array('%limit' => $limit, '@interval' => format_interval($window))), 'error');
     drupal_access_denied();
     drupal_exit();
   }
@@ -231,7 +232,8 @@ function contact_personal_form($form, &$form_state, $recipient) {
     '#title' => t('Send yourself a copy.'),
     '#access' => $user->uid,
   );
-  $form['submit'] = array(
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Send message'),
   );
@@ -264,7 +266,7 @@ function contact_personal_form_submit($form, &$form_state) {
 
   // Save the anonymous user information to a cookie for reuse.
   if (!$user->uid) {
-    user_cookie_save($values);
+    user_cookie_save(array_intersect_key($values, array_flip(array('name', 'mail'))));
   }
 
   // Get the to and from e-mail addresses.

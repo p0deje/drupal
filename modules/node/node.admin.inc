@@ -1,5 +1,5 @@
 <?php
-// $Id: node.admin.inc,v 1.82 2009/12/04 16:49:46 dries Exp $
+// $Id: node.admin.inc,v 1.94 2010/04/24 14:49:14 dries Exp $
 
 /**
  * @file
@@ -28,37 +28,37 @@ function node_configure_rebuild_confirm_submit($form, &$form_state) {
 function node_node_operations() {
   $operations = array(
     'publish' => array(
-      'label' => t('Publish'),
+      'label' => t('Publish selected content'),
       'callback' => 'node_mass_update',
       'callback arguments' => array('updates' => array('status' => NODE_PUBLISHED)),
     ),
     'unpublish' => array(
-      'label' => t('Unpublish'),
+      'label' => t('Unpublish selected content'),
       'callback' => 'node_mass_update',
       'callback arguments' => array('updates' => array('status' => NODE_NOT_PUBLISHED)),
     ),
     'promote' => array(
-      'label' => t('Promote to front page'),
+      'label' => t('Promote selected content to front page'),
       'callback' => 'node_mass_update',
       'callback arguments' => array('updates' => array('status' => NODE_PUBLISHED, 'promote' => NODE_PROMOTED)),
     ),
     'demote' => array(
-      'label' => t('Demote from front page'),
+      'label' => t('Demote selected content from front page'),
       'callback' => 'node_mass_update',
       'callback arguments' => array('updates' => array('promote' => NODE_NOT_PROMOTED)),
     ),
     'sticky' => array(
-      'label' => t('Make sticky'),
+      'label' => t('Make selected content sticky'),
       'callback' => 'node_mass_update',
       'callback arguments' => array('updates' => array('status' => NODE_PUBLISHED, 'sticky' => NODE_STICKY)),
     ),
     'unsticky' => array(
-      'label' => t('Remove stickiness'),
+      'label' => t('Make selected content not sticky'),
       'callback' => 'node_mass_update',
       'callback arguments' => array('updates' => array('sticky' => NODE_NOT_STICKY)),
     ),
     'delete' => array(
-      'label' => t('Delete'),
+      'label' => t('Delete selected content'),
       'callback' => NULL,
     ),
   );
@@ -97,15 +97,6 @@ function node_filters() {
     ) + node_type_get_names(),
   );
 
-  // The taxonomy filter
-  if ($taxonomy = module_invoke('taxonomy', 'form_all', 1)) {
-    $filters['term'] = array(
-      'title' => t('term'),
-      'options' => array(
-        '[any]' => t('any'),
-      ) + $taxonomy,
-    );
-  }
   // Language filter if there is a list of languages
   if ($languages = module_invoke('locale', 'language_list')) {
     $languages = array(LANGUAGE_NONE => t('Language neutral')) + $languages;
@@ -133,8 +124,8 @@ function node_build_filter_query(SelectQueryInterface $query) {
     list($key, $value) = $filter;
     switch ($key) {
       case 'term':
-        $index = 'tn' . $counter++;
-        $query->join('taxonomy_term_node', $index, "n.nid = $index.nid");
+        $index = 'ti' . $counter++;
+        $query->join('taxonomy_index', $index, "n.nid = $index.nid");
         $query->condition($index . '.tid', $value);
         break;
       case 'status':
@@ -196,10 +187,15 @@ function node_filter_form() {
     );
   }
 
-  $form['filters']['buttons']['submit'] = array('#type' => 'submit', '#value' => (count($session) ? t('Refine') : t('Filter')));
+  $form['filters']['actions'] = array(
+    '#type' => 'actions',
+    '#id' => 'node-admin-buttons',
+    '#attributes' => array('class' => array('container-inline')),
+  );
+  $form['filters']['actions']['submit'] = array('#type' => 'submit', '#value' => (count($session) ? t('Refine') : t('Filter')));
   if (count($session)) {
-    $form['filters']['buttons']['undo'] = array('#type' => 'submit', '#value' => t('Undo'));
-    $form['filters']['buttons']['reset'] = array('#type' => 'submit', '#value' => t('Reset'));
+    $form['filters']['actions']['undo'] = array('#type' => 'submit', '#value' => t('Undo'));
+    $form['filters']['actions']['reset'] = array('#type' => 'submit', '#value' => t('Reset'));
   }
 
   drupal_add_js('misc/form.js');
@@ -208,23 +204,11 @@ function node_filter_form() {
 }
 
 /**
- * Theme node administration filter form.
+ * Returns HTML for a node administration filter selector.
  *
- * @ingroup themeable
- */
-function theme_node_filter_form($variables) {
-  $form = $variables['form'];
-  $output = '';
-
-  $output .= '<div id="node-admin-filter">';
-  $output .= drupal_render($form['filters']);
-  $output .= '</div>';
-  $output .= drupal_render_children($form);
-  return $output;
-}
-
-/**
- * Theme node administration filter selector.
+ * @param $variables
+ *   An associative array containing:
+ *   - form: A render element representing the form.
  *
  * @ingroup themeable
  */
@@ -240,6 +224,8 @@ function theme_node_filters($variables) {
   }
   $output .= '</ul>';
 
+  $output .= '<div class="clearfix">';
+
   $output .= '<dl class="multiselect">' . (!empty($form['current']) ? '<dt><em>' . t('and') . '</em> ' . t('where') . '</dt>' : '');
 
   $output .= '<dd>';
@@ -250,7 +236,9 @@ function theme_node_filters($variables) {
   $output .= '</dd>';
 
   $output .= '</dl>';
-  $output .= '<div class="container-inline" id="node-admin-buttons">' . drupal_render($form['buttons']) . '</div>';
+  $output .= drupal_render($form['actions']);
+
+  $output .= '</div>';
 
   return $output;
 }
@@ -356,7 +344,7 @@ function _node_mass_update_batch_process($nodes, $updates, &$context) {
     $node = _node_mass_update_helper($nid, $updates);
 
     // Store result for post-processing in the finished callback.
-    $context['results'][] = l($node->title[LANGUAGE_NONE][0]['value'], 'node/' . $node->nid);
+    $context['results'][] = l($node->title, 'node/' . $node->nid);
 
     // Update our progress information.
     $context['sandbox']['progress']++;
@@ -393,7 +381,6 @@ function node_admin_content($form, $form_state) {
   }
   $form['filter'] = node_filter_form();
   $form['#submit'][] = 'node_filter_form_submit';
-  $form['#theme'] = 'node_filter_form';
   $form['admin'] = node_admin_nodes();
 
   return $form;
@@ -409,8 +396,7 @@ function node_admin_nodes() {
   $form['options'] = array(
     '#type' => 'fieldset',
     '#title' => t('Update options'),
-    '#prefix' => '<div class="container-inline">',
-    '#suffix' => '</div>',
+    '#attributes' => array('class' => array('container-inline')),
     '#access' => $admin_access,
   );
   $options = array();
@@ -437,7 +423,7 @@ function node_admin_nodes() {
   $header = array(
     'title' => array('data' => t('Title'), 'field' => 'n.title'),
     'type' => array('data' => t('Type'), 'field' => 'n.type'),
-    'author' => array('data' => t('Author'), 'field' => 'u.name'),
+    'author' => t('Author'),
     'status' => array('data' => t('Status'), 'field' => 'n.status'),
     'changed' => array('data' => t('Updated'), 'field' => 'n.changed', 'sort' => 'desc')
   );
@@ -482,7 +468,7 @@ function node_admin_nodes() {
       'title' => array(
         'data' => array(
           '#type' => 'link',
-          '#title' => $node->title[LANGUAGE_NONE][0]['value'],
+          '#title' => $node->title,
           '#href' => 'node/' . $node->nid,
           '#options' => $l_options,
           '#suffix' => ' ' . theme('mark', array('type' => node_mark($node->nid, $node->changed))),
@@ -517,7 +503,7 @@ function node_admin_nodes() {
       // Render an unordered list of operations links.
       $options[$node->nid]['operations'] = array(
         'data' => array(
-          '#theme' => 'links',
+          '#theme' => 'links__node_operations',
           '#links' => $operations,
           '#attributes' => array('class' => array('links', 'inline')),
         ),
@@ -634,12 +620,4 @@ function node_multiple_delete_confirm_submit($form, &$form_state) {
     drupal_set_message(t('Deleted @count posts.', array('@count' => $count)));
   }
   $form_state['redirect'] = 'admin/content';
-}
-
-/**
- * Implements hook_modules_installed().
- */
-function node_modules_installed($modules) {
-  // Clear node type cache for node permissions.
-  drupal_static_reset('_node_types_build');
 }

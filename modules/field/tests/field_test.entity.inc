@@ -1,5 +1,5 @@
 <?php
-// $Id: field_test.entity.inc,v 1.1 2009/11/20 23:29:28 webchick Exp $
+// $Id: field_test.entity.inc,v 1.12 2010/06/17 13:44:45 dries Exp $
 
 /**
  * @file
@@ -11,29 +11,67 @@
  */
 function field_test_entity_info() {
   $bundles = variable_get('field_test_bundles', array('test_bundle' => array('label' => 'Test Bundle')));
+  $test_entity_modes = array(
+    'full' => array(
+      'label' => t('Full object'),
+      'custom settings' => TRUE,
+    ),
+    'teaser' => array(
+      'label' => t('Teaser'),
+      'custom settings' => TRUE,
+    ),
+  );
+
   return array(
     'test_entity' => array(
       'name' => t('Test Entity'),
-      'object keys' => array(
+      'fieldable' => TRUE,
+      'field cache' => FALSE,
+      'base table' => 'test_entity',
+      'revision table' => 'test_entity_revision',
+      'entity keys' => array(
         'id' => 'ftid',
         'revision' => 'ftvid',
         'bundle' => 'fttype',
       ),
-      'cacheable' => FALSE,
       'bundles' => $bundles,
-      'fieldable' => TRUE,
+      'view modes' => $test_entity_modes,
     ),
     // This entity type doesn't get form handling for now...
     'test_cacheable_entity' => array(
       'name' => t('Test Entity, cacheable'),
-      'object keys' => array(
+      'fieldable' => TRUE,
+      'field cache' => TRUE,
+      'entity keys' => array(
         'id' => 'ftid',
         'revision' => 'ftvid',
         'bundle' => 'fttype',
       ),
-      'fieldable' => TRUE,
-      'cacheable' => TRUE,
       'bundles' => $bundles,
+      'view modes' => $test_entity_modes,
+    ),
+    'test_entity_bundle_key' => array(
+      'name' => t('Test Entity with a bundle key.'),
+      'base table' => 'test_entity_bundle_key',
+      'fieldable' => TRUE,
+      'field cache' => FALSE,
+      'entity keys' => array(
+        'id' => 'ftid',
+        'bundle' => 'fttype',
+      ),
+      'bundles' => array('bundle1' => array('label' => 'Bundle1'), 'bundle2' => array('label' => 'Bundle2')),
+      'view modes' => $test_entity_modes,
+    ),
+    'test_entity_bundle' => array(
+      'name' => t('Test Entity with a specified bundle.'),
+      'base table' => 'test_entity_bundle',
+      'fieldable' => TRUE,
+      'field cache' => FALSE,
+      'entity keys' => array(
+        'id' => 'ftid',
+      ),
+      'bundles' => array('test_entity_2' => array('label' => 'Test entity 2')),
+      'view modes' => $test_entity_modes,
     ),
   );
 }
@@ -43,17 +81,30 @@ function field_test_entity_info() {
  */
 function field_test_entity_info_alter(&$entity_info) {
   // Enable/disable field_test as a translation handler.
-  foreach (field_test_entity_info_translatable() as $obj_type => $translatable) {
-    $entity_info[$obj_type]['translation']['field_test'] = $translatable;
+  foreach (field_test_entity_info_translatable() as $entity_type => $translatable) {
+    $entity_info[$entity_type]['translation']['field_test'] = $translatable;
   }
   // Disable locale as a translation handler.
-  foreach ($entity_info as $obj_type => $info) {
-    $entity_info[$obj_type]['translation']['locale'] = FALSE;
+  foreach ($entity_info as $entity_type => $info) {
+    $entity_info[$entity_type]['translation']['locale'] = FALSE;
   }
 }
 
 /**
- * Creates a new bundle for test_entity objects.
+ * Helper function to enable entity translations.
+ */
+function field_test_entity_info_translatable($entity_type = NULL, $translatable = NULL) {
+  drupal_static_reset('field_has_translation_handler');
+  $stored_value = &drupal_static(__FUNCTION__, array());
+  if (isset($entity_type)) {
+    $stored_value[$entity_type] = $translatable;
+    entity_info_cache_clear();
+  }
+  return $stored_value;
+}
+
+/**
+ * Creates a new bundle for test_entity entities.
  *
  * @param $bundle
  *   The machine-readable name of the bundle.
@@ -73,7 +124,7 @@ function field_test_create_bundle($bundle, $text = NULL) {
 }
 
 /**
- * Renames a bundle for test_entity objects.
+ * Renames a bundle for test_entity entities.
  *
  * @param $bundle_old
  *   The machine-readable name of the bundle to rename.
@@ -110,21 +161,7 @@ function field_test_delete_bundle($bundle) {
 }
 
 /**
- * Implements hook_field_build_modes().
- */
-function field_test_field_build_modes($obj_type) {
-  $modes = array();
-  if ($obj_type == 'test_entity' || $obj_type == 'test_cacheable_entity') {
-    $modes = array(
-      'full' => t('Full node'),
-      'teaser' => t('Teaser'),
-    );
-  }
-  return $modes;
-}
-
-/**
- * Creates a basic test_entity object.
+ * Creates a basic test_entity entity.
  */
 function field_test_create_stub_entity($id = 1, $vid = 1, $bundle = 'test_bundle') {
   $entity = new stdClass();
@@ -154,11 +191,19 @@ function field_test_create_stub_entity($id = 1, $vid = 1, $bundle = 'test_bundle
 function field_test_entity_test_load($ftid, $ftvid = NULL) {
   // Load basic strucure.
   $query = db_select('test_entity', 'fte', array())
-    ->fields('fte')
-    ->condition('ftid', $ftid);
+    ->condition('fte.ftid', $ftid);
+
   if ($ftvid) {
-    $query->condition('ftvid', $ftvid);
+    $query->join('test_entity_revision', 'fter', 'fte.ftid = fter.ftid');
+    $query->addField('fte', 'ftid');
+    $query->addField('fte', 'fttype');
+    $query->addField('fter', 'ftvid');
+    $query->condition('fter.ftvid', $ftvid);
   }
+  else {
+    $query->fields('fte');
+  }
+
   $entities = $query->execute()->fetchAllAssoc('ftid');
 
   // Attach fields.
@@ -244,10 +289,15 @@ function field_test_entity_edit($entity) {
  * Test_entity form.
  */
 function field_test_entity_form($form, &$form_state, $entity, $add = FALSE) {
-  if (isset($form_state['test_entity'])) {
-    $entity = $form_state['test_entity'] + (array)$entity;
+  // During initial form build, add the entity to the form state for use during
+  // form building and processing. During a rebuild, use what is in the form
+  // state.
+  if (!isset($form_state['test_entity'])) {
+    $form_state['test_entity'] = $entity;
   }
-  $entity = (object)$entity;
+  else {
+    $entity = $form_state['test_entity'];
+  }
 
   foreach (array('ftid', 'ftvid', 'fttype') as $key) {
     $form[$key] = array(
@@ -282,15 +332,14 @@ function field_test_entity_form($form, &$form_state, $entity, $add = FALSE) {
  * Validate handler for field_test_entity_form().
  */
 function field_test_entity_form_validate($form, &$form_state) {
-  $entity = field_test_create_stub_entity($form_state['values']['ftid'], $form_state['values']['ftvid'], $form_state['values']['fttype']);
-  field_attach_form_validate('test_entity', $entity, $form, $form_state);
+  entity_form_field_validate('test_entity', $form, $form_state);
 }
 
 /**
  * Submit handler for field_test_entity_form().
  */
 function field_test_entity_form_submit($form, &$form_state) {
-  $entity = field_test_entity_form_submit_builder($form, $form_state);
+  $entity = $form['#builder_function']($form, $form_state);
   $insert = empty($entity->ftid);
   field_test_entity_save($entity);
 
@@ -298,25 +347,20 @@ function field_test_entity_form_submit($form, &$form_state) {
   drupal_set_message($message);
 
   if ($entity->ftid) {
-    unset($form_state['rebuild']);
     $form_state['redirect'] = 'test-entity/' . $entity->ftid . '/edit';
   }
   else {
     // Error on save.
     drupal_set_message(t('The entity could not be saved.'), 'error');
+    $form_state['rebuild'] = TRUE;
   }
 }
 
 /**
- * Builds a test_entity from submitted form values.
+ * Updates the form state's entity by processing this submission's values.
  */
 function field_test_entity_form_submit_builder($form, &$form_state) {
-  $entity = field_test_create_stub_entity($form_state['values']['ftid'], $form_state['values']['ftvid'], $form_state['values']['fttype']);
-  $entity->revision = !empty($form_state['values']['revision']);
-  field_attach_submit('test_entity', $entity, $form, $form_state);
-
-  $form_state['test_entity'] = (array)$entity;
-  $form_state['rebuild'] = TRUE;
-
+  $entity = $form_state['test_entity'];
+  entity_form_submit_build_entity('test_entity', $entity, $form, $form_state);
   return $entity;
 }

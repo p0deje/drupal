@@ -1,5 +1,5 @@
 <?php
-// $Id: update.inc,v 1.23 2009/12/08 07:07:15 webchick Exp $
+// $Id: update.inc,v 1.54 2010/06/08 15:08:35 webchick Exp $
 
 /**
  * @file
@@ -10,8 +10,7 @@
  */
 
 /**
- * Disable anything in the {system} table that is not compatible with the
- * current version of Drupal core.
+ * Disable any items in the {system} table that are not core compatible.
  */
 function update_fix_compatibility() {
   $incompatible = array();
@@ -37,7 +36,10 @@ function update_check_incompatibility($name, $type = 'module') {
 
   // Store values of expensive functions for future use.
   if (empty($themes) || empty($modules)) {
-    $themes = _system_rebuild_theme_data();
+    // We need to do a full rebuild here to make sure the database reflects any
+    // code changes that were made in the filesystem before the update script
+    // was initiated.
+    $themes = system_rebuild_theme_data();
     $modules = system_rebuild_module_data();
   }
 
@@ -58,6 +60,8 @@ function update_check_incompatibility($name, $type = 'module') {
 }
 
 /**
+ * Performs extra steps required to bootstrap when using a Drupal 6 database.
+ *
  * Users who still have a Drupal 6 database (and are in the process of
  * updating to Drupal 7) need extra help before a full bootstrap can be
  * achieved. This function does the necessary preliminary work that allows
@@ -83,7 +87,7 @@ function update_prepare_d7_bootstrap() {
         'title' => 'Settings file',
         'value' => $writable ? 'The settings file is writable.' : 'The settings file is not writable.',
         'severity' => $writable ? REQUIREMENT_OK : REQUIREMENT_ERROR,
-        'description' => $writable ? '' : 'Drupal requires write permissions to <em>' . $settings_file . '</em> during the update process. If you are unsure how to grant file permissions, please consult the <a href="http://drupal.org/server-permissions">online handbook</a>.',
+        'description' => $writable ? '' : 'Drupal requires write permissions to <em>' . $settings_file . '</em> during the update process. If you are unsure how to grant file permissions, consult the <a href="http://drupal.org/server-permissions">online handbook</a>.',
       ),
     );
     update_extra_requirements($requirements);
@@ -95,63 +99,204 @@ function update_prepare_d7_bootstrap() {
   // that occur by creating a static list.
   $GLOBALS['conf']['blocked_ips'] = array();
 
+  // Check that PDO is available and that the correct PDO database driver is
+  // loaded. Bootstrapping to DRUPAL_BOOTSTRAP_DATABASE will result in a fatal
+  // error otherwise.
+  $message = '';
+  // Check that PDO is loaded.
+  if (!extension_loaded('pdo')) {
+    $message = '<h2>PDO is required!</h2><p>Drupal 7 requires PHP ' . DRUPAL_MINIMUM_PHP . ' or higher with the PHP Data Objects (PDO) extension enabled.</p>';
+  }
+  // Check that the correct driver is loaded for the database being updated.
+  elseif (!in_array($databases['default']['default']['driver'], PDO::getAvailableDrivers())) {
+      $message = '<h2>A PDO database driver is required!</h2><p>You need to enable the PDO_' . strtoupper($databases['default']['default']['driver']) . ' database driver for PHP ' . DRUPAL_MINIMUM_PHP . ' or higher so that Drupal 7 can access the database.</p>';
+  }
+  if ($message) {
+    print $message . '<p>See the <a href="http://drupal.org/requirements">system requirements page</a> for more information.</p>';
+    exit();
+  }
+
   // Allow the database system to work even if the registry has not been
   // created yet.
   drupal_bootstrap(DRUPAL_BOOTSTRAP_DATABASE);
-  drupal_install_initialize_database();
-  spl_autoload_unregister('drupal_autoload_class');
-  spl_autoload_unregister('drupal_autoload_interface');
+
+  // Create the registry tables.
+  if (!db_table_exists('registry')) {
+    $schema['registry'] = array(
+      'fields' => array(
+        'name'   => array('type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => ''),
+        'type'   => array('type' => 'varchar', 'length' => 9, 'not null' => TRUE, 'default' => ''),
+        'filename'   => array('type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => ''),
+        'module'   => array('type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => ''),
+        'weight'   => array('type' => 'int', 'not null' => TRUE, 'default' => 0),
+      ),
+      'primary key' => array('name', 'type'),
+      'indexes' => array(
+        'hook' => array('type', 'weight', 'module'),
+      ),
+    );
+    db_create_table('registry', $schema['registry']);
+  }
+  if (!db_table_exists('registry_file')) {
+    $schema['registry_file'] = array(
+      'fields' => array(
+        'filename'   => array('type' => 'varchar', 'length' => 255, 'not null' => TRUE),
+        'filectime'  => array('type' => 'int', 'not null' => TRUE, 'default' => 0),
+        'filemtime'  => array('type' => 'int', 'not null' => TRUE, 'default' => 0),
+      ),
+      'primary key' => array('filename'),
+    );
+    db_create_table('registry_file', $schema['registry_file']);
+  }
 
   // The new cache_bootstrap bin is required to bootstrap to
   // DRUPAL_BOOTSTRAP_SESSION, so create it here rather than in
   // update_fix_d7_requirements().
-  $cache_bootstrap = array(
-    'description' => 'Cache table for data required to bootstrap Drupal, may be routed to a shared memory cache.',
-    'fields' => array(
-      'cid' => array(
-        'description' => 'Primary Key: Unique cache ID.',
-        'type' => 'varchar',
-        'length' => 255,
-        'not null' => TRUE,
-        'default' => '',
+  if (!db_table_exists('cache_bootstrap')) {
+    $cache_bootstrap = array(
+      'description' => 'Cache table for data required to bootstrap Drupal, may be routed to a shared memory cache.',
+      'fields' => array(
+        'cid' => array(
+          'description' => 'Primary Key: Unique cache ID.',
+          'type' => 'varchar',
+          'length' => 255,
+          'not null' => TRUE,
+          'default' => '',
+        ),
+        'data' => array(
+          'description' => 'A collection of data to cache.',
+          'type' => 'blob',
+          'not null' => FALSE,
+          'size' => 'big',
+        ),
+        'expire' => array(
+          'description' => 'A Unix timestamp indicating when the cache entry should expire, or 0 for never.',
+          'type' => 'int',
+          'not null' => TRUE,
+          'default' => 0,
+        ),
+        'created' => array(
+          'description' => 'A Unix timestamp indicating when the cache entry was created.',
+          'type' => 'int',
+          'not null' => TRUE,
+          'default' => 0,
+        ),
+        'serialized' => array(
+          'description' => 'A flag to indicate whether content is serialized (1) or not (0).',
+          'type' => 'int',
+          'size' => 'small',
+          'not null' => TRUE,
+          'default' => 0,
+        ),
       ),
-      'data' => array(
-        'description' => 'A collection of data to cache.',
-        'type' => 'blob',
-        'not null' => FALSE,
-        'size' => 'big',
+      'indexes' => array(
+        'expire' => array('expire'),
       ),
-      'expire' => array(
-        'description' => 'A Unix timestamp indicating when the cache entry should expire, or 0 for never.',
-        'type' => 'int',
-        'not null' => TRUE,
-        'default' => 0,
-      ),
-      'created' => array(
-        'description' => 'A Unix timestamp indicating when the cache entry was created.',
-        'type' => 'int',
-        'not null' => TRUE,
-        'default' => 0,
-      ),
-      'headers' => array(
-        'description' => 'Any custom HTTP headers to be added to cached data.',
-        'type' => 'text',
-        'not null' => FALSE,
-      ),
-      'serialized' => array(
-        'description' => 'A flag to indicate whether content is serialized (1) or not (0).',
-        'type' => 'int',
-        'size' => 'small',
-        'not null' => TRUE,
-        'default' => 0,
-      ),
-    ),
-    'indexes' => array(
-      'expire' => array('expire'),
-    ),
-    'primary key' => array('cid'),
-  );
-  db_create_table('cache_bootstrap', $cache_bootstrap);
+      'primary key' => array('cid'),
+    );
+    db_create_table('cache_bootstrap', $cache_bootstrap);
+  }
+
+  // Set a valid timezone for 6 -> 7 upgrade process.
+  drupal_bootstrap(DRUPAL_BOOTSTRAP_VARIABLES);
+  $timezone_offset = variable_get('date_default_timezone', 0);
+  if (is_numeric($timezone_offset)) {
+    // Save the original offset.
+    variable_set('date_temporary_timezone', $timezone_offset);
+    // Set the timezone for this request only.
+    $GLOBALS['conf']['date_default_timezone'] = 'UTC';
+  }
+}
+
+/**
+ * A helper function that modules can use to assist with the transformation
+ * from numeric block deltas to string block deltas during the 6.x -> 7.x
+ * upgrade.
+ *
+ * @todo This function should be removed in 8.x.
+ *
+ * @param $sandbox
+ *   An array holding data for the batch process.
+ * @param $renamed_deltas
+ *   An associative array.  Keys are module names, values an associative array
+ *   mapping the old block deltas to the new block deltas for the module.
+ *   Example:
+ *     $renamed_deltas = array(
+ *       'mymodule' =>
+ *         array(
+ *           0 => 'mymodule-block-1',
+ *           1 => 'mymodule-block-2',
+ *         ),
+ *     );
+ */
+function update_fix_d7_block_deltas(&$sandbox, $renamed_deltas) {
+  // Loop through each block and make changes to the block tables.
+  // Only run this the first time through the batch update.
+  if (!isset($sandbox['progress'])) {
+    // Determine whether to use the old or new block table names.
+    $block_tables = db_table_exists('blocks') ? array('blocks', 'blocks_roles') : array('block', 'block_role');
+    foreach ($block_tables as $table) {
+      foreach ($renamed_deltas as $module => $deltas) {
+        foreach ($deltas as $old_delta => $new_delta) {
+          // Only do the update if the old block actually exists.
+          $block_exists = db_query("SELECT COUNT(*) FROM {" . $table . "} WHERE module = :module AND delta = :delta", array(
+            ':module' => $module,
+            ':delta' => $old_delta,
+          ))
+          ->fetchField();
+          if ($block_exists) {
+            db_update($table)
+              ->fields(array('delta' => $new_delta))
+              ->condition('module', $module)
+              ->condition('delta', $old_delta)
+              ->execute();
+          }
+        }
+      }
+    }
+
+    // Initialize batch update information.
+    $sandbox['progress'] = 0;
+    $sandbox['last_user_processed'] = -1;
+    $sandbox['max'] = db_query("SELECT COUNT(*) FROM {users} WHERE data IS NOT NULL")->fetchField();
+  }
+  // Now do the batch update of the user-specific block visibility settings.
+  $limit = 100;
+  $result = db_select('users', 'u')
+    ->fields('u', array('uid', 'data'))
+    ->condition('uid', $sandbox['last_user_processed'], '>')
+    ->where('data IS NOT NULL')
+    ->range(0, $limit)
+    ->execute();
+  foreach ($result as $row) {
+    $data = unserialize($row->data);
+    $user_needs_update = FALSE;
+    foreach ($renamed_deltas as $module => $deltas) {
+      foreach ($deltas as $old_delta => $new_delta) {
+        if (isset($data['block'][$module][$old_delta])) {
+          // Transfer the old block visibility settings to the newly-renamed
+          // block, and mark this user for a database update.
+          $data['block'][$module][$new_delta] = $data['block'][$module][$old_delta];
+          unset($data['block'][$module][$old_delta]);
+          $user_needs_update = TRUE;
+        }
+      }
+    }
+    // Update the current user.
+    if ($user_needs_update) {
+      db_update('users')
+        ->fields(array('data' => serialize($data)))
+        ->condition('uid', $row->uid)
+        ->execute();
+    }
+    // Update our progress information for the batch update.
+    $sandbox['progress']++;
+    $sandbox['last_user_processed'] = $row->uid;
+  }
+  // Indicate our current progress to the batch update system.
+  if ($sandbox['progress'] < $sandbox['max']) {
+    $sandbox['#finished'] = $sandbox['progress'] / $sandbox['max'];
+  }
 }
 
 /**
@@ -166,17 +311,47 @@ function update_prepare_d7_bootstrap() {
 function update_fix_d7_requirements() {
   global $conf;
 
-  // Rewrite the settings.php file if necessary.
-  // @see update_prepare_d7_bootstrap().
+  // Rewrite the settings.php file if necessary, see
+  // update_prepare_d7_bootstrap().
   global $update_rewrite_settings, $db_url;
   if (!empty($update_rewrite_settings)) {
     $databases = update_parse_db_url($db_url);
-    file_put_contents(conf_path() . '/settings.php', "\n" . '$databases = ' . var_export($databases, TRUE) . ';', FILE_APPEND);
+    $salt = drupal_hash_base64(drupal_random_bytes(55));
+    file_put_contents(conf_path() . '/settings.php', "\n" . '$databases = ' . var_export($databases, TRUE) . ";\n\$drupal_hash_salt = '$salt';", FILE_APPEND);
   }
   if (drupal_get_installed_schema_version('system') < 7000 && !variable_get('update_d7_requirements', FALSE)) {
+    // Change 6.x system table field values to 7.x equivalent.
+    // Change field values.
+    db_change_field('system', 'schema_version', 'schema_version', array(
+     'type' => 'int',
+     'size' => 'small',
+     'not null' => TRUE,
+     'default' => -1)
+    );
+    db_change_field('system', 'status', 'status', array(
+      'type' => 'int', 'not null' => TRUE, 'default' => 0));
+    db_change_field('system', 'weight', 'weight', array(
+      'type' => 'int', 'not null' => TRUE, 'default' => 0));
+    db_change_field('system', 'bootstrap', 'bootstrap', array(
+      'type' => 'int', 'not null' => TRUE, 'default' => 0));
+    // Drop and recreate 6.x indexes.
+    db_drop_index('system', 'bootstrap');
+    db_add_index('system', 'bootstrap', array(
+      'status', 'bootstrap', array('type', 12), 'weight', 'name'));
+
+    db_drop_index('system' ,'modules');
+    db_add_index('system', 'modules', array(array(
+      'type', 12), 'status', 'weight', 'name'));
+
+    db_drop_index('system', 'type_name');
+    db_add_index('system', 'type_name', array(array('type', 12), 'name'));
+    // Add 7.x indexes.
+    db_add_index('system', 'system_list', array('weight', 'name'));
+
     // Add the cache_path table.
     $schema['cache_path'] = drupal_get_schema_unprocessed('system', 'cache');
     $schema['cache_path']['description'] = 'Cache table used for path alias lookups.';
+    db_create_table('cache_path', $schema['cache_path']);
 
     // system_update_7042() renames columns, but these are needed to bootstrap.
     // Add empty columns for now.
@@ -196,7 +371,7 @@ function update_fix_d7_requirements() {
     db_add_field('menu_router', 'theme_callback', array('type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => ''));
     db_add_field('menu_router', 'theme_arguments', array('type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => ''));
 
-    // Add the role_permisson table.
+    // Add the role_permission table.
     $schema['role_permission'] = array(
       'fields' => array(
         'rid' => array(
@@ -218,36 +393,9 @@ function update_fix_d7_requirements() {
     );
     db_create_table('role_permission', $schema['role_permission']);
 
-    // Add the {semaphore} table in case menu_rebuild() gets called during
-    // an update.
-    $schema['semaphore'] = array(
-      'description' => 'Table for holding semaphores, locks, flags, etc. that cannot be stored as Drupal variables since they must not be cached.',
-      'fields' => array(
-        'name' => array(
-          'description' => 'Primary Key: Unique name.',
-          'type' => 'varchar',
-          'length' => 255,
-          'not null' => TRUE,
-          'default' => ''
-        ),
-        'value' => array(
-          'description' => 'A value for the semaphore.',
-          'type' => 'varchar',
-          'length' => 255,
-          'not null' => TRUE,
-          'default' => ''
-        ),
-        'expire' => array(
-          'description' => 'A Unix timestamp with microseconds indicating when the semaphore should expire.',
-          'type' => 'float',
-          'size' => 'big',
-          'not null' => TRUE
-        ),
-      ),
-      'indexes' => array('value' => array('value')),
-      'primary key' => array('name'),
-    );
-    db_create_table('semaphore', $schema['semaphore']);
+    // Drops and recreates semaphore value index.
+    db_drop_index('semaphore', 'expire');
+    db_add_index('semaphore', 'value', array('value'));
 
     $schema['date_format_type'] = array(
       'description' => 'Stores configured date format types.',
@@ -334,8 +482,93 @@ function update_fix_d7_requirements() {
     );
 
     db_create_table('date_format_type', $schema['date_format_type']);
+    // Sites that have the Drupal 6 Date module installed already have the
+    // following tables.
+    if (db_table_exists('date_formats')) {
+      db_rename_table('date_formats', 'd6_date_formats');
+    }
     db_create_table('date_formats', $schema['date_formats']);
+    if (db_table_exists('date_format_locale')) {
+      db_rename_table('date_format_locale', 'd6_date_format_locale');
+    }
     db_create_table('date_format_locale', $schema['date_format_locale']);
+
+    // Add the queue table.
+    $schema['queue'] = array(
+      'description' => 'Stores items in queues.',
+      'fields' => array(
+        'item_id' => array(
+          'type' => 'serial',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+          'description' => 'Primary Key: Unique item ID.',
+        ),
+        'name' => array(
+          'type' => 'varchar',
+          'length' => 255,
+          'not null' => TRUE,
+          'default' => '',
+          'description' => 'The queue name.',
+        ),
+        'data' => array(
+          'type' => 'text',
+          'not null' => FALSE,
+          'size' => 'big',
+          'serialize' => TRUE,
+          'description' => 'The arbitrary data for the item.',
+        ),
+        'expire' => array(
+          'type' => 'int',
+          'not null' => TRUE,
+          'default' => 0,
+          'description' => 'Timestamp when the claim lease expires on the item.',
+        ),
+        'created' => array(
+          'type' => 'int',
+          'not null' => TRUE,
+          'default' => 0,
+          'description' => 'Timestamp when the item was created.',
+        ),
+      ),
+      'primary key' => array('item_id'),
+      'indexes' => array(
+        'name_created' => array('name', 'created'),
+        'expire' => array('expire'),
+      ),
+    );
+    // Check for queue table that may remain from D5 or D6, if found
+    //drop it.
+    if (db_table_exists('queue')) {
+      db_drop_table('queue');
+    }
+
+    db_create_table('queue', $schema['queue']);
+
+    // Create the sequences table.
+    $schema['sequences'] = array(
+      'description' => 'Stores IDs.',
+      'fields' => array(
+        'value' => array(
+          'description' => 'The value of the sequence.',
+          'type' => 'serial',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+       ),
+      'primary key' => array('value'),
+    );
+    // Check for sequences table that may remain from D5 or D6, if found
+    //drop it.
+    if (db_table_exists('sequences')) {
+      db_drop_table('sequences');
+    }
+    db_create_table('sequences', $schema['sequences']);
+    // Initialize the table with the maximum current increment of the tables
+    // that will rely on it for their ids.
+    $max_aid = db_query('SELECT MAX(aid) FROM {actions_aid}')->fetchField();
+    $max_uid = db_query('SELECT MAX(uid) FROM {users}')->fetchField();
+    $max_batch_id = db_query('SELECT MAX(bid) FROM {batch}')->fetchField();
+    db_insert('sequences')->fields(array('value' => max($max_aid, $max_uid, $max_batch_id)))->execute();
 
     // Add column for locale context.
     if (db_table_exists('locales_source')) {
@@ -343,8 +576,8 @@ function update_fix_d7_requirements() {
     }
 
     // Rename 'site_offline_message' variable to 'maintenance_mode_message'.
-    // Old variable is removed in update for system.module.
-    // @see system_update_7036().
+    // Old variable is removed in update for system.module, see
+    // system_update_7036().
     if ($message = variable_get('site_offline_message', NULL)) {
       variable_set('maintenance_mode_message', $message);
     }
@@ -358,8 +591,8 @@ function update_fix_d7_requirements() {
 /**
  * Register the currently installed profile in the system table.
  *
- * Install profiles are now treated as modules by Drupal, and have an upgrade path
- * based on their schema version in the system table.
+ * Install profiles are now treated as modules by Drupal, and have an upgrade
+ * path based on their schema version in the system table.
  *
  * The install profile will be set to schema_version 0, as it has already been
  * installed. Any other hook_update_N functions provided by the install profile
@@ -423,8 +656,10 @@ function update_fix_d7_install_profile() {
 }
 
 /**
- * Parse database connection URLs (in the old, pre-Drupal 7 format) and
- * return them as an array of database connection information.
+ * Parse pre-Drupal 7 database connection URLs and return D7 compatible array.
+ *
+ * @return
+ *   Drupal 7 DBTNG compatible array of database connection information.
  */
 function update_parse_db_url($db_url) {
   $databases = array();
@@ -448,8 +683,7 @@ function update_parse_db_url($db_url) {
 }
 
 /**
- * Perform one update and store the results which will later be displayed on
- * the finished page.
+ * Perform one update and store the results for display on finished page.
  *
  * If an update function completes successfully, it should return a message
  * as a string indicating success, for example:
@@ -466,10 +700,10 @@ function update_parse_db_url($db_url) {
  * throw new DrupalUpdateException(t('Description of what went wrong'));
  * @endcode
  *
- * If an exception is thrown, the current and all later updates for this module
- * will be aborted. The schema version will not be updated in this case, and all
- * the aborted updates will continue to appear on update.php as updates that
- * have not yet been run.
+ * If an exception is thrown, the current update and all updates that depend on
+ * it will be aborted. The schema version will not be updated in this case, and
+ * all the aborted updates will continue to appear on update.php as updates
+ * that have not yet been run.
  *
  * If an update function needs to be re-run as part of a batch process, it
  * should accept the $sandbox array by reference as its first parameter
@@ -480,13 +714,21 @@ function update_parse_db_url($db_url) {
  *   The module whose update will be run.
  * @param $number
  *   The update number to run.
+ * @param $dependency_map
+ *   An array whose keys are the names of all update functions that will be
+ *   performed during this batch process, and whose values are arrays of other
+ *   update functions that each one depends on.
  * @param $context
- *   The batch context array
+ *   The batch context array.
+ *
+ * @see update_resolve_dependencies()
  */
-function update_do_one($module, $number, &$context) {
-  // If updates for this module have been aborted
-  // in a previous step, go no further.
-  if (!empty($context['results'][$module]['#abort'])) {
+function update_do_one($module, $number, $dependency_map, &$context) {
+  $function = $module . '_update_' . $number;
+
+  // If this update was aborted in a previous step, or has a dependency that
+  // was aborted in a previous step, go no further.
+  if (!empty($context['results']['#abort']) && array_intersect($context['results']['#abort'], array_merge($dependency_map, array($function)))) {
     return;
   }
 
@@ -495,7 +737,6 @@ function update_do_one($module, $number, &$context) {
   }
 
   $ret = array();
-  $function = $module . '_update_' . $number;
   if (function_exists($function)) {
     try {
       if ($context['log']) {
@@ -504,10 +745,15 @@ function update_do_one($module, $number, &$context) {
       $ret['results']['query'] = $function($context['sandbox']);
       $ret['results']['success'] = TRUE;
     }
-    // @TODO We may want to do different error handling for different exception
-    // types, but for now we'll just print the message.
+    // @TODO We may want to do different error handling for different
+    // exception types, but for now we'll just log the exception and
+    // return the message for printing.
     catch (Exception $e) {
-      $ret['#abort'] = array('success' => FALSE, 'query' => $e->getMessage());
+      watchdog_exception('update', $e);
+
+      require_once DRUPAL_ROOT . '/includes/errors.inc';
+      $variables = _drupal_decode_exception($e);
+      $ret['#abort'] = array('success' => FALSE, 'query' => t('%type: %message in %function (line %line of %file).', $variables));
     }
 
     if ($context['log']) {
@@ -529,11 +775,12 @@ function update_do_one($module, $number, &$context) {
   $context['results'][$module][$number] = array_merge($context['results'][$module][$number], $ret);
 
   if (!empty($ret['#abort'])) {
-    $context['results'][$module]['#abort'] = TRUE;
+    // Record this function in the list of updates that were aborted.
+    $context['results']['#abort'][] = $function;
   }
 
   // Record the schema update if it was completed successfully.
-  if ($context['finished'] == 1 && empty($context['results'][$module]['#abort'])) {
+  if ($context['finished'] == 1 && empty($ret['#abort'])) {
     drupal_set_installed_schema_version($module, $number);
   }
 
@@ -549,7 +796,11 @@ class DrupalUpdateException extends Exception { }
  * Start the database update batch process.
  *
  * @param $start
- *   An array of all the modules and which update to start at.
+ *   An array whose keys contain the names of modules to be updated during the
+ *   current batch process, and whose values contain the number of the first
+ *   requested update for that module. The actual updates that are run (and the
+ *   order they are run in) will depend on the results of passing this data
+ *   through the update dependency system.
  * @param $redirect
  *   Path to redirect to when the batch has finished processing.
  * @param $url
@@ -560,6 +811,8 @@ class DrupalUpdateException extends Exception { }
  * @param $redirect_callback
  *   (optional) Specify a function to be called to redirect to the progressive
  *   processing page.
+ *
+ * @see update_resolve_dependencies()
  */
 function update_batch($start, $redirect = NULL, $url = NULL, $batch = array(), $redirect_callback = 'drupal_goto') {
   // During the update, bring the site offline so that schema changes do not
@@ -569,18 +822,32 @@ function update_batch($start, $redirect = NULL, $url = NULL, $batch = array(), $
     variable_set('maintenance_mode', TRUE);
   }
 
+  // Resolve any update dependencies to determine the actual updates that will
+  // be run and the order they will be run in.
+  $updates = update_resolve_dependencies($start);
+
+  // Store the dependencies for each update function in an array which the
+  // batch API can pass in to the batch operation each time it is called. (We
+  // do not store the entire update dependency array here because it is
+  // potentially very large.)
+  $dependency_map = array();
+  foreach ($updates as $function => $update) {
+    $dependency_map[$function] = !empty($update['reverse_paths']) ? array_keys($update['reverse_paths']) : array();
+  }
+
   $operations = array();
-  // Set the installed version so updates start at the correct place.
-  foreach ($start as $module => $version) {
-    drupal_set_installed_schema_version($module, $version - 1);
-    $updates = drupal_get_schema_versions($module);
-    $max_version = max($updates);
-    if ($version <= $max_version) {
-      foreach ($updates as $update) {
-        if ($update >= $version) {
-          $operations[] = array('update_do_one', array($module, $update));
-        }
+  foreach ($updates as $update) {
+    if ($update['allowed']) {
+      // Set the installed version of each module so updates will start at the
+      // correct place. (The updates are already sorted, so we can simply base
+      // this on the first one we come across in the above foreach loop.)
+      if (isset($start[$update['module']])) {
+        drupal_set_installed_schema_version($update['module'], $update['number'] - 1);
+        unset($start[$update['module']]);
       }
+      // Add this update function to the batch.
+      $function = $update['module'] . '_update_' . $update['number'];
+      $operations[] = array('update_do_one', array($update['module'], $update['number'], $dependency_map[$function]));
     }
   }
   $batch['operations'] = $operations;
@@ -686,5 +953,304 @@ function update_get_update_list() {
     unset($ret['system']);
   }
   return $ret;
+}
+
+/**
+ * Resolves dependencies in a set of module updates, and orders them correctly.
+ *
+ * This function receives a list of requested module updates and determines an
+ * appropriate order to run them in such that all update dependencies are met.
+ * Any updates whose dependencies cannot be met are included in the returned
+ * array but have the key 'allowed' set to FALSE; the calling function should
+ * take responsibility for ensuring that these updates are ultimately not
+ * performed.
+ *
+ * In addition, the returned array also includes detailed information about the
+ * dependency chain for each update, as provided by the depth-first search
+ * algorithm in drupal_depth_first_search().
+ *
+ * @param $starting_updates
+ *   An array whose keys contain the names of modules with updates to be run
+ *   and whose values contain the number of the first requested update for that
+ *   module.
+ *
+ * @return
+ *   An array whose keys are the names of all update functions within the
+ *   provided modules that would need to be run in order to fulfill the
+ *   request, arranged in the order in which the update functions should be
+ *   run. (This includes the provided starting update for each module and all
+ *   subsequent updates that are available.) The values are themselves arrays
+ *   containing all the keys provided by the drupal_depth_first_search()
+ *   algorithm, which encode detailed information about the dependency chain
+ *   for this update function (for example: 'paths', 'reverse_paths', 'weight',
+ *   and 'component'), as well as the following additional keys:
+ *   - 'allowed': A boolean which is TRUE when the update function's
+ *     dependencies are met, and FALSE otherwise. Calling functions should
+ *     inspect this value before running the update.
+ *   - 'missing_dependencies': An array containing the names of any other
+ *     update functions that are required by this one but that are unavailable
+ *     to be run. This array will be empty when 'allowed' is TRUE.
+ *   - 'module': The name of the module that this update function belongs to.
+ *   - 'number': The number of this update function within that module.
+ *
+ * @see drupal_depth_first_search()
+ */
+function update_resolve_dependencies($starting_updates) {
+  // Obtain a dependency graph for the requested update functions.
+  $update_functions = update_get_update_function_list($starting_updates);
+  $graph = update_build_dependency_graph($update_functions);
+
+  // Perform the depth-first search and sort the results.
+  require_once DRUPAL_ROOT . '/includes/graph.inc';
+  drupal_depth_first_search($graph);
+  uasort($graph, 'drupal_sort_weight');
+
+  foreach ($graph as $function => &$data) {
+    $module = $data['module'];
+    $number = $data['number'];
+    // If the update function is missing and has not yet been performed, mark
+    // it and everything that ultimately depends on it as disallowed.
+    if (update_is_missing($module, $number, $update_functions) && !update_already_performed($module, $number)) {
+      $data['allowed'] = FALSE;
+      foreach (array_keys($data['paths']) as $dependent) {
+        $graph[$dependent]['allowed'] = FALSE;
+        $graph[$dependent]['missing_dependencies'][] = $function;
+      }
+    }
+    elseif (!isset($data['allowed'])) {
+      $data['allowed'] = TRUE;
+      $data['missing_dependencies'] = array();
+    }
+    // Now that we have finished processing this function, remove it from the
+    // graph if it was not part of the original list. This ensures that we
+    // never try to run any updates that were not specifically requested.
+    if (!isset($update_functions[$module][$number])) {
+      unset($graph[$function]);
+    }
+  }
+
+  return $graph;
+}
+
+/**
+ * Returns an organized list of update functions for a set of modules.
+ *
+ * @param $starting_updates
+ *   An array whose keys contain the names of modules and whose values contain
+ *   the number of the first requested update for that module.
+ *
+ * @return
+ *   An array containing all the update functions that should be run for each
+ *   module, including the provided starting update and all subsequent updates
+ *   that are available. The keys of the array contain the module names, and
+ *   each value is an ordered array of update functions, keyed by the update
+ *   number.
+ *
+ * @see update_resolve_dependencies()
+ */
+function update_get_update_function_list($starting_updates) {
+  // Go through each module and find all updates that we need (including the
+  // first update that was requested and any updates that run after it).
+  $update_functions = array();
+  foreach ($starting_updates as $module => $version) {
+    $update_functions[$module] = array();
+    $updates = drupal_get_schema_versions($module);
+    if ($updates !== FALSE) {
+      $max_version = max($updates);
+      if ($version <= $max_version) {
+        foreach ($updates as $update) {
+          if ($update >= $version) {
+            $update_functions[$module][$update] = $module . '_update_' . $update;
+          }
+        }
+      }
+    }
+  }
+  return $update_functions;
+}
+
+/**
+ * Constructs a graph which encodes the dependencies between module updates.
+ *
+ * This function returns an associative array which contains a "directed graph"
+ * representation of the dependencies between a provided list of update
+ * functions, as well as any outside update functions that they directly depend
+ * on but that were not in the provided list. The vertices of the graph
+ * represent the update functions themselves, and each edge represents a
+ * requirement that the first update function needs to run before the second.
+ * For example, consider this graph:
+ *
+ * system_update_7000 ---> system_update_7001 ---> system_update_7002
+ *
+ * Visually, this indicates that system_update_7000() must run before
+ * system_update_7001(), which in turn must run before system_update_7002().
+ *
+ * The function takes into account standard dependencies within each module, as
+ * shown above (i.e., the fact that each module's updates must run in numerical
+ * order), but also finds any cross-module dependencies that are defined by
+ * modules which implement hook_update_dependencies(), and builds them into the
+ * graph as well.
+ *
+ * @param $update_functions
+ *   An organized array of update functions, in the format returned by
+ *   update_get_update_function_list().
+ *
+ * @return
+ *   A multidimensional array representing the dependency graph, suitable for
+ *   passing in to drupal_depth_first_search(), but with extra information
+ *   about each update function also included. Each array key contains the name
+ *   of an update function, including all update functions from the provided
+ *   list as well as any outside update functions which they directly depend
+ *   on. Each value is an associative array containing the following keys:
+ *   - 'edges': A representation of any other update functions that immediately
+ *     depend on this one. See drupal_depth_first_search() for more details on
+ *     the format.
+ *   - 'module': The name of the module that this update function belongs to.
+ *   - 'number': The number of this update function within that module.
+ *
+ * @see drupal_depth_first_search()
+ * @see update_resolve_dependencies()
+ */
+function update_build_dependency_graph($update_functions) {
+  // Initialize an array that will define a directed graph representing the
+  // dependencies between update functions.
+  $graph = array();
+
+  // Go through each update function and build an initial list of dependencies.
+  foreach ($update_functions as $module => $functions) {
+    $previous_function = NULL;
+    foreach ($functions as $number => $function) {
+      // Add an edge to the directed graph representing the fact that each
+      // update function in a given module must run after the update that
+      // numerically precedes it.
+      if ($previous_function) {
+        $graph[$previous_function]['edges'][$function] = TRUE;
+      }
+      $previous_function = $function;
+
+      // Define the module and update number associated with this function.
+      $graph[$function]['module'] = $module;
+      $graph[$function]['number'] = $number;
+    }
+  }
+
+  // Now add any explicit update dependencies declared by modules.
+  $update_dependencies = update_retrieve_dependencies();
+  foreach ($graph as $function => $data) {
+    if (!empty($update_dependencies[$data['module']][$data['number']])) {
+      foreach ($update_dependencies[$data['module']][$data['number']] as $module => $number) {
+        $dependency = $module . '_update_' . $number;
+        $graph[$dependency]['edges'][$function] = TRUE;
+        $graph[$dependency]['module'] = $module;
+        $graph[$dependency]['number'] = $number;
+      }
+    }
+  }
+
+  return $graph;
+}
+
+/**
+ * Determines if a module update is missing or unavailable.
+ *
+ * @param $module
+ *   The name of the module.
+ * @param $number
+ *   The number of the update within that module.
+ * @param $update_functions
+ *   An organized array of update functions, in the format returned by
+ *   update_get_update_function_list(). This should represent all module
+ *   updates that are requested to run at the time this function is called.
+ *
+ * @return
+ *   TRUE if the provided module update is not installed or is not in the
+ *   provided list of updates to run; FALSE otherwise.
+ */
+function update_is_missing($module, $number, $update_functions) {
+  return !isset($update_functions[$module][$number]) || !function_exists($update_functions[$module][$number]);
+}
+
+/**
+ * Determines if a module update has already been performed.
+ *
+ * @param $module
+ *   The name of the module.
+ * @param $number
+ *   The number of the update within that module.
+ *
+ * @return
+ *   TRUE if the database schema indicates that the update has already been
+ *   performed; FALSE otherwise.
+ */
+function update_already_performed($module, $number) {
+  return $number <= drupal_get_installed_schema_version($module);
+}
+
+/**
+ * Invoke hook_update_dependencies() in all installed modules.
+ *
+ * This function is similar to module_invoke_all(), with the main difference
+ * that it does not require that a module be enabled to invoke its hook, only
+ * that it be installed. This allows the update system to properly perform
+ * updates even on modules that are currently disabled.
+ *
+ * @return
+ *   An array of return values obtained by merging the results of the
+ *   hook_update_dependencies() implementations in all installed modules.
+ *
+ * @see module_invoke_all()
+ * @see hook_update_dependencies()
+ */
+function update_retrieve_dependencies() {
+  $return = array();
+  // Get a list of installed modules, arranged so that we invoke their hooks in
+  // the same order that module_invoke_all() does.
+  $modules = db_query("SELECT name FROM {system} WHERE type = 'module' AND schema_version != :schema ORDER BY weight ASC, name ASC", array(':schema' => SCHEMA_UNINSTALLED))->fetchCol();
+  foreach ($modules as $module) {
+    $function = $module . '_update_dependencies';
+    if (function_exists($function)) {
+      $result = $function();
+      // Each implementation of hook_update_dependencies() returns a
+      // multidimensional, associative array containing some keys that
+      // represent module names (which are strings) and other keys that
+      // represent update function numbers (which are integers). We cannot use
+      // array_merge_recursive() to properly merge these results, since it
+      // treats strings and integers differently. Therefore, we have to
+      // explicitly loop through the expected array structure here and perform
+      // the merge manually.
+      if (isset($result) && is_array($result)) {
+        foreach ($result as $module => $module_data) {
+          foreach ($module_data as $update => $update_data) {
+            foreach ($update_data as $module_dependency => $update_dependency) {
+              // If there are redundant dependencies declared for the same
+              // update function (so that it is declared to depend on more than
+              // one update from a particular module), record the dependency on
+              // the highest numbered update here, since that automatically
+              // implies the previous ones. For example, if one module's
+              // implementation of hook_update_dependencies() required this
+              // ordering:
+              //
+              // system_update_7001 ---> user_update_7000
+              //
+              // but another module's implementation of the hook required this
+              // one:
+              //
+              // system_update_7002 ---> user_update_7000
+              //
+              // we record the second one, since system_update_7001() is always
+              // guaranteed to run before system_update_7002() anyway (within
+              // an individual module, updates are always run in numerical
+              // order).
+              if (!isset($return[$module][$update][$module_dependency]) || $update_dependency > $return[$module][$update][$module_dependency]) {
+                $return[$module][$update][$module_dependency] = $update_dependency;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return $return;
 }
 

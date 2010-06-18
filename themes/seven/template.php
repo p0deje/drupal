@@ -1,12 +1,31 @@
 <?php
-// $Id: template.php,v 1.11 2009/12/06 18:04:17 webchick Exp $
+// $Id: template.php,v 1.17 2010/05/12 09:22:24 dries Exp $
+
+/**
+ * Override or insert variables into the maintenance page template.
+ */
+function seven_preprocess_maintenance_page(&$vars) {
+  // While markup for normal pages is split into page.tpl.php and html.tpl.php,
+  // the markup for the maintenance page is all in the single
+  // maintenance-page.tpl.php template. So, to have what's done in
+  // seven_preprocess_html() also happen on the maintenance page, it has to be
+  // called here.
+  seven_preprocess_html($vars);
+}
+
+/**
+ * Override or insert variables into the html template.
+ */
+function seven_preprocess_html(&$vars) {
+  // Add conditional CSS for IE8 and below.
+  drupal_add_css(path_to_theme() . '/ie.css', array('weight' => CSS_THEME, 'browsers' => array('IE' => 'lte IE 8', '!IE' => FALSE), 'preprocess' => FALSE));
+  // Add conditional CSS for IE6.
+  drupal_add_css(path_to_theme() . '/ie6.css', array('weight' => CSS_THEME, 'browsers' => array('IE' => 'lt IE 7', '!IE' => FALSE), 'preprocess' => FALSE));
+}
 
 /**
  * Override or insert variables into the page template.
  */
-function seven_process_html(&$vars) {
-  $vars['styles'] .= "\n<!--[if lt IE 7]>\n" . '<link type="text/css" rel="stylesheet" media="all" href="' . file_create_url(path_to_theme() . '/ie6.css') . '" />' . "\n" . "<![endif]-->\n";
-}
 function seven_preprocess_page(&$vars) {
   $vars['primary_local_tasks'] = menu_primary_local_tasks();
   $vars['secondary_local_tasks'] = menu_secondary_local_tasks();
@@ -45,7 +64,7 @@ function seven_admin_block_content($variables) {
       $output .= '<li class="leaf">';
       $output .= l($item['title'], $item['href'], $item['localized_options']);
       if (!system_admin_compact_mode()) {
-        $output .= '<div class="description">' . $item['description'] . '</div>';
+        $output .= '<div class="description">' . filter_xss_admin($item['description']) . '</div>';
       }
       $output .= '</li>';
     }
@@ -62,7 +81,7 @@ function seven_admin_block_content($variables) {
 function seven_tablesort_indicator($variables) {
   $style = $variables['style'];
   $theme_path = drupal_get_path('theme', 'seven');
-  if ($style == "asc") {
+  if ($style == 'asc') {
     return theme('image', array('path' => $theme_path . '/images/arrow-asc.png', 'alt' => t('sort ascending'), 'title' => t('sort ascending')));
   }
   else {
@@ -71,24 +90,11 @@ function seven_tablesort_indicator($variables) {
 }
 
 /**
- * Override of theme_fieldset().
- *
- * Add span to legend tag, so we can style it to be inside the fieldset.
+ * Implements hook_css_alter().
  */
-function seven_fieldset($variables) {
-  $element = $variables['element'];
-
-  $output = '<fieldset' . drupal_attributes($element['#attributes']) . '>';
-  if (!empty($element['#title'])) {
-    $output .= '<legend><span>' . $element['#title'] . '</span></legend>';
+function seven_css_alter(&$css) {
+  // Use Seven's vertical tabs style instead of the default one.
+  if (isset($css['misc/vertical-tabs.css'])) {
+    $css['misc/vertical-tabs.css']['data'] = drupal_get_path('theme', 'seven') . '/vertical-tabs.css';
   }
-  if (!empty($element['#description'])) {
-    $output .= '<div class="fieldset-description">' . $element['#description'] . '</div>';
-  }
-  $output .= $element['#children'];
-  if (isset($element['#value'])) {
-    $output .= $element['#value'];
-  }
-  $output .= "</fieldset>\n";
-  return $output;
 }

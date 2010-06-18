@@ -1,17 +1,15 @@
 <?php
-// $Id: node.tpl.php,v 1.20 2009/12/06 01:00:27 dries Exp $
+// $Id: node.tpl.php,v 1.23 2010/04/08 18:26:42 dries Exp $
 ?>
 <div id="node-<?php print $node->nid; ?>" class="<?php print $classes; ?>"<?php print $attributes; ?>>
 
-  <?php if (!$page && !empty($contextual_links)): ?>
-    <?php print render($contextual_links); ?>
-  <?php endif; ?>
-
   <?php print $user_picture; ?>
 
+  <?php print render($title_prefix); ?>
   <?php if (!$page): ?>
-    <h2<?php print $title_attributes; ?>><a href="<?php print $node_url; ?>"><?php print $node_title; ?></a></h2>
+    <h2<?php print $title_attributes; ?>><a href="<?php print $node_url; ?>"><?php print $title; ?></a></h2>
   <?php endif; ?>
+  <?php print render($title_suffix); ?>
 
   <?php if ($display_submitted): ?>
     <span class="submitted"><?php print $date; ?> — <?php print $name; ?></span>
@@ -27,12 +25,6 @@
   </div>
 
   <div class="clearfix">
-    <?php if (!empty($content['links']['terms'])): ?>
-      <div class="meta">
-        <div class="terms"><?php print render($content['links']['terms']); ?></div>
-      </div>
-    <?php endif; ?>
-
     <?php if (!empty($content['links'])): ?>
       <div class="links"><?php print render($content['links']); ?></div>
     <?php endif; ?>

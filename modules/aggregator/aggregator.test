@@ -1,5 +1,5 @@
 <?php
-// $Id: aggregator.test,v 1.36 2009/12/02 19:26:21 dries Exp $
+// $Id: aggregator.test,v 1.39 2010/03/24 08:51:42 dries Exp $
 
 /**
  * @file
@@ -253,7 +253,7 @@ EOF;
     // Post 5 articles.
     for ($i = 0; $i < 5; $i++) {
       $edit = array();
-      $edit["title[$langcode][0][value]"] = $this->randomName();
+      $edit['title'] = $this->randomName();
       $edit["body[$langcode][0][value]"] = $this->randomName();
       $this->drupalPost('node/add/article', $edit, t('Save'));
     }
@@ -283,6 +283,8 @@ class AddFeedTestCase extends AggregatorTestCase {
     $this->drupalGet('aggregator/sources/' . $feed->fid);
     $this->assertResponse(200, t('Feed source exists.'));
     $this->assertText($feed->title, t('Page title'));
+    $this->drupalGet('aggregator/sources/' . $feed->fid . '/categorize');
+    $this->assertResponse(200, t('Feed categorization page exists.'));
 
     // Delete feed.
     $this->deleteFeed($feed);
@@ -636,5 +638,51 @@ class ImportOPMLTestCase extends AggregatorTestCase {
     $this->openImportForm();
     $this->validateImportFormFields();
     $this->submitImportForm();
+  }
+}
+
+class AggregatorCronTestCase extends AggregatorTestCase {
+  public static function getInfo() {
+    return array(
+      'name' => 'Update on cron functionality',
+      'description' => 'Update feeds on cron.',
+      'group' => 'Aggregator'
+    );
+  }
+
+  /**
+   * Add feeds update them on cron.
+   */
+  public function testCron() {
+    // Create feed and test basic updating on cron.
+    global $base_url;
+    $key = variable_get('cron_key', 'drupal');
+    $this->createSampleNodes();
+    $feed = $this->createFeed();
+    $this->drupalGet($base_url . '/cron.php', array('external' => TRUE, 'query' => array('cron_key' => $key)));
+    $this->assertEqual(5, db_query('SELECT COUNT(*) FROM {aggregator_item} WHERE fid = :fid', array(':fid' => $feed->fid))->fetchField(), 'Expected number of items in database.');
+    $this->removeFeedItems($feed);
+    $this->assertEqual(0, db_query('SELECT COUNT(*) FROM {aggregator_item} WHERE fid = :fid', array(':fid' => $feed->fid))->fetchField(), 'Expected number of items in database.');
+    $this->drupalGet($base_url . '/cron.php', array('external' => TRUE, 'query' => array('cron_key' => $key)));
+    $this->assertEqual(5, db_query('SELECT COUNT(*) FROM {aggregator_item} WHERE fid = :fid', array(':fid' => $feed->fid))->fetchField(), 'Expected number of items in database.');
+
+    // Test feed locking when queued for update.
+    $this->removeFeedItems($feed);
+    db_update('aggregator_feed')
+      ->condition('fid', $feed->fid)
+      ->fields(array(
+        'queued' => REQUEST_TIME,
+      ))
+      ->execute();
+    $this->drupalGet($base_url . '/cron.php', array('external' => TRUE, 'query' => array('cron_key' => $key)));
+    $this->assertEqual(0, db_query('SELECT COUNT(*) FROM {aggregator_item} WHERE fid = :fid', array(':fid' => $feed->fid))->fetchField(), 'Expected number of items in database.');
+    db_update('aggregator_feed')
+      ->condition('fid', $feed->fid)
+      ->fields(array(
+        'queued' => 0,
+      ))
+      ->execute();
+    $this->drupalGet($base_url . '/cron.php', array('external' => TRUE, 'query' => array('cron_key' => $key)));
+    $this->assertEqual(5, db_query('SELECT COUNT(*) FROM {aggregator_item} WHERE fid = :fid', array(':fid' => $feed->fid))->fetchField(), 'Expected number of items in database.');
   }
 }

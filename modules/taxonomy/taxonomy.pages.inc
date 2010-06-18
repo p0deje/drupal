@@ -1,5 +1,5 @@
 <?php
-// $Id: taxonomy.pages.inc,v 1.45 2009/11/13 09:24:06 dries Exp $
+// $Id: taxonomy.pages.inc,v 1.51 2010/02/10 06:28:10 webchick Exp $
 
 /**
  * @file
@@ -28,20 +28,16 @@ function taxonomy_term_page($term) {
   $breadcrumb = array_reverse($breadcrumb);
   drupal_set_breadcrumb($breadcrumb);
   drupal_add_feed(url('taxonomy/term/' . $term->tid . '/feed'), 'RSS - ' . $term->name);
-  drupal_add_css(drupal_get_path('module', 'taxonomy') . '/taxonomy.css');
 
-  field_attach_prepare_view('taxonomy_term', array($term->tid => $term), 'full');
-  $build = array();
-  $build += field_attach_view('taxonomy_term', $term);
-  $build['term_description'] = array(
-    '#markup' => check_markup($term->description, $term->format, '', TRUE),
-    '#weight' => -1,
-    '#prefix' => '<div class="taxonomy-term-description">',
+  $build['term_heading'] = array(
+    '#prefix' => '<div class="term-listing-heading">',
     '#suffix' => '</div>',
+    'term' => taxonomy_term_view($term, 'full'),
   );
+
   if ($nids = taxonomy_select_nodes($term->tid, TRUE, variable_get('default_nodes_main', 10))) {
     $nodes = node_load_multiple($nids);
-    $build += node_build_multiple($nodes);
+    $build += node_view_multiple($nodes);
     $build['pager'] = array(
       '#markup' => theme('pager', array('tags' => NULL)),
       '#weight' => 5,
@@ -50,7 +46,7 @@ function taxonomy_term_page($term) {
   else {
     $build['no_content'] = array(
       '#prefix' => '<p>',
-      '#markup' => t('There are currently no posts in this category.'),
+      '#markup' => t('There is currently no content classified with this term.'),
       '#suffix' => '</p>',
     );
   }
@@ -101,13 +97,11 @@ function taxonomy_autocomplete($field_name, $tags_typed = '') {
     if (!empty($tags_typed)) {
       $query->condition('t.name', $tags_typed, 'NOT IN');
     }
+    // Select rows that match by term name.
     $tags_return = $query
       ->fields('t', array('tid', 'name'))
       ->condition('t.vid', $vids)
-      // Select rows that match by term name.
-      ->condition(db_or()
-      ->where("t.name LIKE :last_string", array(':last_string' => '%' . $tag_last . '%'))
-      )
+      ->condition('t.name', '%' . db_like($tag_last) . '%', 'LIKE')
       ->range(0, 10)
       ->execute()
       ->fetchAllKeyed();
@@ -122,7 +116,7 @@ function taxonomy_autocomplete($field_name, $tags_typed = '') {
         $n = '"' . str_replace('"', '""', $name) . '"';
       }
       else {
-        $term_matches[$prefix . $n] = filter_xss($name);
+        $term_matches[$prefix . $n] = check_plain($name);
       }
     }
   }

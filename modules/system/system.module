@@ -1,5 +1,5 @@
 <?php
-// $Id: system.module,v 1.861 2009/12/14 20:46:43 dries Exp $
+// $Id: system.module,v 1.938 2010/06/17 13:16:57 dries Exp $
 
 /**
  * @file
@@ -47,12 +47,16 @@ define('DRUPAL_OPTIONAL', 1);
 define('DRUPAL_REQUIRED', 2);
 
 /**
- * Return only visible regions. @see system_region_list().
+ * Return only visible regions.
+ *
+ * @see system_region_list()
  */
 define('REGIONS_VISIBLE', 'visible');
 
 /**
- * Return all visible regions. @see system_region_list().
+ * Return all regions.
+ *
+ * @see system_region_list()
  */
 define('REGIONS_ALL', 'all');
 
@@ -70,7 +74,7 @@ function system_help($path, $arg) {
       $output .= '<h3>' . t('Uses') . '</h3>';
       $output .= '<dl>';
       $output .= '<dt>' . t('Managing modules') . '</dt>';
-      $output .= '<dd>' . t('The System module allows users with the appropriate permissions to enable and disable modules on the <a href="@modules">Modules administration page</a>. Drupal comes with a number of core modules, and each module provides a discrete set of features and may be enabled or disabled depending on the needs of the site. Many additional modules contributed by members of the Drupal community are available for download at the <a href="@drupal-modules">Drupal.org module page</a>.', array('@modules' => url('admin/config/modules'), '@drupal-modules' => 'http://drupal.org/project/modules')) . '</dd>';
+      $output .= '<dd>' . t('The System module allows users with the appropriate permissions to enable and disable modules on the <a href="@modules">Modules administration page</a>. Drupal comes with a number of core modules, and each module provides a discrete set of features and may be enabled or disabled depending on the needs of the site. Many additional modules contributed by members of the Drupal community are available for download at the <a href="@drupal-modules">Drupal.org module page</a>.', array('@modules' => url('admin/modules'), '@drupal-modules' => 'http://drupal.org/project/modules')) . '</dd>';
       $output .= '<dt>' . t('Managing themes') . '</dt>';
       $output .= '<dd>' . t('The System module allows users with the appropriate permissions to enable and disable themes on the <a href="@themes">Appearance administration page</a>. Themes determine the design and presentation of your site. Drupal comes packaged with several core themes, and additional contributed themes are available at the <a href="@drupal-themes">Drupal.org theme page</a>.', array('@themes' => url('admin/appearance'), '@drupal-themes' => 'http://drupal.org/project/themes')) . '</dd>';
       $output .= '<dt>' . t('Managing caching') . '</dt>';
@@ -89,12 +93,12 @@ function system_help($path, $arg) {
       $output = '<p>' . t('Set and configure the default theme for your website.  Alternative <a href="@themes">themes</a> are available.', array('@themes' => 'http://drupal.org/project/themes')) . '</p>';
       return $output;
     case 'admin/appearance/settings/' . $arg[3]:
-      $reference = explode('.', $arg[3], 2);
-      $theme = array_pop($reference);
-      return '<p>' . t('These options control the display settings for the <code>%template</code> theme. When your site is displayed using this theme, these settings will be used. By clicking "Reset to defaults," you can choose to use the <a href="@global">global settings</a> for this theme.', array('%template' => $theme, '@global' => url('admin/appearance/settings'))) . '</p>';
+      $theme_list = list_themes();
+      $theme = $theme_list[$arg[3]];
+      return '<p>' . t('These options control the display settings for the %name theme. When your site is displayed using this theme, these settings will be used.', array('%name' => $theme->info['name'])) . '</p>';
     case 'admin/appearance/settings':
       return '<p>' . t('These options control the default display settings for your entire site, across all themes. Unless they have been overridden by a specific theme, these settings will be used.') . '</p>';
-    case 'admin/config/modules':
+    case 'admin/modules':
       $output = '<p>' . t('Download additional <a href="@modules">contributed modules</a> to extend Drupal\'s functionality.', array('@modules' => 'http://drupal.org/project/modules')) . '</p>';
       if (module_exists('update')) {
         if (update_manager_access()) {
@@ -108,8 +112,8 @@ function system_help($path, $arg) {
         $output .= '<p>' . t('Regularly review available updates to maintain a secure and current site. Always run the <a href="@update-php">update script</a> each time a module is updated. Enable the Update manager module to update and install modules and themes.', array('@update-php' => $base_url . '/update.php')) . '</p>';
       }
       return $output;
-    case 'admin/config/modules/uninstall':
-      return '<p>' . t('The uninstall process removes all data related to a module. To uninstall a module, you must first disable it on the main <a href="@modules">Modules page</a>. Not all modules support this feature.', array('@modules' => url('admin/config/modules'))) . '</p>';
+    case 'admin/modules/uninstall':
+      return '<p>' . t('The uninstall process removes all data related to a module. To uninstall a module, you must first disable it on the main <a href="@modules">Modules page</a>. Not all modules support this feature.', array('@modules' => url('admin/modules'))) . '</p>';
     case 'admin/structure/block/manage':
       if ($arg[4] == 'system' && $arg[5] == 'powered-by') {
         return '<p>' . t('The <em>Powered by Drupal</em> block is an optional link to the home page of the Drupal project. While there is absolutely no requirement that sites feature this link, it may be used to show support for Drupal.') . '</p>';
@@ -118,7 +122,7 @@ function system_help($path, $arg) {
     case 'admin/config/development/maintenance':
       global $user;
       if ($user->uid == 1) {
-        return '<p>' . t('If you are upgrading to a newer version of Drupal or upgrading contributed modules or themes you may need to run !update-php.', array('!update-php' => l('update.php', 'update.php'))) . '</p>';
+        return '<p>' . t('If you are upgrading to a newer version of Drupal or upgrading contributed modules or themes, you may need to run the <a href="@update-php">update script</a>.', array('@update-php' => $base_url . '/update.php')) . '</p>';
       }
     case 'admin/config/system/actions':
     case 'admin/config/system/actions/manage':
@@ -190,9 +194,6 @@ function system_theme() {
     'system_compact_link' => array(
       'variables' => array(),
     ),
-    'system_run_cron_image' => array(
-      'variables' => array('image_path' => NULL),
-    ),
     'system_date_time_settings' => array(
       'render element' => 'form',
       'file' => 'system.admin.inc',
@@ -210,18 +211,17 @@ function system_permission() {
     ),
     'administer site configuration' => array(
       'title' => t('Administer site configuration'),
+      'restrict access' => TRUE,
     ),
     'administer themes' => array(
       'title' => t('Administer themes'),
     ),
     'administer software updates' => array(
-      'title' => t('Run software updates'),
+      'title' => t('Administer software updates'),
+      'restrict access' => TRUE,
     ),
     'administer actions' => array(
       'title' => t('Administer actions'),
-    ),
-    'administer files' => array(
-      'title' => t('Administer user-uploaded files'),
     ),
     'access administration pages' => array(
       'title' => t('Use the administration pages and help'),
@@ -239,32 +239,13 @@ function system_permission() {
 }
 
 /**
- * Implements hook_rdf_namespaces().
- */
-function system_rdf_namespaces() {
-  return array(
-    'admin'    => 'http://webns.net/mvcb/',
-    'content'  => 'http://purl.org/rss/1.0/modules/content/',
-    'dc'       => 'http://purl.org/dc/terms/',
-    'foaf'     => 'http://xmlns.com/foaf/0.1/',
-    'owl'      => 'http://www.w3.org/2002/07/owl#',
-    'rdf'      => 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
-    'rdfs'     => 'http://www.w3.org/2000/01/rdf-schema#',
-    'rss'      => 'http://purl.org/rss/1.0/',
-    'tags'     => 'http://www.holygoat.co.uk/owl/redwood/0.1/tags/',
-    'sioc'     => 'http://rdfs.org/sioc/ns#',
-    'sioct'    => 'http://rdfs.org/sioc/types#',
-    'ctag'     => 'http://commontag.org/ns#',
-    'skos'     => 'http://www.w3.org/2004/02/skos/core#',
-    'xsd'      => 'http://www.w3.org/2001/XMLSchema#',
-  );
-}
-
-/**
  * Implements hook_hook_info().
  */
 function system_hook_info() {
   $hooks['token_info'] = array(
+    'group' => 'tokens',
+  );
+  $hooks['token_info_alter'] = array(
     'group' => 'tokens',
   );
   $hooks['tokens'] = array(
@@ -280,8 +261,8 @@ function system_entity_info() {
   return array(
     'file' => array(
       'label' => t('File'),
-      'base table' => 'file',
-      'object keys' => array(
+      'base table' => 'file_managed',
+      'entity keys' => array(
         'id' => 'fid',
       ),
       'static cache' => FALSE,
@@ -304,24 +285,26 @@ function system_element_info() {
     '#theme' => 'page',
     '#theme_wrappers' => array('html'),
   );
-  $types['list'] = array(
-    '#title' => '',
-    '#list_type' => 'ul',
-    '#attributes' => array(),
-    '#items' => array(),
-  );
   // By default, we don't want AJAX commands being rendered in the context of an
   // HTML page, so we don't provide defaults for #theme or #theme_wrappers.
   // However, modules can set these properties (for example, to provide an HTML
   // debugging page that displays rather than executes AJAX commands).
-  $types['ajax_commands'] = array(
-    '#ajax_commands' => array(),
+  $types['ajax'] = array(
+    '#header' => TRUE,
+    '#commands' => array(),
+    '#error' => NULL,
   );
-
   $types['html_tag'] = array(
     '#theme' => 'html_tag',
+    '#pre_render' => array('drupal_pre_render_conditional_comments'),
     '#attributes' => array(),
     '#value' => NULL,
+  );
+  $types['styles'] = array(
+    '#items' => array(),
+    '#pre_render' => array('drupal_pre_render_styles'),
+    '#group_callback' => 'drupal_group_css',
+    '#aggregate_callback' => 'drupal_aggregate_css',
   );
 
   // Input elements.
@@ -330,6 +313,7 @@ function system_element_info() {
     '#name' => 'op',
     '#button_type' => 'submit',
     '#executes_submit_callback' => TRUE,
+    '#limit_validation_errors' => FALSE,
     '#process' => array('ajax_process_form'),
     '#theme_wrappers' => array('button'),
   );
@@ -338,6 +322,7 @@ function system_element_info() {
     '#name' => 'op',
     '#button_type' => 'submit',
     '#executes_submit_callback' => FALSE,
+    '#limit_validation_errors' => FALSE,
     '#process' => array('ajax_process_form'),
     '#theme_wrappers' => array('button'),
   );
@@ -345,6 +330,7 @@ function system_element_info() {
     '#input' => TRUE,
     '#button_type' => 'submit',
     '#executes_submit_callback' => TRUE,
+    '#limit_validation_errors' => FALSE,
     '#process' => array('ajax_process_form'),
     '#return_value' => TRUE,
     '#has_garbage_value' => TRUE,
@@ -356,7 +342,7 @@ function system_element_info() {
     '#size' => 60,
     '#maxlength' => 128,
     '#autocomplete_path' => FALSE,
-    '#process' => array('form_process_text_format', 'ajax_process_form'),
+    '#process' => array('ajax_process_form'),
     '#theme' => 'textfield',
     '#theme_wrappers' => array('form_element'),
   );
@@ -378,7 +364,7 @@ function system_element_info() {
     '#cols' => 60,
     '#rows' => 5,
     '#resizable' => TRUE,
-    '#process' => array('form_process_text_format', 'ajax_process_form'),
+    '#process' => array('ajax_process_form'),
     '#theme' => 'textarea',
     '#theme_wrappers' => array('form_element'),
   );
@@ -398,7 +384,6 @@ function system_element_info() {
   );
   $types['checkboxes'] = array(
     '#input' => TRUE,
-    '#tree' => TRUE,
     '#process' => array('form_process_checkboxes'),
     '#theme_wrappers' => array('checkboxes'),
     '#pre_render' => array('form_pre_render_conditional_form_element'),
@@ -487,6 +472,11 @@ function system_element_info() {
     '#theme_wrappers' => array('container'),
     '#process' => array('form_process_container'),
   );
+  $types['actions'] = array(
+    '#theme_wrappers' => array('container'),
+    '#process' => array('form_process_actions', 'form_process_container'),
+    '#weight' => 100,
+  );
 
   $types['token'] = array(
     '#input' => TRUE,
@@ -530,13 +520,6 @@ function system_menu() {
     'type' => MENU_CALLBACK,
     'file' => 'system.admin.inc',
   );
-  $items['system/run-cron-image'] = array(
-    'title' => 'Execute cron',
-    'page callback' => 'system_run_cron_image',
-    'access callback' => 'system_run_cron_image_access',
-    'type' => MENU_CALLBACK,
-    'file' => 'system.admin.inc',
-  );
   $items['admin'] = array(
     'title' => 'Administer',
     'access arguments' => array('access administration pages'),
@@ -573,7 +556,7 @@ function system_menu() {
   // Menu items that are basically just menu blocks.
   $items['admin/structure'] = array(
     'title' => 'Structure',
-    'description' => 'Control how your site looks and feels.',
+    'description' => 'Administer blocks, content types, menus, etc.',
     'position' => 'right',
     'weight' => -8,
     'page callback' => 'system_admin_menu_block_page',
@@ -583,7 +566,7 @@ function system_menu() {
   // Appearance.
   $items['admin/appearance'] = array(
     'title' => 'Appearance',
-    'description' => 'Select and configure your site theme.',
+    'description' => 'Select and configure your themes',
     'page callback' => 'system_themes_page',
     'access arguments' => array('administer themes'),
     'position' => 'left',
@@ -592,7 +575,7 @@ function system_menu() {
   );
   $items['admin/appearance/list'] = array(
     'title' => 'List',
-    'description' => 'Select and configure your site theme.',
+    'description' => 'Select and configure your theme',
     'type' => MENU_DEFAULT_LOCAL_TASK,
     'weight' => -1,
     'file' => 'system.admin.inc',
@@ -626,6 +609,7 @@ function system_menu() {
     'access arguments' => array('administer themes'),
     'type' => MENU_LOCAL_TASK,
     'file' => 'system.admin.inc',
+    'weight' => 20,
   );
   // Theme configuration subtabs.
   $items['admin/appearance/settings/global'] = array(
@@ -645,91 +629,46 @@ function system_menu() {
     );
   }
 
-  // Configuration and modules.
-  $items['admin/config'] = array(
-    'title' => 'Configuration and modules',
-    'page callback' => 'system_admin_config_page',
-    'access arguments' => array('access administration pages'),
-    'file' => 'system.admin.inc',
-  );
-  $items['admin/config/config'] = array(
-    'title' => 'Configuration',
-    'access arguments' => array('administer site configuration'),
-    'type' => MENU_DEFAULT_LOCAL_TASK,
-    'weight' => -10,
-    'file' => 'system.admin.inc',
-  );
-  $items['admin/config/modules'] = array(
+  // Modules.
+  $items['admin/modules'] = array(
     'title' => 'Modules',
-    'description' => 'Enable or disable add-on modules for your site.',
+    'description' => 'Enable or disable modules',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('system_modules'),
     'access arguments' => array('administer modules'),
     'file' => 'system.admin.inc',
-    'type' => MENU_LOCAL_TASK,
-    'weight' => 10,
+    'weight' => -2,
   );
-  $items['admin/config/modules/list'] = array(
+  $items['admin/modules/list'] = array(
     'title' => 'List',
     'type' => MENU_DEFAULT_LOCAL_TASK,
   );
-  $items['admin/config/modules/list/confirm'] = array(
+  $items['admin/modules/list/confirm'] = array(
     'title' => 'List',
     'access arguments' => array('administer modules'),
     'type' => MENU_CALLBACK,
   );
-  $items['admin/config/modules/uninstall'] = array(
+  $items['admin/modules/uninstall'] = array(
     'title' => 'Uninstall',
     'page arguments' => array('system_modules_uninstall'),
     'access arguments' => array('administer modules'),
     'type' => MENU_LOCAL_TASK,
     'file' => 'system.admin.inc',
+    'weight' => 20,
   );
-  $items['admin/config/modules/uninstall/confirm'] = array(
+  $items['admin/modules/uninstall/confirm'] = array(
     'title' => 'Uninstall',
     'access arguments' => array('administer modules'),
     'type' => MENU_CALLBACK,
     'file' => 'system.admin.inc',
   );
 
-  // Actions.
-  $items['admin/config/system/actions'] = array(
-    'title' => 'Actions',
-    'description' => 'Manage the actions defined for your site.',
-    'access arguments' => array('administer actions'),
-    'page callback' => 'system_actions_manage',
-    'file' => 'system.admin.inc',
-  );
-  $items['admin/config/system/actions/manage'] = array(
-    'title' => 'Manage actions',
-    'description' => 'Manage the actions defined for your site.',
-    'page callback' => 'system_actions_manage',
-    'type' => MENU_DEFAULT_LOCAL_TASK,
-    'weight' => -2,
-    'file' => 'system.admin.inc',
-  );
-  $items['admin/config/system/actions/configure'] = array(
-    'title' => 'Configure an advanced action',
-    'page callback' => 'drupal_get_form',
-    'page arguments' => array('system_actions_configure'),
-    'access arguments' => array('administer actions'),
-    'type' => MENU_CALLBACK,
-    'file' => 'system.admin.inc',
-  );
-  $items['admin/config/system/actions/delete/%actions'] = array(
-    'title' => 'Delete action',
-    'description' => 'Delete an action.',
-    'page callback' => 'drupal_get_form',
-    'page arguments' => array('system_actions_delete_form', 5),
-    'access arguments' => array('administer actions'),
-    'type' => MENU_CALLBACK,
-    'file' => 'system.admin.inc',
-  );
-  $items['admin/config/system/actions/orphan'] = array(
-    'title' => 'Remove orphans',
-    'page callback' => 'system_actions_remove_orphans',
-    'access arguments' => array('administer actions'),
-    'type' => MENU_CALLBACK,
+  // Configuration.
+  $items['admin/config'] = array(
+    'title' => 'Configuration',
+    'description' => 'Administer settings',
+    'page callback' => 'system_admin_config_page',
+    'access arguments' => array('access administration pages'),
     'file' => 'system.admin.inc',
   );
 
@@ -740,14 +679,7 @@ function system_menu() {
     'page callback' => 'system_ip_blocking',
     'access arguments' => array('block IP addresses'),
     'file' => 'system.admin.inc',
-  );
-  $items['admin/config/people/ip-blocking/%'] = array(
-    'title' => 'IP address blocking',
-    'description' => 'Manage blocked IP addresses.',
-    'page callback' => 'system_ip_blocking',
-    'access arguments' => array('block IP addresses'),
-    'type' => MENU_CALLBACK,
-    'file' => 'system.admin.inc',
+    'weight' => 10,
   );
   $items['admin/config/people/ip-blocking/delete/%blocked_ip'] = array(
     'title' => 'Delete IP address',
@@ -758,37 +690,12 @@ function system_menu() {
     'file' => 'system.admin.inc',
   );
 
-  // Configuration.
-  $items['admin/config/development'] = array(
-    'title' => 'Development',
-    'description' => 'Development tools.',
-    'position' => 'left',
-    'weight' => 10,
-    'page callback' => 'system_admin_menu_block_page',
-    'access arguments' => array('access administration pages'),
-    'file' => 'system.admin.inc',
-  );
-  $items['admin/config/development/maintenance'] = array(
-    'title' => 'Maintenance mode',
-    'description' => 'Take the site offline for maintenance or bring it back online.',
-    'page callback' => 'drupal_get_form',
-    'page arguments' => array('system_site_maintenance_mode'),
-    'access arguments' => array('administer site configuration'),
-    'file' => 'system.admin.inc',
-  );
-  $items['admin/config/development/performance'] = array(
-    'title' => 'Performance',
-    'description' => 'Enable or disable page caching for anonymous users and set CSS and JS bandwidth optimization options.',
-    'page callback' => 'drupal_get_form',
-    'page arguments' => array('system_performance_settings'),
-    'access arguments' => array('administer site configuration'),
-    'file' => 'system.admin.inc',
-  );
+  // Media settings.
   $items['admin/config/media'] = array(
     'title' => 'Media',
     'description' => 'Media tools.',
     'position' => 'left',
-    'weight' => 10,
+    'weight' => -10,
     'page callback' => 'system_admin_menu_block_page',
     'access arguments' => array('access administration pages'),
     'file' => 'system.admin.inc',
@@ -799,6 +706,7 @@ function system_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('system_file_system_settings'),
     'access arguments' => array('administer site configuration'),
+    'weight' => -10,
     'file' => 'system.admin.inc',
   );
     $items['admin/config/media/image-toolkit'] = array(
@@ -807,11 +715,16 @@ function system_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('system_image_toolkit_settings'),
     'access arguments' => array('administer site configuration'),
+    'weight' => 20,
     'file' => 'system.admin.inc',
   );
+
+  // Service settings.
   $items['admin/config/services'] = array(
     'title' => 'Web services',
     'description' => 'Tools related to web services.',
+    'position' => 'right',
+    'weight' => 0,
     'page callback' => 'system_admin_menu_block_page',
     'access arguments' => array('access administration pages'),
     'file' => 'system.admin.inc',
@@ -824,6 +737,35 @@ function system_menu() {
     'access arguments' => array('administer site configuration'),
     'file' => 'system.admin.inc',
   );
+
+  // Development settings.
+  $items['admin/config/development'] = array(
+    'title' => 'Development',
+    'description' => 'Development tools.',
+    'position' => 'right',
+    'weight' => -10,
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('access administration pages'),
+    'file' => 'system.admin.inc',
+  );
+  $items['admin/config/development/maintenance'] = array(
+    'title' => 'Maintenance mode',
+    'description' => 'Take the site offline for maintenance or bring it back online.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('system_site_maintenance_mode'),
+    'access arguments' => array('administer site configuration'),
+    'file' => 'system.admin.inc',
+    'weight' => -10,
+  );
+  $items['admin/config/development/performance'] = array(
+    'title' => 'Performance',
+    'description' => 'Enable or disable page caching for anonymous users and set CSS and JS bandwidth optimization options.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('system_performance_settings'),
+    'access arguments' => array('administer site configuration'),
+    'file' => 'system.admin.inc',
+    'weight' => -20,
+  );
   $items['admin/config/development/logging'] = array(
     'title' => 'Logging and errors',
     'description' => "Settings for logging and alerts modules. Various modules can route Drupal's system events to different destinations, such as syslog, database, email, etc.",
@@ -831,6 +773,7 @@ function system_menu() {
     'page arguments' => array('system_logging_settings'),
     'access arguments' => array('administer site configuration'),
     'file' => 'system.admin.inc',
+    'weight' => -15,
   );
 
   // Regional and date settings.
@@ -838,7 +781,7 @@ function system_menu() {
     'title' => 'Regional and language',
     'description' => 'Regional settings, localization and translation.',
     'position' => 'left',
-    'weight' => -7,
+    'weight' => -5,
     'page callback' => 'system_admin_menu_block_page',
     'access arguments' => array('access administration pages'),
     'file' => 'system.admin.inc',
@@ -849,7 +792,7 @@ function system_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('system_regional_settings'),
     'access arguments' => array('administer site configuration'),
-    'weight' => -10,
+    'weight' => -20,
     'file' => 'system.admin.inc',
   );
   $items['admin/config/regional/date-time'] = array(
@@ -858,7 +801,7 @@ function system_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('system_date_time_settings'),
     'access arguments' => array('administer site configuration'),
-    'weight' => -9,
+    'weight' => -15,
     'file' => 'system.admin.inc',
   );
   $items['admin/config/regional/date-time/types'] = array(
@@ -934,9 +877,13 @@ function system_menu() {
     'access arguments' => array('administer site configuration'),
     'file' => 'system.admin.inc',
   );
+
+  // Search settings.
   $items['admin/config/search'] = array(
     'title' => 'Search and metadata',
     'description' => 'Local site search, metadata and SEO.',
+    'position' => 'left',
+    'weight' => -10,
     'page callback' => 'system_admin_menu_block_page',
     'access arguments' => array('access administration pages'),
     'file' => 'system.admin.inc',
@@ -948,6 +895,7 @@ function system_menu() {
     'page arguments' => array('system_clean_url_settings'),
     'access arguments' => array('administer site configuration'),
     'file' => 'system.admin.inc',
+    'weight' => 5,
   );
   $items['admin/config/search/clean-urls/check'] = array(
     'title' => 'Clean URL check',
@@ -957,47 +905,99 @@ function system_menu() {
     'type' => MENU_CALLBACK,
     'file' => 'system.admin.inc',
   );
-  $items['admin/config/content'] = array(
-    'title' => 'Content authoring',
-    'description' => 'Settings related to formatting and authoring content.',
+
+  // System settings.
+  $items['admin/config/system'] = array(
+    'title' => 'System',
+    'description' => 'General system related configuration.',
+    'position' => 'right',
+    'weight' => -20,
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('access administration pages'),
+    'file' => 'system.admin.inc',
+  );
+  $items['admin/config/system/actions'] = array(
+    'title' => 'Actions',
+    'description' => 'Manage the actions defined for your site.',
+    'access arguments' => array('administer actions'),
+    'page callback' => 'system_actions_manage',
+    'file' => 'system.admin.inc',
+  );
+  $items['admin/config/system/actions/manage'] = array(
+    'title' => 'Manage actions',
+    'description' => 'Manage the actions defined for your site.',
+    'page callback' => 'system_actions_manage',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -2,
+    'file' => 'system.admin.inc',
+  );
+  $items['admin/config/system/actions/configure'] = array(
+    'title' => 'Configure an advanced action',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('system_actions_configure'),
+    'access arguments' => array('administer actions'),
+    'type' => MENU_CALLBACK,
+    'file' => 'system.admin.inc',
+  );
+  $items['admin/config/system/actions/delete/%actions'] = array(
+    'title' => 'Delete action',
+    'description' => 'Delete an action.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('system_actions_delete_form', 5),
+    'access arguments' => array('administer actions'),
+    'type' => MENU_CALLBACK,
+    'file' => 'system.admin.inc',
+  );
+  $items['admin/config/system/actions/orphan'] = array(
+    'title' => 'Remove orphans',
+    'page callback' => 'system_actions_remove_orphans',
+    'access arguments' => array('administer actions'),
+    'type' => MENU_CALLBACK,
+    'file' => 'system.admin.inc',
+  );
+  $items['admin/config/system/site-information'] = array(
+    'title' => 'Site information',
+    'description' => 'Change site name, e-mail address, slogan, default front page, number of posts per page, error pages and cron.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('system_site_information_settings'),
+    'access arguments' => array('administer site configuration'),
+    'file' => 'system.admin.inc',
+    'weight' => -20,
+  );
+
+  // Additional categories
+  $items['admin/config/user-interface'] = array(
+    'title' => 'User interface',
+    'description' => 'Tools that enhance the user interface.',
+    'position' => 'right',
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('access administration pages'),
+    'file' => 'system.admin.inc',
+    'weight' => -15,
+  );
+  $items['admin/config/workflow'] = array(
+    'title' => 'Workflow',
+    'description' => 'Content workflow, editorial workflow tools.',
     'position' => 'right',
     'weight' => 5,
     'page callback' => 'system_admin_menu_block_page',
     'access arguments' => array('access administration pages'),
     'file' => 'system.admin.inc',
   );
-  $items['admin/config/system'] = array(
-    'title' => 'System',
-    'description' => 'General system related configuration.',
-    'position' => 'right',
-    'weight' => -5,
+  $items['admin/config/content'] = array(
+    'title' => 'Content authoring',
+    'description' => 'Settings related to formatting and authoring content.',
+    'position' => 'left',
+    'weight' => -15,
     'page callback' => 'system_admin_menu_block_page',
     'access arguments' => array('access administration pages'),
     'file' => 'system.admin.inc',
-  );
-  $items['admin/config/system/site-information'] = array(
-    'title' => 'Site information',
-    'description' => 'Change basic site name, e-mail address, slogan, default front page, number of posts per page, error pages and cron.',
-    'page callback' => 'drupal_get_form',
-    'page arguments' => array('system_site_information_settings'),
-    'access arguments' => array('administer site configuration'),
-    'file' => 'system.admin.inc',
-    'weight' => -10,
-  );
-  $items['admin/config/user-interface'] = array(
-    'title' => 'User interface',
-    'description' => 'Tools that enhance the user interface.',
-    'position' => 'right',
-    'page callback' => 'drupal_get_form',
-    'access arguments' => array('access administration pages'),
-    'file' => 'system.admin.inc',
-    'weight' => -5,
   );
 
   // Reports.
   $items['admin/reports'] = array(
     'title' => 'Reports',
-    'description' => 'View reports from system logs and other status information.',
+    'description' => 'View reports, updates, and errors',
     'page callback' => 'system_admin_menu_block_page',
     'access arguments' => array('access site reports'),
     'weight' => 5,
@@ -1008,7 +1008,7 @@ function system_menu() {
     'title' => 'Status report',
     'description' => "Get a status report about your site's operation and any detected problems.",
     'page callback' => 'system_status',
-    'weight' => 10,
+    'weight' => -60,
     'access arguments' => array('administer site configuration'),
     'file' => 'system.admin.inc',
   );
@@ -1026,14 +1026,7 @@ function system_menu() {
     'type' => MENU_CALLBACK,
     'file' => 'system.admin.inc',
   );
-  // Addititional categories
-  $items['admin/config/workflow'] = array(
-    'title' => 'Workflow',
-    'description' => 'Content workflow, editorial workflow tools.',
-    'page callback' => 'system_admin_menu_block_page',
-    'access arguments' => array('access administration pages'),
-    'file' => 'system.admin.inc',
-  );
+
   // Default page for batch operations.
   $items['batch'] = array(
     'page callback' => 'system_batch_page',
@@ -1069,7 +1062,7 @@ function system_library() {
   $libraries['jquery'] = array(
     'title' => 'jQuery',
     'website' => 'http://jquery.com',
-    'version' => '1.3.2',
+    'version' => '1.4.2',
     'js' => array(
       'misc/jquery.js' => array('weight' => JS_LIBRARY - 20),
     ),
@@ -1089,7 +1082,7 @@ function system_library() {
   $libraries['form'] = array(
     'title' => 'jQuery Form Plugin',
     'website' => 'http://malsup.com/jquery/form/',
-    'version' => '2.16',
+    'version' => '2.36',
     'js' => array(
       'misc/jquery.form.js' => array(),
     ),
@@ -1099,9 +1092,9 @@ function system_library() {
   $libraries['jquery-bbq'] = array(
     'title' => 'jQuery BBQ',
     'website' => 'http://benalman.com/projects/jquery-bbq-plugin/',
-    'version' => '1.0.2',
+    'version' => '1.2.1',
     'js' => array(
-      'misc/jquery.ba-bbq.js',
+      'misc/jquery.ba-bbq.js' => array(),
     ),
   );
 
@@ -1145,38 +1138,67 @@ function system_library() {
   $libraries['ui'] = array(
     'title' => 'jQuery UI: Core',
     'website' => 'http://jqueryui.com',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/ui.core.js' => array('weight' => JS_LIBRARY - 10),
+      'misc/ui/jquery.ui.core.min.js' => array('weight' => JS_LIBRARY - 11),
     ),
     'css' => array(
-      'misc/ui/ui.core.css' => array(),
-      'misc/ui/ui.theme.css' => array(),
+      'misc/ui/jquery.ui.core.css' => array(),
+      'misc/ui/jquery.ui.theme.css' => array(),
     ),
   );
   $libraries['ui.accordion'] = array(
     'title' => 'jQuery UI: Accordion',
     'website' => 'http://jqueryui.com/demos/accordion/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/ui.accordion.js' => array(),
+      'misc/ui/jquery.ui.accordion.min.js' => array(),
     ),
     'css' => array(
-      'misc/ui/ui.accordion.css' => array(),
+      'misc/ui/jquery.ui.accordion.css' => array(),
     ),
     'dependencies' => array(
-      array('system', 'ui'),
+      array('system', 'ui.widget'),
+    ),
+  );
+  $libraries['ui.autocomplete'] = array(
+    'title' => 'jQuery UI: Autocomplete',
+    'website' => 'http://jqueryui.com/demos/autocomplete/',
+    'version' => '1.8',
+    'js' => array(
+      'misc/ui/jquery.ui.autocomplete.min.js' => array(),
+    ),
+    'css' => array(
+      'misc/ui/jquery.ui.autocomplete.css' => array(),
+    ),
+    'dependencies' => array(
+      array('system', 'ui.widget'),
+      array('system', 'ui.position'),
+    ),
+  );
+  $libraries['ui.button'] = array(
+    'title' => 'jQuery UI: Button',
+    'website' => 'http://jqueryui.com/demos/button/',
+    'version' => '1.8',
+    'js' => array(
+      'misc/ui/jquery.ui.button.min.js' => array(),
+    ),
+    'css' => array(
+      'misc/ui/jquery.ui.button.css' => array(),
+    ),
+    'dependencies' => array(
+      array('system', 'ui.widget'),
     ),
   );
   $libraries['ui.datepicker'] = array(
     'title' => 'jQuery UI: Date Picker',
     'website' => 'http://jqueryui.com/demos/datepicker/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/ui.datepicker.js' => array(),
+      'misc/ui/jquery.ui.datepicker.min.js' => array(),
     ),
     'css' => array(
-      'misc/ui/ui.datepicker.css' => array(),
+      'misc/ui/jquery.ui.datepicker.css' => array(),
     ),
     'dependencies' => array(
       array('system', 'ui'),
@@ -1185,116 +1207,152 @@ function system_library() {
   $libraries['ui.dialog'] = array(
     'title' => 'jQuery UI: Dialog',
     'website' => 'http://jqueryui.com/demos/dialog/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/ui.dialog.js' => array(),
+      'misc/ui/jquery.ui.dialog.min.js' => array(),
     ),
     'css' => array(
-      'misc/ui/ui.dialog.css' => array(),
+      'misc/ui/jquery.ui.dialog.css' => array(),
     ),
     'dependencies' => array(
-      array('system', 'ui'),
+      array('system', 'ui.widget'),
     ),
   );
   $libraries['ui.draggable'] = array(
-    'title' => 'jQuery UI: Dialog',
+    'title' => 'jQuery UI: Draggable',
     'website' => 'http://jqueryui.com/demos/draggable/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/ui.draggable.js' => array(),
+      'misc/ui/jquery.ui.draggable.min.js' => array(),
     ),
     'dependencies' => array(
-      array('system', 'ui'),
+      array('system', 'ui.widget'),
+      array('system', 'ui.mouse'),
     ),
   );
   $libraries['ui.droppable'] = array(
     'title' => 'jQuery UI: Droppable',
     'website' => 'http://jqueryui.com/demos/droppable/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/ui.droppable.js' => array(),
+      'misc/ui/jquery.ui.droppable.min.js' => array(),
     ),
     'dependencies' => array(
-      array('system', 'ui'),
+      array('system', 'ui.widget'),
+      array('system', 'ui.mouse'),
       array('system', 'ui.draggable'),
+    ),
+  );
+  $libraries['ui.mouse'] = array(
+    'title' => 'jQuery UI: Droppable',
+    'website' => 'http://docs.jquery.com/UI/Mouse',
+    'version' => '1.8',
+    'js' => array(
+      'misc/ui/jquery.ui.mouse.min.js' => array(),
+    ),
+    'dependencies' => array(
+      array('system', 'ui.widget'),
+    ),
+  );
+  $libraries['ui.position'] = array(
+    'title' => 'jQuery UI: Position',
+    'website' => 'http://jqueryui.com/demos/position/',
+    'version' => '1.8',
+    'js' => array(
+      'misc/ui/jquery.ui.position.min.js' => array(),
     ),
   );
   $libraries['ui.progressbar'] = array(
     'title' => 'jQuery UI: Progress Bar',
     'website' => 'http://jqueryui.com/demos/progressbar/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/ui.progressbar.js' => array(),
+      'misc/ui/jquery.ui.progressbar.min.js' => array(),
     ),
     'css' => array(
-      'misc/ui/ui.progressbar.css' => array(),
+      'misc/ui/jquery.ui.progressbar.css' => array(),
     ),
     'dependencies' => array(
-      array('system', 'ui'),
+      array('system', 'ui.widget'),
     ),
   );
   $libraries['ui.resizable'] = array(
     'title' => 'jQuery UI: Resizable',
     'website' => 'http://jqueryui.com/demos/resizable/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/ui.resizable.js' => array(),
+      'misc/ui/jquery.ui.resizable.min.js' => array(),
     ),
     'css' => array(
-      'misc/ui/ui.resizable.css' => array(),
+      'misc/ui/jquery.ui.resizable.css' => array(),
     ),
     'dependencies' => array(
-      array('system', 'ui'),
+      array('system', 'ui.widget'),
+      array('system', 'ui.mouse'),
     ),
   );
   $libraries['ui.selectable'] = array(
     'title' => 'jQuery UI: Selectable',
     'website' => 'http://jqueryui.com/demos/selectable/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/ui.selectable.js' => array(),
+      'misc/ui/jquery.ui.selectable.min.js' => array(),
     ),
     'css' => array(
-      'misc/ui/ui.selectable.css' => array(),
+      'misc/ui/jquery.ui.selectable.css' => array(),
     ),
     'dependencies' => array(
-      array('system', 'ui'),
+      array('system', 'ui.widget'),
+      array('system', 'ui.mouse'),
     ),
   );
   $libraries['ui.slider'] = array(
     'title' => 'jQuery UI: Slider',
     'website' => 'http://jqueryui.com/demos/slider/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/ui.slider.js' => array(),
+      'misc/ui/jquery.ui.slider.min.js' => array(),
     ),
     'css' => array(
-      'misc/ui/ui.slider.css' => array(),
+      'misc/ui/jquery.ui.slider.css' => array(),
     ),
     'dependencies' => array(
-      array('system', 'ui'),
+      array('system', 'ui.widget'),
+      array('system', 'ui.mouse'),
     ),
   );
   $libraries['ui.sortable'] = array(
     'title' => 'jQuery UI: Sortable',
     'website' => 'http://jqueryui.com/demos/sortable/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/ui.sortable.js' => array(),
+      'misc/ui/jquery.ui.sortable.min.js' => array(),
     ),
     'dependencies' => array(
-      array('system', 'ui'),
+      array('system', 'ui.widget'),
+      array('system', 'ui.mouse'),
     ),
   );
   $libraries['ui.tabs'] = array(
     'title' => 'jQuery UI: Tabs',
     'website' => 'http://jqueryui.com/demos/tabs/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/ui.tabs.js' => array(),
+      'misc/ui/jquery.ui.tabs.min.js' => array(),
     ),
     'css' => array(
-      'misc/ui/ui.tabs.css' => array(),
+      'misc/ui/jquery.ui.tabs.css' => array(),
+    ),
+    'dependencies' => array(
+      array('system', 'ui.widget'),
+    ),
+  );
+  $libraries['ui.widget'] = array(
+    'title' => 'jQuery UI: Widget',
+    'website' => 'http://docs.jquery.com/UI/Widget',
+    'version' => '1.8',
+    'js' => array(
+      'misc/ui/jquery.ui.widget.min.js' => array('weight' => JS_LIBRARY - 10),
     ),
     'dependencies' => array(
       array('system', 'ui'),
@@ -1303,20 +1361,17 @@ function system_library() {
   $libraries['effects'] = array(
     'title' => 'jQuery UI: Effects',
     'website' => 'http://jqueryui.com/demos/effect/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/effects.core.js' => array('weight' => JS_LIBRARY - 9),
-    ),
-    'dependencies' => array(
-      array('system', 'ui'),
+      'misc/ui/jquery.effects.core.min.js' => array('weight' => JS_LIBRARY - 9),
     ),
   );
   $libraries['effects.blind'] = array(
     'title' => 'jQuery UI: Effects Blind',
     'website' => 'http://jqueryui.com/demos/effect/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/effects.blind.js' => array(),
+      'misc/ui/jquery.effects.blind.min.js' => array(),
     ),
     'dependencies' => array(
       array('system', 'effects'),
@@ -1325,9 +1380,9 @@ function system_library() {
   $libraries['effects.bounce'] = array(
     'title' => 'jQuery UI: Effects Bounce',
     'website' => 'http://jqueryui.com/demos/effect/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/effects.bounce.js' => array(),
+      'misc/ui/jquery.effects.bounce.min.js' => array(),
     ),
     'dependencies' => array(
       array('system', 'effects'),
@@ -1336,9 +1391,9 @@ function system_library() {
   $libraries['effects.clip'] = array(
     'title' => 'jQuery UI: Effects Clip',
     'website' => 'http://jqueryui.com/demos/effect/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/effects.clip.js' => array(),
+      'misc/ui/jquery.effects.clip.min.js' => array(),
     ),
     'dependencies' => array(
       array('system', 'effects'),
@@ -1347,9 +1402,9 @@ function system_library() {
   $libraries['effects.drop'] = array(
     'title' => 'jQuery UI: Effects Drop',
     'website' => 'http://jqueryui.com/demos/effect/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/effects.drop.js' => array(),
+      'misc/ui/jquery.effects.drop.min.js' => array(),
     ),
     'dependencies' => array(
       array('system', 'effects'),
@@ -1358,9 +1413,20 @@ function system_library() {
   $libraries['effects.explode'] = array(
     'title' => 'jQuery UI: Effects Explode',
     'website' => 'http://jqueryui.com/demos/effect/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/effects.explode.js' => array(),
+      'misc/ui/jquery.effects.explode.min.js' => array(),
+    ),
+    'dependencies' => array(
+      array('system', 'effects'),
+    ),
+  );
+  $libraries['effects.fade'] = array(
+    'title' => 'jQuery UI: Effects Fade',
+    'website' => 'http://jqueryui.com/demos/effect/',
+    'version' => '1.8',
+    'js' => array(
+      'misc/ui/jquery.effects.fade.min.js' => array(),
     ),
     'dependencies' => array(
       array('system', 'effects'),
@@ -1369,20 +1435,20 @@ function system_library() {
   $libraries['effects.fold'] = array(
     'title' => 'jQuery UI: Effects Fold',
     'website' => 'http://jqueryui.com/demos/effect/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/effects.fold.js' => array(),
+      'misc/ui/jquery.effects.fold.min.js' => array(),
     ),
     'dependencies' => array(
       array('system', 'effects'),
     ),
   );
   $libraries['effects.highlight'] = array(
-    'title' => 'jQuery UI: Effects Fold',
+    'title' => 'jQuery UI: Effects Highlight',
     'website' => 'http://jqueryui.com/demos/effect/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/effects.highlight.js' => array(),
+      'misc/ui/jquery.effects.highlight.min.js' => array(),
     ),
     'dependencies' => array(
       array('system', 'effects'),
@@ -1391,20 +1457,20 @@ function system_library() {
   $libraries['effects.pulsate'] = array(
     'title' => 'jQuery UI: Effects Pulsate',
     'website' => 'http://jqueryui.com/demos/effect/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/effects.pulsate.js' => array(),
+      'misc/ui/jquery.effects.pulsate.min.js' => array(),
     ),
     'dependencies' => array(
       array('system', 'effects'),
     ),
   );
   $libraries['effects.scale'] = array(
-    'title' => 'jQuery UI: Effects Pulsate',
+    'title' => 'jQuery UI: Effects Scale',
     'website' => 'http://jqueryui.com/demos/effect/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/effects.scale.js' => array(),
+      'misc/ui/jquery.effects.scale.min.js' => array(),
     ),
     'dependencies' => array(
       array('system', 'effects'),
@@ -1413,9 +1479,9 @@ function system_library() {
   $libraries['effects.shake'] = array(
     'title' => 'jQuery UI: Effects Shake',
     'website' => 'http://jqueryui.com/demos/effect/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/effects.scale.js' => array(),
+      'misc/ui/jquery.effects.shake.min.js' => array(),
     ),
     'dependencies' => array(
       array('system', 'effects'),
@@ -1424,9 +1490,9 @@ function system_library() {
   $libraries['effects.slide'] = array(
     'title' => 'jQuery UI: Effects Slide',
     'website' => 'http://jqueryui.com/demos/effect/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/effects.slide.js' => array(),
+      'misc/ui/jquery.effects.slide.min.js' => array(),
     ),
     'dependencies' => array(
       array('system', 'effects'),
@@ -1435,9 +1501,9 @@ function system_library() {
   $libraries['effects.transfer'] = array(
     'title' => 'jQuery UI: Effects Transfer',
     'website' => 'http://jqueryui.com/demos/effect/',
-    'version' => '1.7.2',
+    'version' => '1.8',
     'js' => array(
-      'misc/ui/effects.transfer.js' => array(),
+      'misc/ui/jquery.effects.transfer.min.js' => array(),
     ),
     'dependencies' => array(
       array('system', 'effects'),
@@ -1451,23 +1517,30 @@ function system_library() {
  * Implements hook_stream_wrappers().
  */
 function system_stream_wrappers() {
-  return array(
+  $wrappers = array(
     'public' => array(
       'name' => t('Public files'),
       'class' => 'DrupalPublicStreamWrapper',
       'description' => t('Public local files served by the webserver.'),
     ),
-    'private' => array(
-      'name' => t('Private files'),
-      'class' => 'DrupalPrivateStreamWrapper',
-      'description' => t('Private local files served by Drupal.'),
-    ),
     'temporary' => array(
       'name' => t('Temporary files'),
       'class' => 'DrupalTemporaryStreamWrapper',
       'description' => t('Temporary local files for upload and previews.'),
-    )
+      'type' => STREAM_WRAPPERS_HIDDEN,
+    ),
   );
+
+  // Only register the private file stream wrapper if a file path has been set.
+  if (variable_get('file_private_path', FALSE)) {
+    $wrappers['private'] = array(
+      'name' => t('Private files'),
+      'class' => 'DrupalPrivateStreamWrapper',
+      'description' => t('Private local files served by Drupal.'),
+    );
+  }
+
+  return $wrappers;
 }
 
 /**
@@ -1593,7 +1666,7 @@ function system_authorized_get_url(array $options = array()) {
 /**
  * Setup and invoke an operation using authorize.php.
  *
- * @see system_authorized_init
+ * @see system_authorized_init()
  */
 function system_authorized_run($callback, $file, $arguments = array(), $page_title = NULL) {
   system_authorized_init($callback, $file, $arguments, $page_title);
@@ -1742,9 +1815,10 @@ function system_init() {
   if (arg(0) == 'admin' || (variable_get('node_admin_theme', '0') && arg(0) == 'node' && (arg(1) == 'add' || arg(2) == 'edit' || arg(2) == 'delete'))) {
     drupal_add_css(drupal_get_path('module', 'system') . '/admin.css', array('weight' => CSS_SYSTEM));
   }
-  drupal_add_css(drupal_get_path('module', 'system') . '/defaults.css', array('weight' => CSS_SYSTEM));
   drupal_add_css(drupal_get_path('module', 'system') . '/system.css', array('weight' => CSS_SYSTEM));
+  drupal_add_css(drupal_get_path('module', 'system') . '/system-behavior.css', array('weight' => CSS_SYSTEM));
   drupal_add_css(drupal_get_path('module', 'system') . '/system-menus.css', array('weight' => CSS_SYSTEM));
+  drupal_add_css(drupal_get_path('module', 'system') . '/system-messages.css', array('weight' => CSS_SYSTEM));
 
 
   // Ignore slave database servers for this request.
@@ -1806,7 +1880,7 @@ function system_form_user_register_form_alter(&$form, &$form_state) {
 function system_user_login(&$edit, $account) {
   // If the user has a NULL time zone, notify them to set a time zone.
   if (!$account->timezone && variable_get('configurable_timezones', 1) && variable_get('empty_timezone_message', 0)) {
-    drupal_set_message(t('Please configure your <a href="@user-edit">account time zone setting</a>.', array('@user-edit' => url("user/$account->uid/edit", array('query' => drupal_get_destination(), 'fragment' => 'edit-timezone')))));
+    drupal_set_message(t('Configure your <a href="@user-edit">account time zone setting</a>.', array('@user-edit' => url("user/$account->uid/edit", array('query' => drupal_get_destination(), 'fragment' => 'edit-timezone')))));
   }
 }
 
@@ -1832,7 +1906,7 @@ function system_user_timezone(&$form, &$form_state) {
     '#description' => t('Select the desired local time and time zone. Dates and times throughout this site will be displayed using this time zone.'),
   );
   if (!isset($account->timezone) && $account->uid == $user->uid && empty($form_state['input']['timezone'])) {
-    $form['timezone']['#description'] = t('Your time zone setting will be automatically detected if possible. Please confirm the selection and click save.');
+    $form['timezone']['#description'] = t('Your time zone setting will be automatically detected if possible. Confirm the selection and click save.');
     $form['timezone']['timezone']['#attributes'] = array('class' => array('timezone-detect'));
     drupal_add_js('misc/timezone.js');
   }
@@ -1940,11 +2014,16 @@ function system_admin_menu_block($item) {
     if (!$link['access']) {
       continue;
     }
-    // The link 'description' either derived from the hook_menu 'description' or
-    // entered by the user via menu module is saved as the title attribute.
+
+    // The link 'description' — either derived from the hook_menu 'description' or
+    // entered by the user via menu module — is saved as the title attribute.
+    // The title attribute is then unset to reduce redundancy in admin pages
+    // for screen readers.
     if (!empty($link['localized_options']['attributes']['title'])) {
       $link['description'] = $link['localized_options']['attributes']['title'];
+      unset($link['localized_options']['attributes']['title']);
     }
+
     // Prepare for sorting as in function _menu_tree_check_access().
     // The weight is offset so it is always positive, with a uniform 5-digits.
     $key = (50000 + $link['weight']) . ' ' . drupal_strtolower($link['title']) . ' ' . $link['mlid'];
@@ -1973,6 +2052,9 @@ function system_admin_menu_block($item) {
  */
 function system_check_directory($form_element) {
   $directory = $form_element['#value'];
+  if (strlen($directory) == 0) {
+    return $form_element;
+  }
 
   if (!is_dir($directory) && !drupal_mkdir($directory, NULL, TRUE)) {
     // If the directory does not exists and cannot be created.
@@ -1981,11 +2063,11 @@ function system_check_directory($form_element) {
   }
 
   if (is_dir($directory) && !is_writable($directory) && !drupal_chmod($directory)) {
-    // If the directory is not writable and cannont be made so.
+    // If the directory is not writable and cannot be made so.
     form_set_error($form_element['#parents'][0], t('The directory %directory exists but is not writable and could not be made writable.', array('%directory' => $directory)));
     watchdog('file system', 'The directory %directory exists but is not writable and could not be made writable.', array('%directory' => $directory), WATCHDOG_ERROR);
   }
-  else {
+  elseif (is_dir($directory)) {
     if ($form_element['#name'] == 'file_public_path') {
       // Create public .htaccess file.
       file_create_htaccess($directory, FALSE);
@@ -2064,7 +2146,7 @@ function system_update_files_database(&$files, $type) {
           ->execute();
       }
 
-      // Indiciate that the file exists already.
+      // Indicate that the file exists already.
       $files[$file->name]->exists = TRUE;
     }
     else {
@@ -2100,6 +2182,11 @@ function system_update_files_database(&$files, $type) {
     }
   }
   $query->execute();
+
+  // If any module or theme was moved to a new location, we need to reset the
+  // system_list() cache or we will continue to load the old copy, look for
+  // schema updates in the wrong place, etc.
+  system_list_reset();
 }
 
 /**
@@ -2110,6 +2197,7 @@ function system_update_files_database(&$files, $type) {
  *
  * @param $type
  *   Either 'module' or 'theme'.
+ *
  * @return
  *   An associative array of module or theme information keyed by name.
  *
@@ -2137,7 +2225,7 @@ function _system_rebuild_module_data() {
 
   // Include the install profile in modules that are loaded.
   $profile = drupal_get_profile();
-  $modules[$profile] = new stdClass;
+  $modules[$profile] = new stdClass();
   $modules[$profile]->name = $profile;
   $modules[$profile]->uri = 'profiles/' . $profile . '/' . $profile . '.profile';
   $modules[$profile]->filename = $profile . '.profile';
@@ -2181,8 +2269,10 @@ function _system_rebuild_module_data() {
     drupal_alter('system_info', $modules[$key]->info, $modules[$key], $type);
   }
 
-  // The install profile is required.
-  $modules[$profile]->info['required'] = TRUE;
+  // The install profile is required, if it's a valid module.
+  if (isset($modules[$profile])) {
+    $modules[$profile]->info['required'] = TRUE;
+  }
 
   return $modules;
 }
@@ -2198,7 +2288,18 @@ function system_rebuild_module_data() {
   ksort($modules);
   system_get_files_database($modules, 'module');
   system_update_files_database($modules, 'module');
-  // Refresh bootstrap status.
+  $modules = _module_build_dependencies($modules);
+  return $modules;
+}
+
+/**
+ * Refresh bootstrap column in the system table.
+ *
+ * This is called internally by module_enable/disable() to flag modules that
+ * implement hooks used during bootstrap, such as hook_boot(). These modules
+ * are loaded earlier to invoke the hooks.
+ */
+function _system_update_bootstrap_status() {
   $bootstrap_modules = array();
   foreach (bootstrap_hooks() as $hook) {
     foreach (module_implements($hook) as $module) {
@@ -2214,8 +2315,8 @@ function system_rebuild_module_data() {
     $query->condition('name', $bootstrap_modules, 'NOT IN');
   }
   $query->execute();
-  $modules = _module_build_dependencies($modules);
-  return $modules;
+  // Reset the cached list of bootstrap modules.
+  system_list_reset();
 }
 
 /**
@@ -2225,128 +2326,112 @@ function system_rebuild_module_data() {
  *   An associative array of themes information.
  */
 function _system_rebuild_theme_data() {
-  $themes_info = &drupal_static(__FUNCTION__, array());
+  // Find themes
+  $themes = drupal_system_listing('/\.info$/', 'themes');
+  // Find theme engines
+  $engines = drupal_system_listing('/\.engine$/', 'themes/engines');
 
-  if (empty($themes_info)) {
-    // Find themes
-    $themes = drupal_system_listing('/\.info$/', 'themes');
-    // Find theme engines
-    $engines = drupal_system_listing('/\.engine$/', 'themes/engines');
+  // Set defaults for theme info.
+  $defaults = array(
+    'regions' => array(
+      'sidebar_first' => 'Left sidebar',
+      'sidebar_second' => 'Right sidebar',
+      'content' => 'Content',
+      'header' => 'Header',
+      'footer' => 'Footer',
+      'highlight' => 'Highlighted content',
+      'help' => 'Help',
+      'page_top' => 'Page top',
+      'page_bottom' => 'Page bottom',
+    ),
+    'description' => '',
+    'features' => _system_default_theme_features(),
+    'screenshot' => 'screenshot.png',
+    'php' => DRUPAL_MINIMUM_PHP,
+  );
 
-    // Set defaults for theme info.
-    $defaults = array(
-      'regions' => array(
-        'sidebar_first' => 'Left sidebar',
-        'sidebar_second' => 'Right sidebar',
-        'content' => 'Content',
-        'header' => 'Header',
-        'footer' => 'Footer',
-        'highlight' => 'Highlighted content',
-        'help' => 'Help',
-        'page_top' => 'Page top',
-        'page_bottom' => 'Page bottom',
-      ),
-      'description' => '',
-      'features' => array(
-        'comment_user_picture',
-        'comment_user_verification',
-        'favicon',
-        'logo',
-        'name',
-        'node_user_picture',
-        'slogan',
-        'main_menu',
-        'secondary_menu',
-      ),
-      'screenshot' => 'screenshot.png',
-      'php' => DRUPAL_MINIMUM_PHP,
-    );
+  $sub_themes = array();
+  // Read info files for each theme
+  foreach ($themes as $key => $theme) {
+    $themes[$key]->filename = $theme->uri;
+    $themes[$key]->info = drupal_parse_info_file($theme->uri) + $defaults;
 
-    $sub_themes = array();
-    // Read info files for each theme
-    foreach ($themes as $key => $theme) {
-      $themes[$key]->filename = $theme->uri;
-      $themes[$key]->info = drupal_parse_info_file($theme->uri) + $defaults;
+    // Invoke hook_system_info_alter() to give installed modules a chance to
+    // modify the data in the .info files if necessary.
+    $type = 'theme';
+    drupal_alter('system_info', $themes[$key]->info, $themes[$key], $type);
 
-      // Invoke hook_system_info_alter() to give installed modules a chance to
-      // modify the data in the .info files if necessary.
-      $type = 'theme';
-      drupal_alter('system_info', $themes[$key]->info, $themes[$key], $type);
-
-      if (!empty($themes[$key]->info['base theme'])) {
-        $sub_themes[] = $key;
+    if (!empty($themes[$key]->info['base theme'])) {
+      $sub_themes[] = $key;
+    }
+    if (empty($themes[$key]->info['engine'])) {
+      $filename = dirname($themes[$key]->uri) . '/' . $themes[$key]->name . '.theme';
+      if (file_exists($filename)) {
+        $themes[$key]->owner = $filename;
+        $themes[$key]->prefix = $key;
       }
-      if (empty($themes[$key]->info['engine'])) {
-        $filename = dirname($themes[$key]->uri) . '/' . $themes[$key]->name . '.theme';
-        if (file_exists($filename)) {
-          $themes[$key]->owner = $filename;
-          $themes[$key]->prefix = $key;
-        }
-      }
-      else {
-        $engine = $themes[$key]->info['engine'];
-        if (isset($engines[$engine])) {
-          $themes[$key]->owner = $engines[$engine]->uri;
-          $themes[$key]->prefix = $engines[$engine]->name;
-          $themes[$key]->template = TRUE;
-        }
-      }
-
-      // Give the stylesheets proper path information.
-      $pathed_stylesheets = array();
-      if (isset($themes[$key]->info['stylesheets'])) {
-        foreach ($themes[$key]->info['stylesheets'] as $media => $stylesheets) {
-          foreach ($stylesheets as $stylesheet) {
-            $pathed_stylesheets[$media][$stylesheet] = dirname($themes[$key]->uri) . '/' . $stylesheet;
-          }
-        }
-      }
-      $themes[$key]->info['stylesheets'] = $pathed_stylesheets;
-
-      // Give the scripts proper path information.
-      $scripts = array();
-      if (isset($themes[$key]->info['scripts'])) {
-        foreach ($themes[$key]->info['scripts'] as $script) {
-          $scripts[$script] = dirname($themes[$key]->uri) . '/' . $script;
-        }
-      }
-      $themes[$key]->info['scripts'] = $scripts;
-      // Give the screenshot proper path information.
-      if (!empty($themes[$key]->info['screenshot'])) {
-        $themes[$key]->info['screenshot'] = dirname($themes[$key]->uri) . '/' . $themes[$key]->info['screenshot'];
+    }
+    else {
+      $engine = $themes[$key]->info['engine'];
+      if (isset($engines[$engine])) {
+        $themes[$key]->owner = $engines[$engine]->uri;
+        $themes[$key]->prefix = $engines[$engine]->name;
+        $themes[$key]->template = TRUE;
       }
     }
 
-    // Now that we've established all our master themes, go back and fill in
-    // data for subthemes.
-    foreach ($sub_themes as $key) {
-      $themes[$key]->base_themes = system_find_base_themes($themes, $key);
-      // Don't proceed if there was a problem with the root base theme.
-      if (!current($themes[$key]->base_themes)) {
-        continue;
-      }
-      $base_key = key($themes[$key]->base_themes);
-      foreach (array_keys($themes[$key]->base_themes) as $base_theme) {
-        $themes[$base_theme]->sub_themes[$key] = $themes[$key]->info['name'];
-      }
-      // Copy the 'owner' and 'engine' over if the top level theme uses a
-      // theme engine.
-      if (isset($themes[$base_key]->owner)) {
-        if (isset($themes[$base_key]->info['engine'])) {
-          $themes[$key]->info['engine'] = $themes[$base_key]->info['engine'];
-          $themes[$key]->owner = $themes[$base_key]->owner;
-          $themes[$key]->prefix = $themes[$base_key]->prefix;
-        }
-        else {
-          $themes[$key]->prefix = $key;
+    // Give the stylesheets proper path information.
+    $pathed_stylesheets = array();
+    if (isset($themes[$key]->info['stylesheets'])) {
+      foreach ($themes[$key]->info['stylesheets'] as $media => $stylesheets) {
+        foreach ($stylesheets as $stylesheet) {
+          $pathed_stylesheets[$media][$stylesheet] = dirname($themes[$key]->uri) . '/' . $stylesheet;
         }
       }
     }
+    $themes[$key]->info['stylesheets'] = $pathed_stylesheets;
 
-    $themes_info = $themes;
+    // Give the scripts proper path information.
+    $scripts = array();
+    if (isset($themes[$key]->info['scripts'])) {
+      foreach ($themes[$key]->info['scripts'] as $script) {
+        $scripts[$script] = dirname($themes[$key]->uri) . '/' . $script;
+      }
+    }
+    $themes[$key]->info['scripts'] = $scripts;
+    // Give the screenshot proper path information.
+    if (!empty($themes[$key]->info['screenshot'])) {
+      $themes[$key]->info['screenshot'] = dirname($themes[$key]->uri) . '/' . $themes[$key]->info['screenshot'];
+    }
   }
 
-  return $themes_info;
+  // Now that we've established all our master themes, go back and fill in data
+  // for subthemes.
+  foreach ($sub_themes as $key) {
+    $themes[$key]->base_themes = system_find_base_themes($themes, $key);
+    // Don't proceed if there was a problem with the root base theme.
+    if (!current($themes[$key]->base_themes)) {
+      continue;
+    }
+    $base_key = key($themes[$key]->base_themes);
+    foreach (array_keys($themes[$key]->base_themes) as $base_theme) {
+      $themes[$base_theme]->sub_themes[$key] = $themes[$key]->info['name'];
+    }
+    // Copy the 'owner' and 'engine' over if the top level theme uses a theme
+    // engine.
+    if (isset($themes[$base_key]->owner)) {
+      if (isset($themes[$base_key]->info['engine'])) {
+        $themes[$key]->info['engine'] = $themes[$base_key]->info['engine'];
+        $themes[$key]->owner = $themes[$base_key]->owner;
+        $themes[$key]->prefix = $themes[$base_key]->prefix;
+      }
+      else {
+        $themes[$key]->prefix = $key;
+      }
+    }
+  }
+
+  return $themes;
 }
 
 /**
@@ -2361,6 +2446,23 @@ function system_rebuild_theme_data() {
   system_get_files_database($themes, 'theme');
   system_update_files_database($themes, 'theme');
   return $themes;
+}
+
+/**
+ * Returns an array of default theme features.
+ */
+function _system_default_theme_features() {
+  return array(
+    'logo',
+    'favicon',
+    'name',
+    'slogan',
+    'node_user_picture',
+    'comment_user_picture',
+    'comment_user_verification',
+    'main_menu',
+    'secondary_menu',
+  );
 }
 
 /**
@@ -2420,8 +2522,12 @@ function system_region_list($theme_key, $show = REGIONS_ALL) {
 
   if (empty($list[$theme_key][$show])) {
     $themes = list_themes();
+    if (!isset($themes[$theme_key])) {
+      $list[$theme_key][$show] = array();
+      return $list[$theme_key][$show];
+    }
     $info = $themes[$theme_key]->info;
-    // If requested, suppress hidden regions. @see block_admin_display_form().
+    // If requested, suppress hidden regions. See block_admin_display_form().
     foreach ($info['regions'] as $name => $label) {
       if ($show == REGIONS_ALL || !isset($info['regions_hidden']) || !in_array($name, $info['regions_hidden'])) {
         $list[$theme_key][$show][$name] = $label;
@@ -2452,7 +2558,7 @@ function system_system_info_alter(&$info, $file, $type) {
  *   A string that is the region name.
  */
 function system_default_region($theme) {
-  $regions = array_keys(system_region_list($theme));
+  $regions = array_keys(system_region_list($theme, REGIONS_VISIBLE));
   return isset($regions[0]) ? $regions[0] : '';
 }
 
@@ -2477,18 +2583,21 @@ function _system_settings_form_automatic_defaults($form) {
 /**
  * Add default buttons to a form and set its prefix.
  *
- * @ingroup forms
- * @see system_settings_form_submit()
  * @param $form
  *   An associative array containing the structure of the form.
  * @param $automatic_defaults
  *   Automatically load the saved values for each field from the system variables
  *   (defaults to TRUE).
+ *
  * @return
  *   The form structure.
+ *
+ * @see system_settings_form_submit()
+ * @ingroup forms
  */
 function system_settings_form($form, $automatic_defaults = TRUE) {
-  $form['buttons']['submit'] = array('#type' => 'submit', '#value' => t('Save configuration') );
+  $form['actions']['#type'] = 'actions';
+  $form['actions']['submit'] = array('#type' => 'submit', '#value' => t('Save configuration'));
 
   if ($automatic_defaults) {
     $form = _system_settings_form_automatic_defaults($form);
@@ -2542,41 +2651,46 @@ function _system_sort_requirements($a, $b) {
 }
 
 /**
- * Output a confirmation form
+ * Generates a form array for a confirmation form.
  *
- * This function returns a complete form for confirming an action. A link is
- * offered to go back to the item that is being changed in case the user changes
- * his/her mind.
+ * This function returns a complete form array for confirming an action. The
+ * form contains a confirm button as well as a cancellation link that allows a
+ * user to abort the action.
  *
- * If the submit handler for this form is invoked, the user successfully
- * confirmed the action. You should never directly inspect $_POST to see if an
- * action was confirmed.
+ * If the submit handler for a form that implements confirm_form() is invoked,
+ * the user successfully confirmed the action. You should never directly
+ * inspect $_POST to see if an action was confirmed.
  *
  * Note - if the parameters $question, $description, $yes, or $no could contain
  * any user input (such as node titles or taxonomy terms), it is the
  * responsibility of the code calling confirm_form() to sanitize them first with
  * a function like check_plain() or filter_xss().
  *
- * @ingroup forms
  * @param $form
- *   Additional elements to inject into the form, for example hidden elements.
+ *   Additional elements to add to the form; for example, hidden elements.
  * @param $question
  *   The question to ask the user (e.g. "Are you sure you want to delete the
- *   block <em>foo</em>?").
+ *   block <em>foo</em>?"). The page title will be set to this value.
  * @param $path
- *   The page to go to if the user denies the action.
- *   Can be either a drupal path, or an array with the keys 'path', 'query', 'fragment'.
+ *   The page to go to if the user cancels the action. This can be either:
+ *   - A string containing a Drupal path.
+ *   - An associative array with a 'path' key. Additional array values are
+ *     passed as the $options parameter to l().
+ *   If the 'destination' query parameter is set in the URL when viewing a
+ *   confirmation form, that value will be used instead of $path.
  * @param $description
- *   Additional text to display (defaults to "This action cannot be undone.").
+ *   Additional text to display. Defaults to t('This action cannot be undone.').
  * @param $yes
- *   A caption for the button which confirms the action (e.g. "Delete",
- *   "Replace", ...).
+ *   A caption for the button that confirms the action (e.g. "Delete",
+ *   "Replace", ...). Defaults to t('Confirm').
  * @param $no
- *   A caption for the link which denies the action (e.g. "Cancel").
+ *   A caption for the link which cancels the action (e.g. "Cancel"). Defaults
+ *   to t('Cancel').
  * @param $name
  *   The internal name used to refer to the confirmation item.
+ *
  * @return
- *   The form.
+ *   The form array.
  */
 function confirm_form($form, $question, $path, $description = NULL, $yes = NULL, $no = NULL, $name = 'confirm') {
   $description = isset($description) ? $description : t('This action cannot be undone.');
@@ -2595,11 +2709,14 @@ function confirm_form($form, $question, $path, $description = NULL, $yes = NULL,
 
   drupal_set_title($question, PASS_THROUGH);
 
-  $form['#attributes'] = array('class' => array('confirmation'));
+  $form['#attributes']['class'][] = 'confirmation';
   $form['description'] = array('#markup' => $description);
   $form[$name] = array('#type' => 'hidden', '#value' => 1);
 
-  $form['actions'] = array('#prefix' => '<div class="container-inline">', '#suffix' => '</div>');
+  $form['actions'] = array(
+    '#type' => 'actions',
+    '#attributes' => array('class' => array('container-inline')),
+  );
   $form['actions']['submit'] = array('#type' => 'submit', '#value' => $yes ? $yes : t('Confirm'));
   $form['actions']['cancel'] = array('#markup' => $cancel);
   // By default, render the form using theme_confirm_form().
@@ -2610,11 +2727,15 @@ function confirm_form($form, $question, $path, $description = NULL, $yes = NULL,
 }
 
 /**
- * Determine if a user is in compact mode.
+ * Determines if the current user is in compact mode.
+ *
+ * @return
+ *   TRUE when in compact mode, FALSE when in expanded mode.
  */
 function system_admin_compact_mode() {
-  global $user;
-  return (isset($user->admin_compact_mode)) ? $user->admin_compact_mode : variable_get('admin_compact_mode', FALSE);
+  // PHP converts dots into underscores in cookie names to avoid problems with
+  // its parser, so we use a converted cookie name.
+  return isset($_COOKIE['Drupal_visitor_admin_compact_mode']) ? $_COOKIE['Drupal_visitor_admin_compact_mode'] : variable_get('admin_compact_mode', FALSE);
 }
 
 /**
@@ -2624,8 +2745,7 @@ function system_admin_compact_mode() {
  *   Valid values are 'on' and 'off'.
  */
 function system_admin_compact_page($mode = 'off') {
-  global $user;
-  user_save($user, array('admin_compact_mode' => ($mode == 'on')));
+  user_cookie_save(array('admin_compact_mode' => ($mode == 'on')));
   drupal_goto();
 }
 
@@ -2657,7 +2777,7 @@ function system_get_module_admin_tasks($module) {
   $admin_task_count = 0;
   // Check for permissions.
   if (in_array($module, module_implements('permission')) && $admin_access) {
-    $admin_tasks[-1] = l(t('Configure permissions'), 'admin/config/people/permissions', array('fragment' => 'module-' . $module));
+    $admin_tasks[-1] = l(t('Configure permissions'), 'admin/people/permissions', array('fragment' => 'module-' . $module));
   }
 
   // Check for menu items that are admin links.
@@ -2682,15 +2802,11 @@ function system_cron() {
   db_delete('flood')
     ->condition('expiration', REQUEST_TIME, '<')
     ->execute();
-  // Cleanup the batch table.
-  db_delete('batch')
-    ->condition('timestamp', REQUEST_TIME - 864000, '<')
-    ->execute();
 
   // Remove temporary files that are older than DRUPAL_MAXIMUM_TEMP_FILE_AGE.
   // Use separate placeholders for the status to avoid a bug in some versions
-  // of PHP. See http://drupal.org/node/352956
-  $result = db_query('SELECT fid FROM {file} WHERE status & :permanent1 <> :permanent2 AND timestamp < :timestamp', array(
+  // of PHP. See http://drupal.org/node/352956.
+  $result = db_query('SELECT fid FROM {file_managed} WHERE status & :permanent1 <> :permanent2 AND timestamp < :timestamp', array(
     ':permanent1' => FILE_STATUS_PERMANENT,
     ':permanent2' => FILE_STATUS_PERMANENT,
     ':timestamp' => REQUEST_TIME - DRUPAL_MAXIMUM_TEMP_FILE_AGE
@@ -2709,6 +2825,15 @@ function system_cron() {
     cache_clear_all(NULL, $table);
   }
 
+  // Cleanup the batch table and the queue for failed batches.
+  db_delete('batch')
+    ->condition('timestamp', REQUEST_TIME - 864000, '<')
+    ->execute();
+  db_delete('queue')
+    ->condition('created', REQUEST_TIME - 864000, '<')
+    ->condition('name', 'drupal_batch:%', 'LIKE')
+    ->execute();
+
   // Reset expired items in the default queue implementation table. If that's
   // not used, this will simply be a no-op.
   db_update('queue')
@@ -2725,6 +2850,8 @@ function system_cron() {
 function system_flush_caches() {
   // Rebuild list of date formats.
   system_date_formats_rebuild();
+  // Reset the menu static caches.
+  menu_reset_static_cache();
 }
 
 /**
@@ -2762,12 +2889,14 @@ function system_action_info() {
 /**
  * Return a form definition so the Send email action can be configured.
  *
- * @see system_send_email_action_validate()
- * @see system_send_email_action_submit()
  * @param $context
  *   Default values (if we are editing an existing action instance).
+ *
  * @return
  *   Form definition.
+ *
+ * @see system_send_email_action_validate()
+ * @see system_send_email_action_submit()
  */
 function system_send_email_action_form($context) {
   // Set default values for form.
@@ -2812,9 +2941,9 @@ function system_send_email_action_form($context) {
 function system_send_email_action_validate($form, $form_state) {
   $form_values = $form_state['values'];
   // Validate the configuration form.
-  if (!valid_email_address($form_values['recipient']) && $form_values['recipient'] != '%author') {
+  if (!valid_email_address($form_values['recipient']) && strpos($form_values['recipient'], ':mail') === FALSE) {
     // We want the literal %author placeholder to be emphasized in the error message.
-    form_set_error('recipient', t('Please enter a valid email address or %author.', array('%author' => '%author')));
+    form_set_error('recipient', t('Enter a valid email address or use a token e-mail address such as %author.', array('%author' => '[node:author:mail]')));
   }
 }
 
@@ -2834,16 +2963,40 @@ function system_send_email_action_submit($form, $form_state) {
 }
 
 /**
- * Implements a configurable Drupal action: sends an email.
+ * Sends an e-mail message.
+ *
+ * @param object $entity
+ *   An optional node object, which will be added as $context['node'] if
+ *   provided.
+ * @param array $context
+ *   Array with the following elements:
+ *   - 'recipient': E-mail message recipient. This will be passed through
+ *     token_replace().
+ *   - 'subject': The subject of the message. This will be passed through
+ *     token_replace().
+ *   - 'message': The message to send. This will be passed through
+ *     token_replace().
+ *   - Other elements will be used as the data for token replacement.
+ *
+ * @ingroup actions
  */
-function system_send_email_action($object, $context) {
+function system_send_email_action($entity, $context) {
   if (empty($context['node'])) {
-    $context['node'] = $object;
+    $context['node'] = $entity;
   }
 
   $recipient = token_replace($context['recipient'], $context);
 
-  $language = user_preferred_language($account);
+  // If the recipient is a registered user with a language preference, use
+  // the recipient's preferred language. Otherwise, use the system default
+  // language.
+  $recipient_account = user_load_by_mail($recipient);
+  if ($recipient_account) {
+    $language = user_preferred_language($recipient_account);
+  }
+  else {
+    $language = language_default();
+  }
   $params = array('context' => $context);
 
   if (drupal_mail('system', 'action_send_email', $recipient, $language, $params)) {
@@ -2884,11 +3037,23 @@ function system_message_action_submit($form, $form_state) {
 }
 
 /**
- * A configurable Drupal action. Sends a message to the current user's screen.
+ * Sends a message to the current user's screen.
+ *
+ * @param object $entity
+ *   An optional node object, which will be added as $context['node'] if
+ *   provided.
+ * @param array $context
+ *   Array with the following elements:
+ *   - 'message': The message to send. This will be passed through
+ *     token_replace().
+ *   - Other elements will be used as the data for token replacement in
+ *     the message.
+ *
+ * @ingroup actions
  */
-function system_message_action(&$object, $context = array()) {
+function system_message_action(&$entity, $context = array()) {
   if (empty($context['node'])) {
-    $context['node'] = $object;
+    $context['node'] = $entity;
   }
 
   $context['message'] = token_replace($context['message'], $context);
@@ -2896,7 +3061,7 @@ function system_message_action(&$object, $context = array()) {
 }
 
 /**
- * Implements a configurable Drupal action: redirect user to a URL.
+ * Settings form for system_goto_action().
  */
 function system_goto_action_form($context) {
   $form['url'] = array(
@@ -2915,12 +3080,27 @@ function system_goto_action_submit($form, $form_state) {
   );
 }
 
-function system_goto_action($object, $context) {
+/**
+ * Redirects to a different URL.
+ *
+ * @param $entity
+ *   Ignored.
+ * @param array $context
+ *   Array with the following elements:
+ *   - 'url': URL to redirect to. This will be passed through
+ *     token_replace().
+ *   - Other elements will be used as the data for token replacement.
+ *
+ * @ingroup actions
+ */
+function system_goto_action($entity, $context) {
   drupal_goto(token_replace($context['url'], $context));
 }
 
 /**
- * Implements a Drupal action: blocks the user's IP address.
+ * Blocks the current user's IP address.
+ *
+ * @ingroup actions
  */
 function system_block_ip_action() {
   $ip = ip_address();
@@ -2964,7 +3144,7 @@ function system_time_zones($blank = NULL) {
  */
 function system_check_http_request() {
   // Try to get the content of the front page via drupal_http_request().
-  $result = drupal_http_request(url('', array('absolute' => TRUE)));
+  $result = drupal_http_request(url('', array('absolute' => TRUE)), array('max_redirects' => 0));
   // We only care that we get a http response - this means that Drupal
   // can make a http request.
   $works = isset($result->code) && ($result->code >= 100) && ($result->code < 600);
@@ -2984,16 +3164,16 @@ function system_timezone($abbreviation = '', $offset = -1, $is_daylight_saving_t
 }
 
 /**
- * Format the Powered by Drupal text.
+ * Returns HTML for the Powered by Drupal text.
  *
  * @ingroup themeable
  */
-function theme_system_powered_by($variables) {
+function theme_system_powered_by() {
   return '<span>' . t('Powered by <a href="@poweredby">Drupal</a>', array('@poweredby' => 'http://drupal.org')) . '</span>';
 }
 
 /**
- * Display the link to show or hide inline help descriptions.
+ * Returns HTML for a link to show or hide inline help descriptions.
  *
  * @ingroup themeable
  */
@@ -3030,55 +3210,52 @@ function system_image_toolkits() {
  *   The URL of the file to grab.
  *
  * @param $destination
- *   Where the file should be saved, if a directory is provided, file is saved
- *   in that directory with its original name.  If a filename is provided,
- *   remote fileis stored to that location.  NOTE: Relative to drupal "files" directory"
+ *   Stream wrapper URI specifying where the file should be placed. If a
+ *   directory path is provided, the file is saved into that directory under
+ *   its original name. If the path contains a filename as well, that one will
+ *   be used instead.
+ *   If this value is omitted, the site's default files scheme will be used,
+ *   usually "public://".
  *
- * @param $overwrite boolean
- *   Defaults to TRUE, will overwrite existing files of the same name.
+ * @param $managed boolean
+ *   If this is set to TRUE, the file API hooks will be invoked and the file is
+ *   registered in the database.
+ *
+ * @param $replace boolean
+ *   Replace behavior when the destination file already exists:
+ *   - FILE_EXISTS_REPLACE: Replace the existing file.
+ *   - FILE_EXISTS_RENAME: Append _{incrementing number} until the filename is
+ *     unique.
+ *   - FILE_EXISTS_ERROR: Do nothing and return FALSE.
  *
  * @return
- *   On success the address the files was saved to, FALSE on failure.
+ *   On success the location the file was saved to, FALSE on failure.
  */
-function system_retrieve_file($url, $destination = NULL, $overwrite = TRUE) {
-  if (!$destination) {
-    $destination = file_directory_path('temporary');
-  }
+function system_retrieve_file($url, $destination = NULL, $managed = FALSE, $replace = FILE_EXISTS_RENAME) {
   $parsed_url = parse_url($url);
-  $local = is_dir(file_directory_path() . '/' . $destination) ? $destination . '/' . basename($parsed_url['path']) : $destination;
-
-  if (!$overwrite && file_exists($local)) {
-    drupal_set_message(t('@remote could not be saved. @local already exists', array('@remote' => $url, '@local' => $local)), 'error');
+  if (!isset($destination)) {
+    $path = file_build_uri(basename($parsed_url['path']));
+  }
+  else {
+    if (is_dir(drupal_realpath($destination))) {
+      // Prevent URIs with triple slashes when glueing parts together.
+      $path = str_replace('///', '//', "$destination/") . basename($parsed_url['path']);
+    }
+    else {
+      $path = $destination;
+    }
+  }
+  $result = drupal_http_request($url);
+  if ($result->code != 200) {
+    drupal_set_message(t('HTTP error @errorcode occurred when trying to fetch @remote.', array('@errorcode' => $result->code, '@remote' => $url)), 'error');
     return FALSE;
   }
-
-  $result = drupal_http_request($url);
-  if ($result->code != 200 || !file_save_data($result->data, $local)) {
-    drupal_set_message(t('@remote could not be saved.', array('@remote' => $url)), 'error');
-    return FALSE;
+  $local = $managed ? file_save_data($result->data, $path, $replace) : file_unmanaged_save_data($result->data, $path, $replace);
+  if (!$local) {
+    drupal_set_message(t('@remote could not be saved to @path.', array('@remote' => $url, '@path' => $path)), 'error');
   }
 
   return $local;
-}
-
-/**
- * Implements hook_page_build().
- */
-function system_page_build(&$page) {
-  // Automatic cron runs.
-  // @see system_run_cron_image()
-  if (system_run_cron_image_access()) {
-    $page['page_bottom']['run_cron'] = array(
-      // Trigger cron run via AJAX.
-      '#attached' => array(
-        'js' => array(
-          '(function($){ $.get(' . drupal_json_encode(url('system/run-cron-image')) . '); })(jQuery);' => array('type' => 'inline', 'scope' => 'header'),
-        ),
-      ),
-      // Trigger cron run for clients not supporting JavaScript (fall-back).
-      '#markup' => theme('system_run_cron_image', array('image_path' => 'system/run-cron-image')),
-    );
-  }
 }
 
 /**
@@ -3097,85 +3274,15 @@ function system_page_alter(&$page) {
 }
 
 /**
- * Menu callback; executes cron via an image callback.
- *
- * This callback runs cron in a separate HTTP request to prevent "mysterious"
- * slow-downs of regular HTTP requests. It is either invoked via an AJAX request
- * (if the client's browser supports JavaScript) or by an IMG tag directly in
- * the page output (for clients not supporting JavaScript). For the latter case,
- * we need to output a transparent 1x1 image, so the browser does not render the
- * image's alternate text or a 'missing image placeholder'. The AJAX request
- * does not process the returned output.
- *
- * @see system_page_alter()
- * @see theme_system_run_cron_image()
- * @see system_run_cron_image_access()
+ * Run the automated cron if enabled.
  */
-function system_run_cron_image() {
-  drupal_page_is_cacheable(FALSE);
-
-  // Output a transparent 1x1 image to the browser; required for clients not
-  // supporting JavaScript.
-  drupal_add_http_header('Content-Type', 'image/gif');
-  echo "\x47\x49\x46\x38\x39\x61\x1\x0\x1\x0\x80\xff\x0\xc0\xc0\xc0\x0\x0\x0\x21\xf9\x4\x1\x0\x0\x0\x0\x2c\x0\x0\x0\x0\x1\x0\x1\x0\x0\x2\x2\x44\x1\x0\x3b";
-
-  // Cron threshold semaphore is used to avoid errors every time the image
-  // callback is displayed when a previous cron is still running.
-  $threshold_semaphore = variable_get('cron_threshold_semaphore', FALSE);
-  if ($threshold_semaphore) {
-    if (REQUEST_TIME - $threshold_semaphore > 3600) {
-      // Either cron has been running for more than an hour or the semaphore
-      // was not reset due to a database error.
-      watchdog('cron', 'Cron has been running for more than an hour and is most likely stuck.', array(), WATCHDOG_ERROR);
-
-      // Release the cron threshold semaphore.
-      variable_del('cron_threshold_semaphore');
-    }
-  }
-  else {
-    // Run cron automatically if it has never run or threshold was crossed.
+function system_run_automated_cron() {
+  if (($threshold = variable_get('cron_safe_threshold', DRUPAL_CRON_DEFAULT_THRESHOLD)) > 0) {
     $cron_last = variable_get('cron_last', NULL);
-    $cron_threshold = variable_get('cron_safe_threshold', DRUPAL_CRON_DEFAULT_THRESHOLD);
-    if (!isset($cron_last) || (REQUEST_TIME - $cron_last > $cron_threshold)) {
-      // Lock cron threshold semaphore.
-      variable_set('cron_threshold_semaphore', REQUEST_TIME);
+    if (!isset($cron_last) || (REQUEST_TIME - $cron_last > $threshold)) {
       drupal_cron_run();
-      // Release the cron threshold semaphore.
-      variable_del('cron_threshold_semaphore');
     }
   }
-
-  drupal_exit();
-}
-
-/**
- * Checks if the feature to automatically run cron is enabled.
- *
- * Also used as a menu access callback for this feature.
- *
- * @return
- *   TRUE if cron threshold is enabled, FALSE otherwise.
- *
- * @see system_run_cron_image()
- * @see system_page_alter()
- */
-function system_run_cron_image_access() {
-  return variable_get('cron_safe_threshold', DRUPAL_CRON_DEFAULT_THRESHOLD) > 0;
-}
-
-/**
- * Display image used to run cron automatically.
- *
- * Renders an image pointing to the automatic cron run menu callback for
- * graceful degradation when Javascript is not available. The wrapping NOSCRIPT
- * tag ensures that only browsers not supporting JavaScript render the image.
- *
- * @see system_page_alter()
- * @see system_run_cron_image()
- * @ingroup themeable
- */
-function theme_system_run_cron_image($variables) {
-  return '<noscript><div id="system-cron-image">' . theme('image', array('path' => $variables['image_path'], 'getsize' => FALSE)) . '</div></noscript>';
 }
 
 /**
@@ -3532,23 +3639,29 @@ function system_date_format_delete($dfid) {
  * Implements hook_archiver_info().
  */
 function system_archiver_info() {
-  return array(
-    'tar' => array(
-      'class' => 'ArchiverTar',
-      'extensions' => array('tar', 'tar.gz', 'tar.bz2'),
-    ),
+  $archivers['tar'] = array(
+    'class' => 'ArchiverTar',
+    'extensions' => array('tar', 'tgz', 'tar.gz', 'tar.bz2'),
   );
+  if (function_exists('zip_open')) {
+    $archivers['zip'] = array(
+      'class' => 'ArchiverZip',
+      'extensions' => array('zip'),
+    );
+  }
+  return $archivers;
 }
 
 /**
- * Theme confirmation forms.
+ * Returns HTML for a confirmation form.
  *
  * By default this does not alter the appearance of a form at all,
  * but is provided as a convenience for themers.
  *
  * @param $variables
  *   An associative array containing:
- *   - form: An associative array containing the structure of the form.
+ *   - form: A render element representing the form.
+ *
  * @ingroup themeable
  */
 function theme_confirm_form($variables) {
@@ -3556,14 +3669,15 @@ function theme_confirm_form($variables) {
 }
 
 /**
- * Theme function for the system settings form.
+ * Returns HTML for a system settings form.
  *
  * By default this does not alter the appearance of a form at all,
  * but is provided as a convenience for themers.
  *
  * @param $variables
  *   An associative array containing:
- *   - form: An associative array containing the structure of the form.
+ *   - form: A render element representing the form.
+ *
  * @ingroup themeable
  */
 function theme_system_settings_form($variables) {
@@ -3577,6 +3691,7 @@ function system_admin_paths() {
   $paths = array(
     'admin' => TRUE,
     'admin/*' => TRUE,
+    'batch' => TRUE,
   );
   return $paths;
 }

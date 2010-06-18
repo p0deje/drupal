@@ -1,5 +1,5 @@
 <?php
-// $Id: authorize.inc,v 1.4 2009/11/01 23:02:13 webchick Exp $
+// $Id: authorize.inc,v 1.11 2010/05/14 04:50:18 webchick Exp $
 
 /**
  * @file
@@ -19,7 +19,7 @@ function authorize_filetransfer_form($form_state) {
   // CSS we depend on lives in modules/system/maintenance.css, which is loaded
   // via the default maintenance theme.
   $form['#attached']['js'][] = $base_url . '/misc/authorize.js';
-  
+
   // Get all the available ways to transfer files.
   if (empty($_SESSION['authorize_filetransfer_backends'])) {
     drupal_set_message(t('Unable to continue, no available methods of file transfer'), 'error');
@@ -43,7 +43,7 @@ function authorize_filetransfer_form($form_state) {
 
   $form['information']['main_header'] = array(
     '#prefix' => '<h3>',
-    '#markup' => t('To continue, please provide your server connection details'),
+    '#markup' => t('To continue, provide your server connection details'),
     '#suffix' => '</h3>',
   );
 
@@ -59,7 +59,7 @@ function authorize_filetransfer_form($form_state) {
    * Here we create two submit buttons. For a JS enabled client, they will
    * only ever see submit_process. However, if a client doesn't have JS
    * enabled, they will see submit_connection on the first form (when picking
-   * what filetranfer type to use, and submit_process on the second one (which
+   * what filetransfer type to use, and submit_process on the second one (which
    * leads to the actual operation).
    */
   $form['submit_connection'] = array(
@@ -83,7 +83,7 @@ function authorize_filetransfer_form($form_state) {
     $form['connection_settings']['authorize_filetransfer_default']['#options'][$name] = $backend['title'];
     $form['connection_settings'][$name] = array(
       '#type' => 'fieldset',
-      '#attributes' => array('class' => "filetransfer-$name filetransfer"),
+      '#attributes' => array('class' => array("filetransfer-$name", 'filetransfer')),
       '#title' => t('@backend connection settings', array('@backend' => $backend['title'])),
     );
 
@@ -159,7 +159,7 @@ function authorize_filetransfer_form_submit($form, &$form_state) {
       // to make sure it is available since this code could potentially (will
       // likely) be called during the installation process, before the
       // database is set up.
-      if (db_is_active()) {
+      try {
         $connection_settings = array();
         foreach ($form_state['values']['connection_settings'][$filetransfer_backend] as $key => $value) {
           // We do *not* want to store passwords in the database, unless the
@@ -182,10 +182,15 @@ function authorize_filetransfer_form_submit($form, &$form_state) {
         variable_set('authorize_filetransfer_connection_settings_' . $filetransfer_backend, $connection_settings);
 
         $filetransfer = authorize_get_filetransfer($filetransfer_backend, $form_state['values']['connection_settings'][$filetransfer_backend]);
-        
+
         // Now run the operation.
         authorize_run_operation($filetransfer);
       }
+      catch (Exception $e) {
+        // If there is no database available, we don't care and just skip
+        // this part entirely.
+      }
+
       break;
 
     case 'enter_connection_settings':

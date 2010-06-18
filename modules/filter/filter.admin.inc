@@ -1,5 +1,5 @@
 <?php
-// $Id: filter.admin.inc,v 1.54 2009/12/14 13:32:53 dries Exp $
+// $Id: filter.admin.inc,v 1.62 2010/06/17 13:16:57 dries Exp $
 
 /**
  * @file
@@ -23,12 +23,12 @@ function filter_admin_overview($form) {
     // to all roles and cannot be deleted via the admin interface.
     $form['formats'][$id]['#is_fallback'] = ($id == $fallback_format);
     if ($form['formats'][$id]['#is_fallback']) {
-      $form['formats'][$id]['name'] = array('#markup' => theme('placeholder', array('text' => $format->name)));
-      $roles_markup = theme('placeholder', array('text' => t('All roles may use this format')));
+      $form['formats'][$id]['name'] = array('#markup' => drupal_placeholder(array('text' => $format->name)));
+      $roles_markup = drupal_placeholder(array('text' => t('All roles may use this format')));
     }
     else {
       $form['formats'][$id]['name'] = array('#markup' => check_plain($format->name));
-      $roles = filter_get_roles_by_format($format);
+      $roles = array_map('check_plain', filter_get_roles_by_format($format));
       $roles_markup = $roles ? implode(', ', $roles) : t('No roles may use this format');
     }
     $form['formats'][$id]['roles'] = array('#markup' => $roles_markup);
@@ -36,7 +36,8 @@ function filter_admin_overview($form) {
     $form['formats'][$id]['delete'] = array('#type' => 'link', '#title' => t('delete'), '#href' => 'admin/config/content/formats/' . $id . '/delete', '#access' => !$form['formats'][$id]['#is_fallback']);
     $form['formats'][$id]['weight'] = array('#type' => 'weight', '#default_value' => $format->weight);
   }
-  $form['submit'] = array('#type' => 'submit', '#value' => t('Save changes'));
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array('#type' => 'submit', '#value' => t('Save changes'));
   return $form;
 }
 
@@ -55,7 +56,11 @@ function filter_admin_overview_submit($form, &$form_state) {
 }
 
 /**
- * Theme the text format administration overview form.
+ * Returns HTML for the text format administration overview form.
+ *
+ * @param $variables
+ *   An associative array containing:
+ *   - form: A render element representing the form.
  *
  * @ingroup themeable
  */
@@ -122,12 +127,21 @@ function filter_admin_format_form($form, &$form_state, $format) {
   $form['roles'] = array(
     '#type' => 'checkboxes',
     '#title' => t('Roles'),
-    '#options' => user_roles(),
-    '#default_value' => array_keys(filter_get_roles_by_format($format)),
+    '#options' => array_map('check_plain', user_roles()),
     '#disabled' => $is_fallback,
   );
   if ($is_fallback) {
     $form['roles']['#description'] = t('All roles for this text format must be enabled and cannot be changed.');
+  }
+  if (!empty($format->format)) {
+    // If editing an existing text format, pre-select its current permissions.
+    $form['roles']['#default_value'] = array_keys(filter_get_roles_by_format($format));
+  }
+  elseif ($admin_role = variable_get('user_admin_role', 0)) {
+    // If adding a new text format and the site has an administrative role,
+    // pre-select that role so as to grant administrators access to the new
+    // text format permission by default.
+    $form['roles']['#default_value'] = array($admin_role);
   }
 
   // Retrieve available filters and load all configured filters for existing
@@ -139,7 +153,7 @@ function filter_admin_format_form($form, &$form_state, $format) {
   foreach ($filter_info as $name => $filter) {
     // Create an empty filter object for new/unconfigured filters.
     if (!isset($filters[$name])) {
-      $filters[$name] = new stdClass;
+      $filters[$name] = new stdClass();
       $filters[$name]->status = 0;
       $filters[$name]->weight = $filter['weight'];
       $filters[$name]->settings = array();
@@ -181,6 +195,7 @@ function filter_admin_format_form($form, &$form_state, $format) {
       '#default_value' => $filters[$name]->weight,
       '#parents' => array('filters', $name, 'weight'),
     );
+    $form['filters']['order'][$name]['#weight'] = $filters[$name]->weight;
   }
 
   // Filter settings.
@@ -215,13 +230,18 @@ function filter_admin_format_form($form, &$form_state, $format) {
   if (!empty($format->format)) {
     $form['format'] = array('#type' => 'value', '#value' => $format->format);
   }
-  $form['submit'] = array('#type' => 'submit', '#value' => t('Save configuration'));
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array('#type' => 'submit', '#value' => t('Save configuration'));
 
   return $form;
 }
 
 /**
- * Theme text format filter order form elements as tabledrag.
+ * Returns HTML for a text format's filter order form.
+ *
+ * @param $variables
+ *   An associative array containing:
+ *   - element: A render element representing the form.
  *
  * @ingroup themeable
  */

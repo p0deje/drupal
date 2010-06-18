@@ -1,5 +1,5 @@
 <?php
-// $Id: openid_test.module,v 1.8 2009/12/04 16:49:47 dries Exp $
+// $Id: openid_test.module,v 1.15 2010/06/17 13:16:57 dries Exp $
 
 /**
  * @file
@@ -69,15 +69,60 @@ function openid_test_menu() {
  */
 function openid_test_yadis_xrds() {
   if ($_SERVER['HTTP_ACCEPT'] == 'application/xrds+xml') {
+    // Only respond to XRI requests for one specific XRI. The is used to verify
+    // that the XRI has been properly encoded. The "+" sign in the _xrd_r query
+    // parameter is decoded to a space by PHP.
+    if (arg(3) == 'xri') {
+      if (variable_get('clean_url', 0)) {
+        if (arg(4) != '@example*résumé;%25' || $_GET['_xrd_r'] != 'application/xrds xml') {
+          drupal_not_found();
+        }
+      }
+      else {
+        // Drupal cannot properly emulate an XRI proxy resolver using unclean
+        // URLs, so the arguments gets messed up.
+        if (arg(4) . '/' . arg(5) != '@example*résumé;%25?_xrd_r=application/xrds xml') {
+          drupal_not_found();
+        }
+      }
+    }
     drupal_add_http_header('Content-Type', 'application/xrds+xml');
     print '<?xml version="1.0" encoding="UTF-8"?>
       <xrds:XRDS xmlns:xrds="xri://$xrds" xmlns="xri://$xrd*($v*2.0)">
         <XRD>
+          <Status cid="' . check_plain(variable_get('openid_test_canonical_id_status', 'verified')) . '"/>
+          <ProviderID>xri://@</ProviderID>
+          <CanonicalID>http://example.com/user</CanonicalID>
           <Service>
+            <Type>http://example.com/this-is-ignored</Type>
+          </Service>
+          <Service priority="10">
             <Type>http://specs.openid.net/auth/2.0/signon</Type>
+            <Type>http://openid.net/srv/ax/1.0</Type>
             <URI>' . url('openid-test/endpoint', array('absolute' => TRUE)) . '</URI>
           </Service>
-        <XRD>
+          <Service priority="15">
+            <Type>http://specs.openid.net/auth/2.0/signon</Type>
+            <URI>http://example.com/this-has-too-low-priority</URI>
+          </Service>
+          <Service>
+            <Type>http://specs.openid.net/auth/2.0/signon</Type>
+            <URI>http://example.com/this-has-too-low-priority</URI>
+          </Service>
+          ';
+    if (arg(3) == 'server') {
+      print '
+          <Service>
+            <Type>http://specs.openid.net/auth/2.0/server</Type>
+            <URI>http://example.com/this-has-too-low-priority</URI>
+          </Service>
+          <Service priority="20">
+            <Type>http://specs.openid.net/auth/2.0/server</Type>
+            <URI>' . url('openid-test/endpoint', array('absolute' => TRUE)) . '</URI>
+          </Service>';
+    }
+    print '
+        </XRD>
       </xrds:XRDS>';
   }
   else {
@@ -133,10 +178,10 @@ function openid_test_html_openid2() {
  */
 function openid_test_endpoint() {
   switch ($_REQUEST['openid_mode']) {
-    case 'associate';
+    case 'associate':
       _openid_test_endpoint_associate();
       break;
-    case 'checkid_setup';
+    case 'checkid_setup':
       _openid_test_endpoint_authenticate();
       break;
   }
@@ -202,8 +247,6 @@ function _openid_test_endpoint_associate() {
  * identity.
  */
 function _openid_test_endpoint_authenticate() {
-  global $base_url;
-
   module_load_include('inc', 'openid');
 
   // Generate unique identifier for this authentication.
@@ -215,9 +258,8 @@ function _openid_test_endpoint_authenticate() {
   $response = variable_get('openid_test_response', array()) + array(
     'openid.ns' => OPENID_NS_2_0,
     'openid.mode' => 'id_res',
-    'openid.op_endpoint' => $base_url . url('openid/provider'),
-    // openid.claimed_id is not sent by OpenID 1 clients.
-    'openid.claimed_id' => isset($_REQUEST['openid_claimed_id']) ? $_REQUEST['openid_claimed_id'] : '',
+    'openid.op_endpoint' => url('openid-test/endpoint', array('absolute' => TRUE)),
+    'openid.claimed_id' => !empty($_REQUEST['openid_claimed_id']) ? $_REQUEST['openid_claimed_id'] : '',
     'openid.identity' => $_REQUEST['openid_identity'],
     'openid.return_to' => $_REQUEST['openid_return_to'],
     'openid.response_nonce' => $nonce,
@@ -226,7 +268,7 @@ function _openid_test_endpoint_authenticate() {
   );
 
   // Sign the message using the MAC key that was exchanged during association.
-  $association = new stdClass;
+  $association = new stdClass();
   $association->mac_key = variable_get('mac_key');
   $keys_to_sign = explode(',', $response['openid.signed']);
   $response['openid.sig'] = _openid_signature($association, $response, $keys_to_sign);

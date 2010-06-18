@@ -1,5 +1,5 @@
 <?php
-// $Id: search.pages.inc,v 1.13 2009/12/12 20:49:34 dries Exp $
+// $Id: search.pages.inc,v 1.19 2010/05/01 01:04:24 webchick Exp $
 
 /**
  * @file
@@ -14,21 +14,22 @@ function search_view($type = 'node') {
   // the search query URL clean as a whistle:
   // search/type/keyword+keyword
   if (!isset($_POST['form_id'])) {
-    if ($type == '') {
-      // Note: search/node can not be a default tab because it would take on the
-      // path of its parent (search). It would prevent remembering keywords when
-      // switching tabs. This is why we drupal_goto to it from the parent instead.
-      drupal_goto('search/node');
+    $keys = search_get_keys();
+    if ($_GET['q'] != 'search' && $type == 'node' && !$keys) {
+      // Due to how search_menu() sets up the tabs, path search/node would
+      // display two sets of tabs. So instead, if there are no keywords and
+      // we're on the node tab, just redirect to the bare 'search' path.
+      drupal_goto('search');
     }
 
-    $keys = search_get_keys();
     // Only perform search if there is non-whitespace search term:
     $results = '';
     if (trim($keys)) {
-      // Log the search keys:
-      watchdog('search', '%keys (@type).', array('%keys' => $keys, '@type' => module_invoke($type, 'search', 'name')), WATCHDOG_NOTICE, l(t('results'), 'search/' . $type . '/' . $keys));
+      // Log the search keys.
+      $info = search_get_info();
+      watchdog('search', 'Searched %type for %keys.', array('%keys' => $keys, '%type' => $info[$type]['title']), WATCHDOG_NOTICE, l(t('results'), 'search/' . $type . '/' . $keys));
 
-      // Collect the search results:
+      // Collect the search results.
       $results = search_data($keys, $type);
 
       // Construct the search form.
@@ -46,15 +47,14 @@ function search_view($type = 'node') {
 }
 
 /**
- * Theme the listing of search results
+ * Returns HTML for a listing of search results.
  *
  * @param $variables
  *   An associative array containing:
  *   - title: The subject of the listing.
  *   - content: The content of the listing.
  *
- * @return
- *   A string containing the listing output.
+ * @ingroup themeable
  */
 function theme_search_results_listing($variables) {
   $output = '<h2 class="title">' . $variables['title'] . '</h2><div>' . $variables['content'] . '</div>';
@@ -76,8 +76,7 @@ function template_preprocess_search_results(&$variables) {
     $variables['search_results'] .= theme('search_result', array('result' => $result, 'type' => $variables['type']));
   }
   $variables['pager'] = theme('pager', array('tags' => NULL));
-  // Provide alternate search results template.
-  $variables['template_files'][] = 'search-results-' . $variables['type'];
+  $variables['theme_hook_suggestions'][] = 'search_results__' . $variables['type'];
 }
 
 /**
@@ -112,8 +111,7 @@ function template_preprocess_search_result(&$variables) {
   // Provide separated and grouped meta information..
   $variables['info_split'] = $info;
   $variables['info'] = implode(' - ', $info);
-  // Provide alternate search result template.
-  $variables['template_files'][] = 'search-result-' . $variables['type'];
+  $variables['theme_hook_suggestions'][] = 'search_result__' . $variables['type'];
 }
 
 /**
@@ -123,7 +121,7 @@ function template_preprocess_search_result(&$variables) {
  * value for the basic search form.
  */
 function search_form_validate($form, &$form_state) {
-  form_set_value($form['basic']['inline']['processed_keys'], trim($form_state['values']['keys']), $form_state);
+  form_set_value($form['basic']['processed_keys'], trim($form_state['values']['keys']), $form_state);
 }
 
 /**
@@ -137,6 +135,6 @@ function search_form_submit($form, &$form_state) {
   }
 
   $type = $form_state['values']['module'] ? $form_state['values']['module'] : 'node';
-  $form_state['redirect'] = 'search/' . $type . '/' . $keys;
+  $form_state['redirect'] = $form_state['action'] . '/' . $keys;
   return;
 }

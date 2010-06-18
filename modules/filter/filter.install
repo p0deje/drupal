@@ -1,5 +1,5 @@
 <?php
-// $Id: filter.install,v 1.27 2009/12/08 06:52:38 webchick Exp $
+// $Id: filter.install,v 1.39 2010/06/10 06:57:20 dries Exp $
 
 /**
  * @file
@@ -37,7 +37,6 @@ function filter_schema() {
         'type' => 'int',
         'not null' => TRUE,
         'default' => 0,
-        'size' => 'tiny',
         'description' => 'Weight of filter within format.',
       ),
       'status' => array(
@@ -55,9 +54,6 @@ function filter_schema() {
       ),
     ),
     'primary key' => array('format', 'name'),
-    'unique keys' => array(
-      'fmn' => array('format', 'module', 'name'),
-    ),
     'indexes' => array(
       'list' => array('weight', 'module', 'name'),
     ),
@@ -89,7 +85,6 @@ function filter_schema() {
         'type' => 'int',
         'not null' => TRUE,
         'default' => 0,
-        'size' => 'tiny',
         'description' => 'Weight of text format to use when listing.',
       )
     ),
@@ -103,9 +98,58 @@ function filter_schema() {
   );
 
   $schema['cache_filter'] = drupal_get_schema_unprocessed('system', 'cache');
-  $schema['cache_filter']['description'] = 'Cache table for the Filter module to store already filtered pieces of text, identified by text format and md5 hash of the text.';
+  $schema['cache_filter']['description'] = 'Cache table for the Filter module to store already filtered pieces of text, identified by text format and hash of the text.';
 
   return $schema;
+}
+
+/**
+ * Implements hook_install().
+ */
+function filter_install() {
+  // All sites require at least one text format (the fallback format) that all
+  // users have access to, so add it here. We initialize it as a simple, safe
+  // plain text format with very basic formatting, but it can be modified by
+  // installation profiles to have other properties.
+  $plain_text_format = array(
+    'name' => 'Plain text',
+    'weight' => 10,
+    'filters' => array(
+      // Escape all HTML.
+      'filter_html_escape' => array(
+        'weight' => 0,
+        'status' => 1,
+      ),
+      // URL filter.
+      'filter_url' => array(
+        'weight' => 1,
+        'status' => 1,
+      ),
+      // Line break filter.
+      'filter_autop' => array(
+        'weight' => 2,
+        'status' => 1,
+      ),
+    ),
+  );
+  $plain_text_format = (object) $plain_text_format;
+  filter_format_save($plain_text_format);
+
+  // Set the fallback format to plain text.
+  variable_set('filter_fallback_format', $plain_text_format->format);
+}
+
+/**
+ * Implements hook_update_dependencies().
+ */
+function filter_update_dependencies() {
+  // Filter update 7005 migrates block data and therefore needs to run after
+  // the {block_custom} table is properly set up.
+  $dependencies['filter'][7005] = array(
+    'taxonomy' => 7002,
+  );
+
+  return $dependencies;
 }
 
 /**
@@ -114,11 +158,31 @@ function filter_schema() {
  */
 
 /**
- * Add a weight column to the filter formats table.
+ * Increase the size of {filters}.weight and add {filter_formats}.weight.
  */
 function filter_update_7000() {
-  db_add_field('filter_formats', 'weight', array('type' => 'int', 'not null' => TRUE, 'default' => 0, 'size' => 'tiny'));
-  db_add_index('filter_formats', 'weight', array('weight'));
+  // The list index will be recreated by filter_update_7003().
+  db_drop_index('filters', 'list');
+
+  // Change the weight column of the filter table to normal (ie. non tiny) int.
+  db_change_field('filters', 'weight', 'weight', array(
+    'type' => 'int',
+    'not null' => TRUE,
+    'default' => 0,
+    'description' => 'Weight of filter within format.',
+  ));
+
+  // Add a new filter_format.weight column.
+  db_add_field('filter_formats', 'weight', array(
+    'type' => 'int',
+    'not null' => TRUE,
+    'default' => 0,
+    'description' => 'Weight of text format to use when listing.',
+  ), array(
+    'indexes' => array(
+      'weight' => array('weight'),
+    ),
+  ));
 }
 
 /**
@@ -156,6 +220,13 @@ function filter_update_7002() {
  * Remove hardcoded numeric deltas from all filters in core.
  */
 function filter_update_7003() {
+  // Duplicates the filter table since core cannot take care of the potential
+  // contributed module filters.
+  db_rename_table('filter', 'd6_upgrade_filter');
+  // Creates the Drupal 7 filter table.
+  $schema = filter_schema();
+  db_create_table('filter', $schema['filter']);
+
   // Get an array of the renamed filter deltas, organized by module.
   $renamed_deltas = array(
     'filter' => array(
@@ -170,34 +241,29 @@ function filter_update_7003() {
     ),
   );
 
-  // Rename field 'delta' to 'name'.
-  db_drop_unique_key('filter', 'fmd');
-  db_drop_index('filter', 'list');
-  db_change_field('filter', 'delta', 'name',
-    array(
-      'type' => 'varchar',
-      'length' => 32,
-      'not null' => TRUE,
-      'default' => '',
-      'description' => 'Name of the filter being referenced.',
-    ),
-    array(
-      'unique keys' => array(
-        'fmn' => array('format', 'module', 'name'),
-      ),
-      'indexes' => array(
-        'list' => array('format', 'weight', 'module', 'name'),
-      ),
-    )
-  );
-
-  // Loop through each filter and make changes to the core filter table.
+  // Loop through each filter and make changes to the core filter table by
+  // each record from the old to the new table.
   foreach ($renamed_deltas as $module => $deltas) {
-    foreach ($deltas as $old_delta => $new_delta) {
-      db_update('filter')
-        ->fields(array('name' => $new_delta))
+    foreach ($deltas as $old_delta => $new_name) {
+      $query = db_select('d6_upgrade_filter');
+      $query->fields('d6_upgrade_filter', array('format', 'weight'));
+      $query->condition('module', $module);
+      $query->condition('delta', $old_delta);
+      $query->distinct();
+      $result = $query->execute();
+      foreach ($result as $record) {
+        db_insert('filter')
+          ->fields(array(
+            'format' => $record->format,
+            'module' => $module,
+            'name' => $new_name,
+            'weight' => $record->weight,
+          ))
+          ->execute();
+      }
+      db_delete('d6_upgrade_filter')
         ->condition('module', $module)
-        ->condition('name', $old_delta)
+        ->condition('delta', $old_delta)
         ->execute();
     }
   }
@@ -205,36 +271,11 @@ function filter_update_7003() {
 
 /**
  * Move filter settings storage into {filter} table.
- *
- * - Remove {filter}.fid.
- * - Add (format, name) as primary key for {filter}.
- * - Add {filter}.status.
- * - Add {filter}.settings.
  */
 function filter_update_7004() {
-  db_drop_field('filter', 'fid');
-  db_add_primary_key('filter', array('format', 'name'));
-  db_add_field('filter', 'status',
-    array(
-      'type' => 'int',
-      'not null' => TRUE,
-      'default' => 0,
-      'description' => 'Filter enabled status. (1 = enabled, 0 = disabled)',
-    )
-  );
-  db_add_field('filter', 'settings',
-    array(
-      'type' => 'text',
-      'not null' => FALSE,
-      'size' => 'big',
-      'serialize' => TRUE,
-      'description' => 'A serialized array of name value pairs that store the filter settings for the specific format.',
-    )
-  );
-
   // Enable all existing filters ({filter} contained only enabled previously).
   db_update('filter')
-    ->fields('status', '1')
+    ->fields(array('status' => '1'))
     ->execute();
 
   // Move filter settings from system variables into {filter}.settings.
@@ -262,11 +303,11 @@ function filter_update_7004() {
       }
     }
     if (!empty($settings)) {
-    	db_upddate('filter')
-    	  ->fields(array('settings' => serialize($settings)))
-    	  ->condition('format', $filter->format)
-    	  ->condition('name', $filter->name)
-    	  ->execute();
+      db_update('filter')
+        ->fields(array('settings' => serialize($settings)))
+        ->condition('format', $filter->format)
+        ->condition('name', $filter->name)
+        ->execute();
     }
   }
 }
@@ -306,18 +347,27 @@ function filter_update_7005() {
   $start_name = 'Plain text';
   $format_name = $start_name;
   while ($format = db_query('SELECT format FROM {filter_format} WHERE name = :name', array(':name' => $format_name))->fetchField()) {
-    $id = empty($id) ? 1 : $id + 1;
+    $id = empty($id) ? 2 : $id + 1;
     $format_name = $start_name . ' ' . $id;
   }
   $fallback_format = new stdClass();
   $fallback_format->name = $format_name;
-  $fallback_format->cache = 1;
   $fallback_format->weight = 1;
   // This format should output plain text, so we escape all HTML and apply the
-  // line break filter only.
+  // line break and URL filters only.
   $fallback_format->filters = array(
-    'filter_html_escape' => array('status' => 1),
-    'filter_autop' => array('status' => 1),
+    'filter_html_escape' => array(
+      'weight' => 0,
+      'status' => 1,
+    ),
+    'filter_url' => array(
+      'weight' => 1,
+      'status' => 1,
+    ),
+    'filter_autop' => array(
+      'weight' => 2,
+      'status' => 1,
+    ),
   );
   filter_format_save($fallback_format);
   variable_set('filter_fallback_format', $fallback_format->format);
@@ -335,12 +385,13 @@ function filter_update_7005() {
   // using the default text format. Therefore, we have to convert all such
   // instances (in Drupal core) to explicitly use the appropriate format.
   // Note that the update of the node body field is handled separately, in
-  // node_update_7006().
-  foreach (array('block_custom', 'comment') as $table) {
+  // node_update_7006(), as is the update of the comment body field, in
+  // comment_update_7013().
+  foreach (array('block_custom' => 'format', 'users' => 'signature_format') as $table => $column) {
     if (db_table_exists($table)) {
       db_update($table)
-        ->fields(array('format' => $default_format))
-        ->condition('format', 0)
+        ->fields(array($column => $default_format))
+        ->condition($column, 0)
         ->execute();
     }
   }
@@ -351,11 +402,24 @@ function filter_update_7005() {
 }
 
 /**
- * Remove the 'format' column from 'list' index on {filter}.
+ * Grant usage of all text formats to user roles having the 'administer filters' permission.
  */
-function filter_update_7006() {
-  db_drop_index('filter', 'list');
-  db_add_index('filter', 'list', array('weight', 'module', 'name'));
+function filter_update_7008() {
+  // Build the list of permissions to grant.
+  $permissions = array();
+  foreach (filter_formats() as $format_id => $format) {
+    if ($permission = filter_permission_name($format)) {
+      $permissions[] = $permission;
+    }
+  }
+  // Grant text format permissions to all roles that can 'administer filters'.
+  // Albeit anonymous users *should not* have the permission, we cannot presume
+  // that they do not or must not.
+  if ($roles = user_roles(FALSE, 'administer filters')) {
+    foreach ($roles as $rid => $name) {
+      user_role_grant_permissions($rid, $permissions);
+    }
+  }
 }
 
 /**

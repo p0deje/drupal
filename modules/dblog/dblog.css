@@ -1,6 +1,7 @@
-/* $Id: dblog.css,v 1.7 2009/08/24 03:11:34 webchick Exp $ */
+/* $Id: dblog.css,v 1.9 2010/04/28 20:08:38 dries Exp $ */
 
-.form-item-type, .form-item-severity {
+.form-item-type,
+.form-item-severity {
   float: left; /* LTR */
   padding-right: .8em; /* LTR */
   margin: 0.1em;
@@ -11,9 +12,14 @@
    */
   width: 15em;
 }
-#dblog-filter-form .form-item select.form-select {
+#dblog-filter-form .form-type-select select {
   width: 100%;
 }
+#dblog-filter-form .form-actions {
+  float: left;
+  padding: 3ex 0 0 1em;
+}
+
 tr.dblog-user {
   background: #ffd;
 }
@@ -26,10 +32,12 @@ tr.dblog-content {
 tr.dblog-content .active {
   background: #cce;
 }
-tr.dblog-page-not-found, tr.dblog-access-denied {
+tr.dblog-page-not-found,
+tr.dblog-access-denied {
   background: #dfd;
 }
-tr.dblog-page-not-found .active, tr.dblog-access-denied .active {
+tr.dblog-page-not-found .active,
+tr.dblog-access-denied .active {
   background: #cec;
 }
 tr.dblog-error {

@@ -1,5 +1,5 @@
 <?php
-// $Id: locale.api.php,v 1.7 2009/10/16 15:47:46 webchick Exp $
+// $Id: locale.api.php,v 1.11 2010/05/12 08:26:14 dries Exp $
 
 /**
  * @file
@@ -25,6 +25,33 @@ function hook_locale($op = 'groups') {
 }
 
 /**
+ * Allows modules to act after language initialization has been performed.
+ *
+ * This is primarily needed to provide translation for configuration variables
+ * in the proper bootstrap phase. Variables are user-defined strings and
+ * therefore should not be translated via t(), since the source string can
+ * change without notice and any previous translation would be lost. Moreover,
+ * since variables can be used in the bootstrap phase, we need a bootstrap hook
+ * to provide a translation early enough to avoid misalignments between code
+ * using the original values and code using the translated values. However
+ * modules implementing hook_boot() should be aware that language initialization
+ * did not happen yet and thus they cannot rely on translated variables.
+ */
+function hook_language_init() {
+  global $language, $conf;
+
+  switch ($language->language) {
+    case 'it':
+      $conf['site_name'] = 'Il mio sito Drupal';
+      break;
+
+    case 'fr':
+      $conf['site_name'] = 'Mon site Drupal';
+      break;
+  }
+}
+
+/**
  * Perform alterations on language switcher links.
  *
  * A language switcher link may need to point to a different path or use a
@@ -38,7 +65,7 @@ function hook_locale($op = 'groups') {
  * @param $path
  *   The current path.
  */
-function hook_language_switch_link_alter(array &$links, $type, $path) {
+function hook_language_switch_links_alter(array &$links, $type, $path) {
   global $language;
 
   if ($type == LANGUAGE_TYPE_CONTENT && isset($links[$language])) {
@@ -57,12 +84,17 @@ function hook_language_switch_link_alter(array &$links, $type, $path) {
  *   the following key-value pairs:
  *   - "name": The human-readable language type identifier.
  *   - "description": A description of the language type.
+ *   - "fixed": An array of language provider identifiers. Defining this key
+ *     makes the language type non-configurable.
  */
 function hook_language_types_info() {
   return array(
     'custom_language_type' => array(
       'name' => t('Custom language'),
       'description' => t('A custom language type.'),
+    ),
+    'fixed_custom_language_type' => array(
+      'fixed' => array('custom_language_provider'),
     ),
   );
 }
@@ -119,7 +151,7 @@ function hook_language_negotiation_info() {
       'types' => array('custom_language_type'),
       'name' => t('Custom language provider'),
       'description' => t('This is a custom language provider.'),
-      'cache' => CACHE_DISABLED,
+      'cache' => 0,
     ),
   );
 }

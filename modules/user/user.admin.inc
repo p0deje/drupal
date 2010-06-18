@@ -1,5 +1,5 @@
 <?php
-// $Id: user.admin.inc,v 1.91 2009/12/02 17:04:25 dries Exp $
+// $Id: user.admin.inc,v 1.110 2010/05/27 12:29:39 dries Exp $
 
 /**
  * @file
@@ -72,16 +72,21 @@ function user_filter_form() {
     );
   }
 
-  $form['filters']['buttons']['submit'] = array(
+  $form['filters']['actions'] = array(
+    '#type' => 'actions',
+    '#id' => 'user-admin-buttons',
+    '#attributes' => array('class' => array('container-inline')),
+  );
+  $form['filters']['actions']['submit'] = array(
     '#type' => 'submit',
     '#value' => (count($session) ? t('Refine') : t('Filter')),
   );
   if (count($session)) {
-    $form['filters']['buttons']['undo'] = array(
+    $form['filters']['actions']['undo'] = array(
       '#type' => 'submit',
       '#value' => t('Undo'),
     );
-    $form['filters']['buttons']['reset'] = array(
+    $form['filters']['actions']['reset'] = array(
       '#type' => 'submit',
       '#value' => t('Reset'),
     );
@@ -146,12 +151,11 @@ function user_admin_account() {
   );
 
   $query = db_select('users', 'u');
-  $query->leftJoin('users_roles', 'ur', 'u.uid = ur.uid');
   $query->condition('u.uid', 0, '<>');
   user_build_filter_query($query);
 
   $count_query = clone $query;
-  $count_query->addExpression('COUNT(DISTINCT u.uid)');
+  $count_query->addExpression('COUNT(u.uid)');
 
   $query = $query->extend('PagerDefault')->extend('TableSort');
   $query
@@ -164,8 +168,7 @@ function user_admin_account() {
   $form['options'] = array(
     '#type' => 'fieldset',
     '#title' => t('Update options'),
-    '#prefix' => '<div class="container-inline">',
-    '#suffix' => '</div>',
+    '#attributes' => array('class' => array('container-inline')),
   );
   $options = array();
   foreach (module_invoke_all('user_operations') as $operation => $array) {
@@ -185,7 +188,7 @@ function user_admin_account() {
   $destination = drupal_get_destination();
 
   $status = array(t('blocked'), t('active'));
-  $roles = user_roles(TRUE);
+  $roles = array_map('check_plain', user_roles(TRUE));
   $accounts = array();
   foreach ($result as $account) {
     $users_roles = array();
@@ -294,11 +297,11 @@ function user_admin_settings() {
   $form['registration_cancellation']['user_register'] = array(
     '#type' => 'radios',
     '#title' => t('Who can register accounts?'),
-    '#default_value' => variable_get('user_register', 1),
+    '#default_value' => variable_get('user_register', USER_REGISTER_VISITORS_ADMINISTRATIVE_APPROVAL),
     '#options' => array(
-      t('Administrators only'),
-      t('Visitors'),
-      t('Visitors, but administrator approval is required'),
+      USER_REGISTER_ADMINISTRATORS_ONLY => t('Administrators only'),
+      USER_REGISTER_VISITORS => t('Visitors'),
+      USER_REGISTER_VISITORS_ADMINISTRATIVE_APPROVAL => t('Visitors, but administrator approval is required'),
     )
   );
   $form['registration_cancellation']['user_email_verification'] = array(
@@ -311,7 +314,7 @@ function user_admin_settings() {
   $form['registration_cancellation']['user_cancel_method'] = array(
     '#type' => 'item',
     '#title' => t('When cancelling a user account'),
-    '#description' => t('Users with the %select-cancel-method or %administer-users <a href="@permissions-url">permissions</a> can override this default method.', array('%select-cancel-method' => t('Select method for cancelling account'), '%administer-users' => t('Administer users'), '@permissions-url' => url('admin/config/people/permissions'))),
+    '#description' => t('Users with the %select-cancel-method or %administer-users <a href="@permissions-url">permissions</a> can override this default method.', array('%select-cancel-method' => t('Select method for cancelling account'), '%administer-users' => t('Administer users'), '@permissions-url' => url('admin/people/permissions'))),
   );
   $form['registration_cancellation']['user_cancel_method'] += user_cancel_methods();
   foreach (element_children($form['registration_cancellation']['user_cancel_method']) as $element) {
@@ -419,26 +422,26 @@ function user_admin_settings() {
   );
   // These email tokens are shared for all settings, so just define
   // the list once to help ensure they stay in sync.
-  $email_token_help = t('Available variables are:') . ' [site:name], [site:url], [user:name], [user:mail], [site:login-url], [user:edit-url], [user:password], [user:one-time-login-url], [user:cancel-url].';
+  $email_token_help = t('You can use the following tokens in your e-mail message text: !site-name-token, !site-url-token, !user-name-token, !user-mail-token, !site-login-url-token, !user-edit-url-token, !user-one-time-login-url-token, !user-cancel-url-token', array('!site-name-token' => '[site:name]', '!site-url-token' => '[site:url]', '!user-name-token' => '[user:name]', '!user-mail-token' => '[user:mail]', '!site-login-url-token' => '[site:login-url]', '!user-edit-url-token' => '[user:edit-url]', '!user-one-time-login-url-token' => '[user:one-time-login-url]', '!user-cancel-url-token' => '[user:cancel-url]'));
 
   $form['email_admin_created'] = array(
     '#type' => 'fieldset',
     '#title' => t('Welcome (new user created by administrator)'),
     '#collapsible' => TRUE,
-    '#collapsed' => (variable_get('user_register', 1) != 0),
-    '#description' => t('Customize welcome e-mail messages sent to new member accounts created by an administrator.') . ' ' . $email_token_help,
+    '#collapsed' => (variable_get('user_register', USER_REGISTER_VISITORS_ADMINISTRATIVE_APPROVAL) != USER_REGISTER_ADMINISTRATORS_ONLY),
+    '#description' => t('Edit the welcome e-mail messages sent to new member accounts created by an administrator.') . ' ' . $email_token_help,
     '#group' => 'email',
   );
   $form['email_admin_created']['user_mail_register_admin_created_subject'] = array(
     '#type' => 'textfield',
     '#title' => t('Subject'),
-    '#default_value' => _user_mail_text('register_admin_created_subject'),
+    '#default_value' => _user_mail_text('register_admin_created_subject', NULL, array(), FALSE),
     '#maxlength' => 180,
   );
   $form['email_admin_created']['user_mail_register_admin_created_body'] = array(
     '#type' => 'textarea',
     '#title' => t('Body'),
-    '#default_value' => _user_mail_text('register_admin_created_body'),
+    '#default_value' => _user_mail_text('register_admin_created_body', NULL, array(), FALSE),
     '#rows' => 15,
   );
 
@@ -446,20 +449,20 @@ function user_admin_settings() {
     '#type' => 'fieldset',
     '#title' => t('Welcome (awaiting approval)'),
     '#collapsible' => TRUE,
-    '#collapsed' => (variable_get('user_register', 1) != 2),
-    '#description' => t('Customize welcome e-mail messages sent to new members upon registering, when administrative approval is required.') . ' ' . $email_token_help,
+    '#collapsed' => (variable_get('user_register', USER_REGISTER_VISITORS_ADMINISTRATIVE_APPROVAL) != USER_REGISTER_VISITORS_ADMINISTRATIVE_APPROVAL),
+    '#description' => t('Edit the welcome e-mail messages sent to new members upon registering, when administrative approval is required.') . ' ' . $email_token_help,
     '#group' => 'email',
   );
   $form['email_pending_approval']['user_mail_register_pending_approval_subject'] = array(
     '#type' => 'textfield',
     '#title' => t('Subject'),
-    '#default_value' => _user_mail_text('register_pending_approval_subject'),
+    '#default_value' => _user_mail_text('register_pending_approval_subject', NULL, array(), FALSE),
     '#maxlength' => 180,
   );
   $form['email_pending_approval']['user_mail_register_pending_approval_body'] = array(
     '#type' => 'textarea',
     '#title' => t('Body'),
-    '#default_value' => _user_mail_text('register_pending_approval_body'),
+    '#default_value' => _user_mail_text('register_pending_approval_body', NULL, array(), FALSE),
     '#rows' => 8,
   );
 
@@ -467,20 +470,20 @@ function user_admin_settings() {
     '#type' => 'fieldset',
     '#title' => t('Welcome (no approval required)'),
     '#collapsible' => TRUE,
-    '#collapsed' => (variable_get('user_register', 1) != 1),
-    '#description' => t('Customize welcome e-mail messages sent to new members upon registering, when no administrator approval is required.') . ' ' . $email_token_help,
+    '#collapsed' => (variable_get('user_register', USER_REGISTER_VISITORS_ADMINISTRATIVE_APPROVAL) != USER_REGISTER_VISITORS),
+    '#description' => t('Edit the welcome e-mail messages sent to new members upon registering, when no administrator approval is required.') . ' ' . $email_token_help,
     '#group' => 'email',
   );
   $form['email_no_approval_required']['user_mail_register_no_approval_required_subject'] = array(
     '#type' => 'textfield',
     '#title' => t('Subject'),
-    '#default_value' => _user_mail_text('register_no_approval_required_subject'),
+    '#default_value' => _user_mail_text('register_no_approval_required_subject', NULL, array(), FALSE),
     '#maxlength' => 180,
   );
   $form['email_no_approval_required']['user_mail_register_no_approval_required_body'] = array(
     '#type' => 'textarea',
     '#title' => t('Body'),
-    '#default_value' => _user_mail_text('register_no_approval_required_body'),
+    '#default_value' => _user_mail_text('register_no_approval_required_body', NULL, array(), FALSE),
     '#rows' => 15,
   );
 
@@ -489,20 +492,20 @@ function user_admin_settings() {
     '#title' => t('Password recovery'),
     '#collapsible' => TRUE,
     '#collapsed' => TRUE,
-    '#description' => t('Customize e-mail messages sent to users who request a new password.') . ' ' . $email_token_help,
+    '#description' => t('Edit the e-mail messages sent to users who request a new password.') . ' ' . $email_token_help,
     '#group' => 'email',
     '#weight' => 10,
   );
   $form['email_password_reset']['user_mail_password_reset_subject'] = array(
     '#type' => 'textfield',
     '#title' => t('Subject'),
-    '#default_value' => _user_mail_text('password_reset_subject'),
+    '#default_value' => _user_mail_text('password_reset_subject', NULL, array(), FALSE),
     '#maxlength' => 180,
   );
   $form['email_password_reset']['user_mail_password_reset_body'] = array(
     '#type' => 'textarea',
     '#title' => t('Body'),
-    '#default_value' => _user_mail_text('password_reset_body'),
+    '#default_value' => _user_mail_text('password_reset_body', NULL, array(), FALSE),
     '#rows' => 12,
   );
 
@@ -511,7 +514,7 @@ function user_admin_settings() {
     '#title' => t('Account activation'),
     '#collapsible' => TRUE,
     '#collapsed' => TRUE,
-    '#description' => t('Enable and customize e-mail messages sent to users upon account activation (when an administrator activates an account of a user who has already registered, on a site where administrative approval is required).') . ' ' . $email_token_help,
+    '#description' => t('Enable and edit e-mail messages sent to users upon account activation (when an administrator activates an account of a user who has already registered, on a site where administrative approval is required).') . ' ' . $email_token_help,
     '#group' => 'email',
   );
   $form['email_activated']['user_mail_status_activated_notify'] = array(
@@ -531,13 +534,13 @@ function user_admin_settings() {
   $form['email_activated']['settings']['user_mail_status_activated_subject'] = array(
     '#type' => 'textfield',
     '#title' => t('Subject'),
-    '#default_value' => _user_mail_text('status_activated_subject'),
+    '#default_value' => _user_mail_text('status_activated_subject', NULL, array(), FALSE),
     '#maxlength' => 180,
   );
   $form['email_activated']['settings']['user_mail_status_activated_body'] = array(
     '#type' => 'textarea',
     '#title' => t('Body'),
-    '#default_value' => _user_mail_text('status_activated_body'),
+    '#default_value' => _user_mail_text('status_activated_body', NULL, array(), FALSE),
     '#rows' => 15,
   );
 
@@ -546,7 +549,7 @@ function user_admin_settings() {
     '#title' => t('Account blocked'),
     '#collapsible' => TRUE,
     '#collapsed' => TRUE,
-    '#description' => t('Enable and customize e-mail messages sent to users when their accounts are blocked.') . ' ' . $email_token_help,
+    '#description' => t('Enable and edit e-mail messages sent to users when their accounts are blocked.') . ' ' . $email_token_help,
     '#group' => 'email',
   );
   $form['email_blocked']['user_mail_status_blocked_notify'] = array(
@@ -566,13 +569,13 @@ function user_admin_settings() {
   $form['email_blocked']['settings']['user_mail_status_blocked_subject'] = array(
     '#type' => 'textfield',
     '#title' => t('Subject'),
-    '#default_value' => _user_mail_text('status_blocked_subject'),
+    '#default_value' => _user_mail_text('status_blocked_subject', NULL, array(), FALSE),
     '#maxlength' => 180,
   );
   $form['email_blocked']['settings']['user_mail_status_blocked_body'] = array(
     '#type' => 'textarea',
     '#title' => t('Body'),
-    '#default_value' => _user_mail_text('status_blocked_body'),
+    '#default_value' => _user_mail_text('status_blocked_body', NULL, array(), FALSE),
     '#rows' => 3,
   );
 
@@ -581,19 +584,19 @@ function user_admin_settings() {
     '#title' => t('Account cancellation confirmation'),
     '#collapsible' => TRUE,
     '#collapsed' => TRUE,
-    '#description' => t('Customize e-mail messages sent to users when they attempt to cancel their accounts.') . ' ' . $email_token_help,
+    '#description' => t('Edit the e-mail messages sent to users when they attempt to cancel their accounts.') . ' ' . $email_token_help,
     '#group' => 'email',
   );
   $form['email_cancel_confirm']['user_mail_cancel_confirm_subject'] = array(
     '#type' => 'textfield',
     '#title' => t('Subject'),
-    '#default_value' => _user_mail_text('cancel_confirm_subject'),
+    '#default_value' => _user_mail_text('cancel_confirm_subject', NULL, array(), FALSE),
     '#maxlength' => 180,
   );
   $form['email_cancel_confirm']['user_mail_cancel_confirm_body'] = array(
     '#type' => 'textarea',
     '#title' => t('Body'),
-    '#default_value' => _user_mail_text('cancel_confirm_body'),
+    '#default_value' => _user_mail_text('cancel_confirm_body', NULL, array(), FALSE),
     '#rows' => 3,
   );
 
@@ -602,7 +605,7 @@ function user_admin_settings() {
     '#title' => t('Account canceled'),
     '#collapsible' => TRUE,
     '#collapsed' => TRUE,
-    '#description' => t('Enable and customize e-mail messages sent to users when their accounts are canceled.') . ' ' . $email_token_help,
+    '#description' => t('Enable and edit e-mail messages sent to users when their accounts are canceled.') . ' ' . $email_token_help,
     '#group' => 'email',
   );
   $form['email_canceled']['user_mail_status_canceled_notify'] = array(
@@ -622,13 +625,13 @@ function user_admin_settings() {
   $form['email_canceled']['settings']['user_mail_status_canceled_subject'] = array(
     '#type' => 'textfield',
     '#title' => t('Subject'),
-    '#default_value' => _user_mail_text('status_canceled_subject'),
+    '#default_value' => _user_mail_text('status_canceled_subject', NULL, array(), FALSE),
     '#maxlength' => 180,
   );
   $form['email_canceled']['settings']['user_mail_status_canceled_body'] = array(
     '#type' => 'textarea',
     '#title' => t('Body'),
-    '#default_value' => _user_mail_text('status_canceled_body'),
+    '#default_value' => _user_mail_text('status_canceled_body', NULL, array(), FALSE),
     '#rows' => 3,
   );
 
@@ -660,7 +663,7 @@ function user_admin_permissions($form, $form_state, $rid = NULL) {
   // Render role/permission overview:
   $options = array();
   $module_info = system_get_info('module');
-  $hide_descriptions = !system_admin_compact_mode();
+  $hide_descriptions = system_admin_compact_mode();
 
   // Get a list of all the modules implementing a hook_permission() and sort by
   // display name.
@@ -677,11 +680,17 @@ function user_admin_permissions($form, $form_state, $rid = NULL) {
         '#id' => $module,
       );
       foreach ($permissions as $perm => $perm_item) {
+        // Fill in default values for the permission.
+        $perm_item += array(
+          'description' => '',
+          'restrict access' => FALSE,
+          'warning' => !empty($perm_item['restrict access']) ? t('Warning: Give to trusted roles only; this permission has security implications.') : '',
+        );
         $options[$perm] = '';
         $form['permission'][$perm] = array(
           '#type' => 'item',
           '#markup' => $perm_item['title'],
-          '#description' => $hide_descriptions && isset($perm_item['description']) ? $perm_item['description'] : NULL,
+          '#description' => theme('user_permission_description', array('permission_item' => $perm_item, 'hide' => $hide_descriptions)),
         );
         foreach ($role_names as $rid => $name) {
           // Builds arrays for checked boxes for each role
@@ -696,9 +705,11 @@ function user_admin_permissions($form, $form_state, $rid = NULL) {
   // Have to build checkboxes here after checkbox arrays are built
   foreach ($role_names as $rid => $name) {
     $form['checkboxes'][$rid] = array('#type' => 'checkboxes', '#options' => $options, '#default_value' => isset($status[$rid]) ? $status[$rid] : array());
-    $form['role_names'][$rid] = array('#markup' => $name, '#tree' => TRUE);
+    $form['role_names'][$rid] = array('#markup' => check_plain($name), '#tree' => TRUE);
   }
-  $form['submit'] = array('#type' => 'submit', '#value' => t('Save permissions'));
+
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array('#type' => 'submit', '#value' => t('Save permissions'));
 
   $form['#attached']['js'][] = drupal_get_path('module', 'user') . '/user.permissions.js';
 
@@ -722,7 +733,11 @@ function user_admin_permissions_submit($form, &$form_state) {
 }
 
 /**
- * Theme the administer permissions page.
+ * Returns HTML for the administer permissions page.
+ *
+ * @param $variables
+ *   An associative array containing:
+ *   - form: A render element representing the form.
  *
  * @ingroup themeable
  */
@@ -759,70 +774,195 @@ function theme_user_admin_permissions($variables) {
 }
 
 /**
- * Menu callback: administer roles.
+ * Returns HTML for an individual permission description.
+ *
+ * @param $variables
+ *   An associative array containing:
+ *   - permission_item: An associative array representing the permission whose
+ *     description is being themed. Useful keys include:
+ *     - description: The text of the permission description.
+ *     - warning: A security-related warning message about the permission (if
+ *       there is one).
+ *   - hide: A boolean indicating whether or not the permission description was
+ *     requested to be hidden rather than shown.
+ *
+ * @ingroup themeable
+ */
+function theme_user_permission_description($variables) {
+  if (!$variables['hide']) {
+    $description = array();
+    $permission_item = $variables['permission_item'];
+    if (!empty($permission_item['description'])) {
+      $description[] = $permission_item['description'];
+    }
+    if (!empty($permission_item['warning'])) {
+      $description[] = '<em class="permission-warning">' . $permission_item['warning'] . '</em>';
+    }
+    if (!empty($description)) {
+      return implode(' ', $description);
+    }
+  }
+}
+
+/**
+ * Form to re-order roles or add a new one.
+ *
+ * @ingroup forms
+ * @see theme_user_admin_roles()
+ */
+function user_admin_roles($form, $form_state) {
+  $roles = user_roles();
+
+  $form['roles'] = array(
+    '#tree' => TRUE,
+  );
+  $order = 0;
+  foreach ($roles as $rid => $name) {
+    $form['roles'][$rid]['#role'] = (object) array(
+      'rid' => $rid,
+      'name' => $name,
+      'weight' => $order,
+    );
+    $form['roles'][$rid]['#weight'] = $order;
+    $form['roles'][$rid]['weight'] = array(
+      '#type' => 'textfield',
+      '#size' => 4,
+      '#default_value' => $order,
+      '#attributes' => array('class' => array('role-weight')),
+    );
+    $order++;
+  }
+
+  $form['name'] = array(
+    '#type' => 'textfield',
+    '#size' => 32,
+    '#maxlength' => 64,
+  );
+  $form['add'] = array(
+    '#type' => 'submit',
+    '#value' => t('Add role'),
+    '#validate' => array('user_admin_role_validate'),
+    '#submit' => array('user_admin_role_submit'),
+  );
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save order'),
+    '#submit' => array('user_admin_roles_order_submit'),
+  );
+
+  return $form;
+}
+
+/**
+ * Form submit function. Update the role weights.
+ */
+function user_admin_roles_order_submit($form, &$form_state) {
+  foreach ($form_state['values']['roles'] as $rid => $role_values) {
+    $role = $form['roles'][$rid]['#role'];
+    $role->weight = $role_values['weight'];
+    user_role_save($role);
+  }
+}
+
+/**
+ * Returns HTML for the role order and new role form.
+ *
+ * @param $variables
+ *   An associative array containing:
+ *   - form: A render element representing the form.
+ *
+ * @ingroup themeable
+ */
+function theme_user_admin_roles($variables) {
+  $form = $variables['form'];
+
+  $header = array(t('Name'), t('Weight'), array('data' => t('Operations'), 'colspan' => 2));
+  foreach (element_children($form['roles']) as $rid) {
+    $name = $form['roles'][$rid]['#role']->name;
+    $row = array();
+    if (in_array($rid, array(DRUPAL_ANONYMOUS_RID, DRUPAL_AUTHENTICATED_RID))) {
+      $row[] = t('@name <em>(locked)</em>', array('@name' => $name));
+      $row[] = drupal_render($form['roles'][$rid]['weight']);
+      $row[] = '';
+      $row[] = l(t('edit permissions'), 'admin/people/permissions/' . $rid);
+    }
+    else {
+      $row[] = check_plain($name);
+      $row[] = drupal_render($form['roles'][$rid]['weight']);
+      $row[] = l(t('edit role'), 'admin/people/permissions/roles/edit/' . $rid);
+      $row[] = l(t('edit permissions'), 'admin/people/permissions/' . $rid);
+    }
+    $rows[] = array('data' => $row, 'class' => array('draggable'));
+  }
+  $rows[] = array(array('data' => drupal_render($form['name']) . drupal_render($form['add']), 'colspan' => 4, 'class' => 'edit-name'));
+
+  drupal_add_tabledrag('user-roles', 'order', 'sibling', 'role-weight');
+
+  $output = theme('table', array('header' => $header, 'rows' => $rows, 'attributes' => array('id' => 'user-roles')));
+  $output .= drupal_render_children($form);
+
+  return $output;
+}
+
+/**
+ * Form to configure a single role.
  *
  * @ingroup forms
  * @see user_admin_role_validate()
  * @see user_admin_role_submit()
- * @see theme_user_admin_new_role()
  */
-function user_admin_role() {
-  $rid = arg(5);
-  if ($rid) {
-    if ($rid == DRUPAL_ANONYMOUS_RID || $rid == DRUPAL_AUTHENTICATED_RID) {
-      drupal_goto('admin/config/people/roles');
-    }
-    // Display the edit role form.
-    $role = db_query('SELECT * FROM {role} WHERE rid = :rid', array(':rid' => $rid))->fetchObject();
-    $form['name'] = array(
-      '#type' => 'textfield',
-      '#title' => t('Role name'),
-      '#default_value' => $role->name,
-      '#size' => 30,
-      '#required' => TRUE,
-      '#maxlength' => 64,
-      '#description' => t('The name for this role. Example: "moderator", "editorial board", "site architect".'),
-    );
-    $form['rid'] = array(
-      '#type' => 'value',
-      '#value' => $rid,
-    );
-    $form['submit'] = array(
-      '#type' => 'submit',
-      '#value' => t('Save role'),
-    );
-    $form['delete'] = array(
-      '#type' => 'submit',
-      '#value' => t('Delete role'),
-    );
+function user_admin_role($form, $form_state, $role) {
+  if ($role->rid == DRUPAL_ANONYMOUS_RID || $role->rid == DRUPAL_AUTHENTICATED_RID) {
+    drupal_goto('admin/people/permissions/roles');
   }
-  else {
-    $form['name'] = array(
-      '#type' => 'textfield',
-      '#size' => 32,
-      '#maxlength' => 64,
-    );
-    $form['submit'] = array(
-      '#type' => 'submit',
-      '#value' => t('Add role'),
-    );
-    $form['#submit'][] = 'user_admin_role_submit';
-    $form['#validate'][] = 'user_admin_role_validate';
-  }
+
+  // Display the edit role form.
+  $form['name'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Role name'),
+    '#default_value' => $role->name,
+    '#size' => 30,
+    '#required' => TRUE,
+    '#maxlength' => 64,
+    '#description' => t('The name for this role. Example: "moderator", "editorial board", "site architect".'),
+  );
+  $form['rid'] = array(
+    '#type' => 'value',
+    '#value' => $role->rid,
+  );
+  $form['weight'] = array(
+    '#type' => 'value',
+    '#value' => $role->weight,
+  );
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save role'),
+  );
+  $form['actions']['delete'] = array(
+    '#type' => 'submit',
+    '#value' => t('Delete role'),
+    '#submit' => array('user_admin_role_delete_submit'),
+  );
+
   return $form;
 }
 
+/**
+ * Form validation handler for the user_admin_role() form.
+ */
 function user_admin_role_validate($form, &$form_state) {
-  if ($form_state['values']['name']) {
+  if (!empty($form_state['values']['name'])) {
     if ($form_state['values']['op'] == t('Save role')) {
-      $role = user_role_load($form_state['values']['name']);
+      $role = user_role_load_by_name($form_state['values']['name']);
       if ($role && $role->rid != $form_state['values']['rid']) {
-        form_set_error('name', t('The role name %name already exists. Please choose another role name.', array('%name' => $form_state['values']['name'])));
+        form_set_error('name', t('The role name %name already exists. Choose another role name.', array('%name' => $form_state['values']['name'])));
       }
     }
     elseif ($form_state['values']['op'] == t('Add role')) {
-      if (user_role_load($form_state['values']['name'])) {
-        form_set_error('name', t('The role name %name already exists. Please choose another role name.', array('%name' => $form_state['values']['name'])));
+      if (user_role_load_by_name($form_state['values']['name'])) {
+        form_set_error('name', t('The role name %name already exists. Choose another role name.', array('%name' => $form_state['values']['name'])));
       }
     }
   }
@@ -831,67 +971,56 @@ function user_admin_role_validate($form, &$form_state) {
   }
 }
 
+/**
+ * Form submit handler for the user_admin_role() form.
+ */
 function user_admin_role_submit($form, &$form_state) {
-  $role = (object)$form_state['values'];
+  $role = (object) $form_state['values'];
   if ($form_state['values']['op'] == t('Save role')) {
     user_role_save($role);
     drupal_set_message(t('The role has been renamed.'));
-  }
-  elseif ($form_state['values']['op'] == t('Delete role')) {
-    user_role_delete($form_state['values']['rid']);
-    drupal_set_message(t('The role has been deleted.'));
   }
   elseif ($form_state['values']['op'] == t('Add role')) {
     user_role_save($role);
     drupal_set_message(t('The role has been added.'));
   }
-  $form_state['redirect'] = 'admin/config/people/roles';
+  $form_state['redirect'] = 'admin/people/permissions/roles';
   return;
 }
 
 /**
- * Theme the new-role form.
- *
- * @ingroup themeable
+ * Form submit handler for the user_admin_role() form.
  */
-function theme_user_admin_new_role($variables) {
-  $form = $variables['form'];
-
-  $header = array(t('Name'), array('data' => t('Operations'), 'colspan' => 2));
-  foreach (user_roles() as $rid => $name) {
-    $edit_permissions = l(t('edit permissions'), 'admin/config/people/permissions/' . $rid);
-    if (!in_array($rid, array(DRUPAL_ANONYMOUS_RID, DRUPAL_AUTHENTICATED_RID))) {
-      $rows[] = array($name, l(t('edit role'), 'admin/config/people/roles/edit/' . $rid), $edit_permissions);
-    }
-    else {
-      $rows[] = array($name, t('locked'), $edit_permissions);
-    }
-  }
-  $rows[] = array(drupal_render($form['name']), array('data' => drupal_render($form['submit']), 'colspan' => 2));
-
-  $output = drupal_render_children($form);
-  $output .= theme('table', array('header' => $header, 'rows' => $rows));
-
-  return $output;
+function user_admin_role_delete_submit($form, &$form_state) {
+  $form_state['redirect'] = 'admin/people/permissions/roles/delete/' . $form_state['values']['rid'];
 }
 
 /**
- * Theme user administration filter form.
- *
- * @ingroup themeable
+ * Form to confirm role delete operation.
  */
-function theme_user_filter_form($variables) {
-  $form = $variables['form'];
-
-  $output = '<div id="user-admin-filter">';
-  $output .= drupal_render($form['filters']);
-  $output .= '</div>';
-  $output .= drupal_render_children($form);
-  return $output;
+function user_admin_role_delete_confirm($form, &$form_state, $role) {
+  $form['rid'] = array(
+    '#type' => 'value',
+    '#value' => $role->rid,
+  );
+  return confirm_form($form, t('Are you sure you want to delete the role %name ?', array('%name' => $role->name)), 'admin/people/permissions/roles', t('This action cannot be undone.'), t('Delete'));
 }
 
 /**
- * Theme user administration filter selector.
+ * Form submit handler for user_admin_role_delete_confirm().
+ */
+function user_admin_role_delete_confirm_submit($form, &$form_state) {
+  user_role_delete((int) $form_state['values']['rid']);
+  drupal_set_message(t('The role has been deleted.'));
+  $form_state['redirect'] = 'admin/people/permissions/roles';
+}
+
+/**
+ * Returns HTML for the user administration filter selector.
+ *
+ * @param $variables
+ *   An associative array containing:
+ *   - form: A render element representing the form.
  *
  * @ingroup themeable
  */
@@ -906,6 +1035,8 @@ function theme_user_filters($variables) {
   }
   $output .= '</ul>';
 
+  $output .= '<div class="clearfix">';
+
   $output .= '<dl class="multiselect">' . (!empty($form['current']) ? '<dt><em>' . t('and') . '</em> ' . t('where') . '</dt>' : '');
 
   $output .= '<dd>';
@@ -916,7 +1047,9 @@ function theme_user_filters($variables) {
   $output .= '</dd>';
 
   $output .= '</dl>';
-  $output .= '<div class="container-inline" id="user-admin-buttons">' . drupal_render($form['buttons']) . '</div>';
+  $output .= drupal_render($form['actions']);
+
+  $output .= '</div>';
 
   return $output;
 }

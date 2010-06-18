@@ -1,5 +1,5 @@
 <?php
-// $Id: session.inc,v 1.74 2009/12/12 20:55:18 dries Exp $
+// $Id: session.inc,v 1.85 2010/06/14 12:31:46 dries Exp $
 
 /**
  * @file
@@ -72,7 +72,7 @@ function _drupal_session_read($sid) {
   // since PHP 5.0.5.
   // Thus destructors can use sessions but session handler can't use objects.
   // So we are moving session closure before destructing objects.
-  register_shutdown_function('session_write_close');
+  drupal_register_shutdown_function('session_write_close');
 
   // Handle the case of first time visitors and clients that don't store
   // cookies (eg. web crawlers).
@@ -85,7 +85,7 @@ function _drupal_session_read($sid) {
   // Otherwise, if the session is still active, we have a record of the
   // client's session in the database. If it's HTTPS then we are either have
   // a HTTPS session or we are about to log in so we check the sessions table
-  // for an anonymous session wth the non-HTTPS-only cookie.
+  // for an anonymous session with the non-HTTPS-only cookie.
   if ($is_https) {
     $user = db_query("SELECT u.*, s.* FROM {users} u INNER JOIN {sessions} s ON u.uid = s.uid WHERE s.ssid = :ssid", array(':ssid' => $sid))->fetchObject();
     if (!$user) {
@@ -100,18 +100,19 @@ function _drupal_session_read($sid) {
     $user = db_query("SELECT u.*, s.* FROM {users} u INNER JOIN {sessions} s ON u.uid = s.uid WHERE s.sid = :sid", array(':sid' => $sid))->fetchObject();
   }
 
-  // We found the client's session record and they are an authenticated user.
-  if ($user && $user->uid > 0) {
+  // We found the client's session record and they are an authenticated,
+  // active user.
+  if ($user && $user->uid > 0 && $user->status == 1) {
     // This is done to unserialize the data member of $user.
-    $user = drupal_unpack($user);
+    $user->data = unserialize($user->data);
 
     // Add roles element to $user.
     $user->roles = array();
     $user->roles[DRUPAL_AUTHENTICATED_RID] = 'authenticated user';
     $user->roles += db_query("SELECT r.rid, r.name FROM {role} r INNER JOIN {users_roles} ur ON ur.rid = r.rid WHERE ur.uid = :uid", array(':uid' => $user->uid))->fetchAllKeyed(0, 1);
   }
-  // We didn't find the client's record (session has expired), or they
-  // are an anonymous user.
+  // We didn't find the client's record (session has expired), or they are
+  // blocked, or they are an anonymous user.
   else {
     $session = isset($user->session) ? $user->session : '';
     $user = drupal_anonymous_user($session);
@@ -139,57 +140,75 @@ function _drupal_session_read($sid) {
 function _drupal_session_write($sid, $value) {
   global $user, $is_https;
 
-  if (!drupal_save_session()) {
-    // We don't have anything to do if we are not allowed to save the session.
-    return;
-  }
-
-  $fields = array(
-    'uid' => $user->uid,
-    'cache' => isset($user->cache) ? $user->cache : 0,
-    'hostname' => ip_address(),
-    'session' => $value,
-    'timestamp' => REQUEST_TIME,
-  );
-  $key = array('sid' => $sid);
-  if ($is_https) {
-    $key['ssid'] = $sid;
-    $insecure_session_name = substr(session_name(), 1);
-    // The "secure pages" setting allows a site to simultaneously use both
-    // secure and insecure session cookies. If enabled, use the insecure session
-    // identifier as the sid.
-    if (variable_get('https', FALSE) && isset($_COOKIE[$insecure_session_name])) {
-      $key['sid'] = $_COOKIE[$insecure_session_name];
+  // The exception handler is not active at this point, so we need to do it manually.
+  try {
+    if (!drupal_save_session()) {
+      // We don't have anything to do if we are not allowed to save the session.
+      return;
     }
-  }
-  db_merge('sessions')
-    ->key($key)
-    ->fields($fields)
-    ->execute();
 
-  // Last access time is updated no more frequently than once every 180 seconds.
-  // This reduces contention in the users table.
-  if ($user->uid && REQUEST_TIME - $user->access > variable_get('session_write_interval', 180)) {
-    db_update('users')
-      ->fields(array(
-        'access' => REQUEST_TIME
-      ))
-      ->condition('uid', $user->uid)
+    // Either ssid or sid or both will be added from $key below.
+    $fields = array(
+      'uid' => $user->uid,
+      'cache' => isset($user->cache) ? $user->cache : 0,
+      'hostname' => ip_address(),
+      'session' => $value,
+      'timestamp' => REQUEST_TIME,
+    );
+
+    // The "secure pages" setting allows a site to simultaneously use both secure
+    // and insecure session cookies. If enabled and both cookies are presented
+    // then use both keys. If not enabled but on HTTPS then use the PHP session
+    // id as 'ssid'. If on HTTP then use the PHP session id as 'sid'.
+    if ($is_https) {
+      $key['ssid'] = $sid;
+      $insecure_session_name = substr(session_name(), 1);
+      if (variable_get('https', FALSE) && isset($_COOKIE[$insecure_session_name])) {
+        $key['sid'] = $_COOKIE[$insecure_session_name];
+      }
+    }
+    else {
+      $key['sid'] = $sid;
+    }
+
+    db_merge('sessions')
+      ->key($key)
+      ->fields($fields)
       ->execute();
-  }
 
-  return TRUE;
+    // Last access time is updated no more frequently than once every 180 seconds.
+    // This reduces contention in the users table.
+    if ($user->uid && REQUEST_TIME - $user->access > variable_get('session_write_interval', 180)) {
+      db_update('users')
+        ->fields(array(
+          'access' => REQUEST_TIME
+        ))
+        ->condition('uid', $user->uid)
+        ->execute();
+    }
+
+    return TRUE;
+  }
+  catch (Exception $exception) {
+    require_once DRUPAL_ROOT . '/includes/errors.inc';
+    // If we are displaying errors, then do so with no possibility of a further uncaught exception being thrown.
+    if (error_displayable()) {
+      print '<h1>Uncaught exception thrown in session handler.</h1>';
+      print '<p>' . _drupal_render_exception_safe($exception) . '</p><hr />';
+    }
+    return FALSE;
+  }
 }
 
 /**
  * Initialize the session handler, starting a session if needed.
  */
 function drupal_session_initialize() {
-  global $user;
+  global $user, $is_https;
 
   session_set_save_handler('_drupal_session_open', '_drupal_session_close', '_drupal_session_read', '_drupal_session_write', '_drupal_session_destroy', '_drupal_session_garbage_collection');
 
-  if (isset($_COOKIE[session_name()])) {
+  if (isset($_COOKIE[session_name()]) || ($is_https && variable_get('https', FALSE) && isset($_COOKIE[substr(session_name(), 1)]))) {
     // If a session cookie exists, initialize the session. Otherwise the
     // session is only started on demand in drupal_session_commit(), making
     // anonymous users not use a session cookie unless something is stored in
@@ -201,12 +220,16 @@ function drupal_session_initialize() {
   }
   else {
     // Set a session identifier for this request. This is necessary because
-    // we lazyly start sessions at the end of this request, and some
+    // we lazily start sessions at the end of this request, and some
     // processes (like drupal_get_token()) needs to know the future
     // session ID in advance.
     $user = drupal_anonymous_user();
-    session_id(md5(uniqid('', TRUE)));
+    // Less random sessions (which are much faster to generate) are used for
+    // anonymous users than are generated in drupal_session_regenerate() when
+    // a user becomes authenticated.
+    session_id(drupal_hash_base64(uniqid(mt_rand(), TRUE)));
   }
+  date_default_timezone_set(drupal_get_user_timezone());
 }
 
 /**
@@ -215,7 +238,8 @@ function drupal_session_initialize() {
  * @ingroup php_wrappers
  */
 function drupal_session_start() {
-  if (!drupal_session_started()) {
+  // Command line clients do not support cookies nor sessions.
+  if (!drupal_session_started() && !drupal_is_cli()) {
     // Save current session data before starting it, as PHP will destroy it.
     $session_data = isset($_SESSION) ? $_SESSION : NULL;
 
@@ -280,8 +304,11 @@ function drupal_session_regenerate() {
   global $user, $is_https;
   if ($is_https && variable_get('https', FALSE)) {
     $insecure_session_name = substr(session_name(), 1);
+    if (isset($_COOKIE[$insecure_session_name])) {
+      $old_insecure_session_id = $_COOKIE[$insecure_session_name];
+    }
     $params = session_get_cookie_params();
-    $session_id = md5(uniqid(mt_rand(), TRUE));
+    $session_id = drupal_hash_base64(uniqid(mt_rand(), TRUE) . drupal_random_bytes(55));
     setcookie($insecure_session_name, $session_id, REQUEST_TIME + $params['lifetime'], $params['path'], $params['domain'], FALSE, $params['httponly']);
     $_COOKIE[$insecure_session_name] = $session_id;
   }
@@ -300,13 +327,30 @@ function drupal_session_regenerate() {
   }
 
   if (isset($old_session_id)) {
+    $fields = array('sid' => session_id());
+    if ($is_https) {
+      $fields['ssid'] = session_id();
+      // If the "secure pages" setting is enabled, use the newly-created
+      // insecure session identifier as the regenerated sid.
+      if (variable_get('https', FALSE)) {
+        $fields['sid'] = $session_id;
+      }
+    }
     db_update('sessions')
-      ->fields(array(
-        $is_https ? 'ssid' : 'sid' => session_id()
-      ))
-      ->condition('sid', $old_session_id)
+      ->fields($fields)
+      ->condition($is_https ? 'ssid' : 'sid', $old_session_id)
       ->execute();
   }
+  elseif (isset($old_insecure_session_id)) {
+    // If logging in to the secure site, and there was no active session on the
+    // secure site but a session was active on the insecure site, update the
+    // insecure session with the new session identifiers.
+    db_update('sessions')
+      ->fields(array('sid' => $session_id, 'ssid' => session_id()))
+      ->condition('sid', $old_insecure_session_id)
+      ->execute();
+  }
+  date_default_timezone_set(drupal_get_user_timezone());
 }
 
 /**
@@ -314,7 +358,7 @@ function drupal_session_regenerate() {
  *
  * Cleanup a specific session.
  *
- * @param string $sid
+ * @param $sid
  *   Session ID.
  */
 function _drupal_session_destroy($sid) {
@@ -343,7 +387,7 @@ function _drupal_session_destroy($sid) {
  * @param $name
  *   Name of session cookie to delete.
  * @param $force_insecure
- *   Fornce cookie to be insecure.
+ *   Force cookie to be insecure.
  */
 function _drupal_session_delete_cookie($name, $force_insecure = FALSE) {
   if (isset($_COOKIE[$name])) {
@@ -356,7 +400,7 @@ function _drupal_session_delete_cookie($name, $force_insecure = FALSE) {
 /**
  * End a specific user's session(s).
  *
- * @param string $uid
+ * @param $uid
  *   User ID.
  */
 function drupal_session_destroy_uid($uid) {
@@ -370,7 +414,7 @@ function drupal_session_destroy_uid($uid) {
  *
  * Cleanup stalled sessions.
  *
- * @param int $lifetime
+ * @param $lifetime
  *   The value of session.gc_maxlifetime, passed by PHP.
  *   Sessions not updated for more than $lifetime seconds will be removed.
  */

@@ -1,5 +1,5 @@
 <?php
-// $Id: language.inc,v 1.24 2009/12/02 19:26:21 dries Exp $
+// $Id: language.inc,v 1.30 2010/05/12 08:26:14 dries Exp $
 
 /**
  * @file
@@ -34,18 +34,35 @@ function language_types_info() {
  * Return only the configurable language types.
  *
  * A language type maybe configurable or fixed. A fixed language type is a type
- * whose negotiation values are unchangable and defined while defining the
+ * whose negotiation values are unchangeable and defined while defining the
  * language type itself.
+ *
+ * @param $stored
+ *   Optional. By default retrieves values from the 'language_types' variable to
+ *   avoid unnecessary hook invocations.
+ *   If set to FALSE retrieves values from the actual language type definitions.
+ *   This allows to react to alterations performed on the definitions by modules
+ *   installed after the 'language_types' variable is set.
  *
  * @return
  *   An array of language type names.
  */
-function language_types_configurable() {
+function language_types_configurable($stored = TRUE) {
   $configurable = &drupal_static(__FUNCTION__);
 
-  if (!isset($configurable)) {
+  if ($stored && !isset($configurable)) {
     $types = variable_get('language_types', drupal_language_types());
     $configurable = array_keys(array_filter($types));
+  }
+
+  if (!$stored) {
+    $result = array();
+    foreach (language_types_info() as $type => $info) {
+      if (!isset($info['fixed'])) {
+        $result[] = $type;
+      }
+    }
+    return $result;
   }
 
   return $configurable;
@@ -223,7 +240,7 @@ function language_negotiation_info() {
       'callbacks' => array('language' => 'language_from_default'),
       'weight' => 10,
       'name' => t('Default'),
-      'description' => t('The default site language (@language_name) is used.', array('@language_name' => language_default()->native)),
+      'description' => t('Use the default site language (@language_name).', array('@language_name' => language_default()->native)),
     );
 
     // Let other modules alter the list of language providers.
@@ -264,9 +281,9 @@ function language_provider_invoke($provider_id, $provider = NULL) {
       require_once DRUPAL_ROOT . '/' . $provider['file'];
     }
 
-    // If the language provider has no cache preference or this is satisified
+    // If the language provider has no cache preference or this is satisfied
     // we can execute the callback.
-    $cache = !isset($provider['cache']) || $user->uid || $provider['cache'] == variable_get('cache', CACHE_DISABLED);
+    $cache = !isset($provider['cache']) || $user->uid || $provider['cache'] == variable_get('cache', 0);
     $callback = isset($provider['callbacks']['language']) ? $provider['callbacks']['language'] : FALSE;
     $langcode = $cache && function_exists($callback) ? $callback($languages) : FALSE;
     $results[$provider_id] = isset($languages[$langcode]) ? $languages[$langcode] : FALSE;

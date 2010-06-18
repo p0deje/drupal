@@ -1,5 +1,5 @@
 <?php
-// $Id: default.settings.php,v 1.38 2009/12/01 15:57:40 webchick Exp $
+// $Id: default.settings.php,v 1.46 2010/06/08 06:14:22 dries Exp $
 
 /**
  * @file
@@ -67,8 +67,8 @@
  * connection should use.  This is usually the same as the name of the
  * database type, such as mysql or sqlite, but not always.  The other
  * properties will vary depending on the driver.  For SQLite, you must
- * specify a database file name in a directory that is writable by the 
- * webserver.  For most other drivers, you must specify a 
+ * specify a database file name in a directory that is writable by the
+ * webserver.  For most other drivers, you must specify a
  * username, password, host, and database name.
  *
  * Some database engines support transactions.  In order to enable
@@ -131,6 +131,22 @@
  *     'authmap'   => 'shared_',
  *   );
  *
+ * You can also use db_prefix as a reference to a schema/database. This maybe
+ * useful if your Drupal installation exists in a schema that is not the default
+ * or you want to access several databases from the same code base at the same
+ * time.
+ * Example:
+ *
+ *  $db_prefix = array(
+ *    'default' => 'main.',
+ *     'users'      => 'shared.',
+ *     'sessions'  => 'shared.',
+ *     'role'      => 'shared.',
+ *     'authmap'   => 'shared.',
+ *  );
+ *
+ * NOTE: MySQL and SQLite's definition of a schema is a database.
+ *
  * Database configuration format:
  *   $databases['default']['default'] = array(
  *     'driver' => 'mysql',
@@ -155,7 +171,7 @@ $databases = array();
 $db_prefix = '';
 
 /**
- * Access control for update.php script
+ * Access control for update.php script.
  *
  * If you are updating your Drupal installation using the update.php script but
  * are not logged in using either an account with the "Administer software
@@ -168,11 +184,31 @@ $db_prefix = '';
 $update_free_access = FALSE;
 
 /**
+ * Salt for one-time login links and cancel links, form tokens, etc.
+ *
+ * This variable will be set to a random value by the installer. All one-time
+ * login links will be invalidated if the value is changed.  Note that this
+ * variable must have the same value on every web server.  If this variable is
+ * empty, a hash of the serialized database credentials will be used as a
+ * fallback salt.
+ *
+ * For enhanced security, you may set this variable to a value using the
+ * contents of a file outside your docroot that is never saved together
+ * with any backups of your Drupal files and database.
+ *
+ * Example:
+ *   $drupal_hash_salt = file_get_contents('/home/example/salt.txt');
+ *
+ */
+$drupal_hash_salt = '';
+
+/**
  * Base URL (optional).
  *
- * If you are experiencing issues with different site domains,
- * uncomment the Base URL statement below (remove the leading hash sign)
- * and fill in the absolute URL to your Drupal installation.
+ * If Drupal is generating incorrect URLs on your site, which could
+ * be in HTML headers (links to CSS and JS files) or visible links on pages
+ * (such as in menus), uncomment the Base URL statement below (remove the
+ * leading hash sign) and fill in the absolute URL to your Drupal installation.
  *
  * You might also want to force users to use a given domain.
  * See the .htaccess file for more information.
@@ -193,7 +229,7 @@ $update_free_access = FALSE;
  *
  * To see what PHP settings are possible, including whether they can be set at
  * runtime (by using ini_set()), read the PHP documentation:
- * http://www.php.net/manual/en/ini.php#ini.list
+ * http://www.php.net/manual/en/ini.list.php
  * See drupal_initialize_variables() in includes/bootstrap.inc for required
  * runtime settings and the .htaccess file for non-runtime settings. Settings
  * defined there should not be duplicated here so as to avoid conflict issues.
@@ -265,8 +301,6 @@ ini_set('session.cookie_lifetime', 2000000);
 # $conf['maintenance_theme'] = 'garland';
 
 /**
- * reverse_proxy accepts a boolean value.
- *
  * Enable this setting to determine the correct IP address of the remote
  * client by examining information stored in the X-Forwarded-For headers.
  * X-Forwarded-For headers are a standard mechanism for identifying client
@@ -281,6 +315,15 @@ ini_set('session.cookie_lifetime', 2000000);
  * a shared hosting environment, this setting should remain commented out.
  */
 # $conf['reverse_proxy'] = TRUE;
+
+/**
+ * Set this value if your proxy server sends the client IP in a header other
+ * than X-Forwarded-For.
+ *
+ * The "X-Forwarded-For" header is a comma+space separated list of IP addresses,
+ * only the last one (the left-most) will be used.
+ */
+# $conf['reverse_proxy_header'] = 'HTTP_X_CLUSTER_CLIENT_IP';
 
 /**
  * reverse_proxy accepts an array of IP addresses.

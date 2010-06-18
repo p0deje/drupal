@@ -1,4 +1,4 @@
-// $Id: ajax.js,v 1.7 2009/12/12 23:36:28 webchick Exp $
+// $Id: ajax.js,v 1.17 2010/05/16 19:08:08 dries Exp $
 (function ($) {
 
 /**
@@ -93,12 +93,12 @@ Drupal.ajax = function (base, element, element_settings) {
     selector: '#' + base,
     effect: 'none',
     speed: 'slow',
-    method: 'replace',
+    method: 'replaceWith',
     progress: {
       type: 'bar',
       message: 'Please wait...'
     },
-    button: {}
+    submit: {}
   };
 
   $.extend(this, defaults, element_settings);
@@ -107,7 +107,7 @@ Drupal.ajax = function (base, element, element_settings) {
 
   // Replacing 'nojs' with 'ajax' in the URL allows for an easy method to let
   // the server detect when it needs to degrade gracefully.
-  this.url = element_settings.url.replace('/nojs/', '/ajax/');
+  this.url = element_settings.url.replace(/\/nojs(\/|$)/g, '/ajax$1');
   this.wrapper = '#' + element_settings.wrapper;
 
   // If there isn't a form, jQuery.ajax() will be used instead, allowing us to
@@ -121,7 +121,7 @@ Drupal.ajax = function (base, element, element_settings) {
   var ajax = this;
   var options = {
     url: ajax.url,
-    data: ajax.button,
+    data: ajax.submit,
     beforeSerialize: function (element_settings, options) {
       return ajax.beforeSerialize(element_settings, options);
     },
@@ -132,7 +132,7 @@ Drupal.ajax = function (base, element, element_settings) {
       // Sanity check for browser support (object expected).
       // When using iFrame uploads, responses must be returned as a string.
       if (typeof response == 'string') {
-        response = Drupal.parseJson(response);
+        response = $.parseJSON(response);
       }
       return ajax.success(response, status);
     },
@@ -200,9 +200,11 @@ Drupal.ajax.prototype.beforeSubmit = function (form_values, element, options) {
   // Disable the element that received the change.
   $(this.element).addClass('progress-disabled').attr('disabled', true);
 
-  // Server-side code needs to know what element triggered the call, so it can
-  // find the #ajax binding.
-  form_values.push({ name: 'ajax_triggering_element', value: this.formPath });
+  // Prevent duplicate HTML ids in the returned markup.
+  // @see drupal_html_id()
+  $('[id]').each(function () {
+    form_values.push({ name: 'ajax_html_ids[]', value: this.id });
+  });
 
   // Insert progressbar or throbber.
   if (this.progress.type == 'bar') {
@@ -286,7 +288,7 @@ Drupal.ajax.prototype.getEffect = function (response) {
   }
 
   return effect;
-}
+};
 
 /**
  * Handler for the form redirection error.
@@ -406,7 +408,12 @@ Drupal.ajax.prototype.commands = {
    * Command to set the settings that will be used for other commands in this response.
    */
   settings: function (ajax, response, status) {
-    ajax.settings = response.settings;
+    if (response.merge) {
+      $.extend(true, Drupal.settings, response.settings);
+    }
+    else {
+      ajax.settings = response.settings;
+    }
   },
 
   /**
@@ -422,12 +429,11 @@ Drupal.ajax.prototype.commands = {
   restripe: function (ajax, response, status) {
     // :even and :odd are reversed because jQuery counts from 0 and
     // we count from 1, so we're out of sync.
-    $('tbody tr:not(:hidden)', $(response.selector))
-      .removeClass('even').removeClass('odd')
-      .filter(':even')
-        .addClass('odd').end()
-      .filter(':odd')
-        .addClass('even');
+    // Match immediate children of the parent element to allow nesting.
+    $('> tbody > tr:visible, > tr:visible', $(response.selector))
+      .removeClass('odd even')
+      .filter(':even').addClass('odd').end()
+      .filter(':odd').addClass('even');
   }
 };
 

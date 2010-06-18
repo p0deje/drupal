@@ -1,5 +1,5 @@
 <?php
-// $Id: database.inc,v 1.31 2009/12/13 18:10:42 webchick Exp $
+// $Id: database.inc,v 1.39 2010/06/16 04:56:07 dries Exp $
 
 /**
  * @file
@@ -10,6 +10,11 @@
  * @ingroup database
  * @{
  */
+
+/**
+ * The name by which to obtain a lock for retrive the next insert id.
+ */
+define('POSTGRESQL_NEXTID_LOCK', 1000);
 
 class DatabaseConnection_pgsql extends DatabaseConnection {
 
@@ -31,8 +36,17 @@ class DatabaseConnection_pgsql extends DatabaseConnection {
       $connection_options['password'] = null;
     }
 
+    $this->connectionOptions = $connection_options;
+
     $dsn = 'pgsql:host=' . $connection_options['host'] . ' dbname=' . $connection_options['database'] . ' port=' . $connection_options['port'];
     parent::__construct($dsn, $connection_options['username'], $connection_options['password'], array(
+      // Prepared statements are most effective for performance when queries
+      // are recycled (used several times). However, if they are not re-used,
+      // prepared statements become ineffecient. Since most of Drupal's
+      // prepared queries are not re-used, it should be faster to emulate
+      // the preparation than to actually ready statements for re-use. If in
+      // doubt, reset to FALSE and measure performance.
+      PDO::ATTR_EMULATE_PREPARES => TRUE,
       // Convert numeric values to strings when fetching.
       PDO::ATTR_STRINGIFY_FETCHES => TRUE,
       // Force column names to lower case.
@@ -47,10 +61,10 @@ class DatabaseConnection_pgsql extends DatabaseConnection {
 
     $options += $this->defaultOptions();
 
-    // The PDO PostgreSQL driver has a bug which 
+    // The PDO PostgreSQL driver has a bug which
     // doesn't type cast booleans correctly when
-    // parameters are bound using associative 
-    // arrays. 
+    // parameters are bound using associative
+    // arrays.
     // See http://bugs.php.net/bug.php?id=48383
     foreach ($args as &$value) {
       if (is_bool($value)) {
@@ -64,8 +78,8 @@ class DatabaseConnection_pgsql extends DatabaseConnection {
         $stmt->execute(NULL, $options);
       }
       else {
-        $modified = $this->expandArguments($query, $args);
-        $stmt = $this->prepareQuery($query, !$modified);
+        $this->expandArguments($query, $args);
+        $stmt = $this->prepareQuery($query);
         $stmt->execute($args, $options);
       }
 
@@ -83,7 +97,6 @@ class DatabaseConnection_pgsql extends DatabaseConnection {
       }
     }
     catch (PDOException $e) {
-      _db_check_install_needed();
       if ($options['throw_exception']) {
         // Add additional debug information.
         if ($query instanceof DatabaseStatementInterface) {
@@ -100,7 +113,7 @@ class DatabaseConnection_pgsql extends DatabaseConnection {
   }
 
   public function queryRange($query, $from, $count, array $args = array(), array $options = array()) {
-    return $this->query($query . ' LIMIT ' . $count . ' OFFSET ' . $from, $args, $options);
+    return $this->query($query . ' LIMIT ' . (int) $count . ' OFFSET ' . (int) $from, $args, $options);
   }
 
   public function queryTemporary($query, array $args = array(), array $options = array()) {
@@ -123,9 +136,53 @@ class DatabaseConnection_pgsql extends DatabaseConnection {
       // statements, we need to use ILIKE instead. Use backslash for escaping
       // wildcard characters.
       'LIKE' => array('operator' => 'ILIKE', 'postfix' => " ESCAPE '\\\\'"),
+      'NOT LIKE' => array('operator' => 'NOT ILIKE', 'postfix' => " ESCAPE '\\\\'"),
     );
 
     return isset($specials[$operator]) ? $specials[$operator] : NULL;
+  }
+
+  /**
+   * Retrive a the next id in a sequence.
+   *
+   * PostgreSQL has built in sequences. We'll use these instead of inserting
+   * and updating a sequences table.
+   */
+  public function nextId($existing = 0) {
+
+    // Retrive the name of the sequence. This information cannot be cached
+    // because the prefix may change, for example, like it does in simpletests.
+    $sequence_name = $this->makeSequenceName('sequences', 'value');
+
+    // When PostgreSQL gets a value too small then it will lock the table,
+    // retry the INSERT and if it's still too small then alter the sequence.
+    $id = $this->query("SELECT nextval('" . $sequence_name . "')")->fetchField();
+    if ($id > $existing) {
+      return $id;
+    }
+
+    // PostgreSQL advisory locks are simply locks to be used by an
+    // application such as Drupal. This will prevent other Drupal proccesses
+    // from altering the sequence while we are.
+    $this->query("SELECT pg_advisory_lock(" . POSTGRESQL_NEXTID_LOCK . ")");
+
+    // While waiting to obtain the lock, the sequence may have been altered
+    // so lets try again to obtain an adequate value.
+    $id = $this->query("SELECT nextval('" . $sequence_name . "')")->fetchField();
+    if ($id > $existing) {
+      $this->query("SELECT pg_advisory_unlock(" . POSTGRESQL_NEXTID_LOCK . ")");
+      return $id;
+    }
+
+    // Reset the sequence to a higher value than the existing id.
+    $this->query("ALTER SEQUENCE " . $sequence_name . " RESTART WITH " . ($existing + 1));
+
+    // Retrive the next id. We know this will be as high as we want it.
+    $id = $this->query("SELECT nextval('" . $sequence_name . "')")->fetchField();
+
+    $this->query("SELECT pg_advisory_unlock(" . POSTGRESQL_NEXTID_LOCK . ")");
+
+    return $id;
   }
 }
 

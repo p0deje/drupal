@@ -1,5 +1,5 @@
 <?php
-// $Id: path.admin.inc,v 1.38 2009/12/02 19:26:22 dries Exp $
+// $Id: path.admin.inc,v 1.44 2010/05/14 04:57:59 webchick Exp $
 
 /**
  * @file
@@ -19,14 +19,13 @@ function path_admin_overview($keys = NULL) {
   $alias_exists = (bool) db_query_range('SELECT 1 FROM {url_alias} WHERE language <> :language', 0, 1, array(':language' => LANGUAGE_NONE))->fetchField();
   $multilanguage = (module_exists('locale') || $alias_exists);
 
-  $header = array(
-    array('data' => t('Alias'), 'field' => 'alias', 'sort' => 'asc'),
-    array('data' => t('System'), 'field' => 'source'),
-    array('data' => t('Operations'), 'colspan' => '2')
-  );
+  $header = array();
+  $header[] = array('data' => t('Alias'), 'field' => 'alias', 'sort' => 'asc');
+  $header[] = array('data' => t('System'), 'field' => 'source');
   if ($multilanguage) {
-    array_splice($header, 2, 0, array(array('data' => t('Language'), 'field' => 'language')));
+    $header[] = array('data' => t('Language'), 'field' => 'language');
   }
+  $header[] = array('data' => t('Operations'));
 
   $query = db_select('url_alias')->extend('PagerDefault')->extend('TableSort');
   if ($keys) {
@@ -42,22 +41,38 @@ function path_admin_overview($keys = NULL) {
   $rows = array();
   $destination = drupal_get_destination();
   foreach ($result as $data) {
-    $row = array(
+    $row = array();
+    $row['data']['alias'] = l($data->alias, $data->source);
+    $row['data']['source'] = l($data->source, $data->source, array('alias' => TRUE));
+    if ($multilanguage) {
+      $row['data']['language'] = module_invoke('locale', 'language_name', $data->language);
+    }
+
+    $operations = array();
+    $operations['edit'] = array(
+      'title' => t('edit'),
+      'href' => "admin/config/search/path/edit/$data->pid",
+      'query' => $destination,
+    );
+    $operations['delete'] = array(
+      'title' => t('delete'),
+      'href' => "admin/config/search/path/delete/$data->pid",
+      'query' => $destination,
+    );
+    $row['data']['operations'] = array(
       'data' => array(
-        l($data->alias, $data->source),
-        l($data->source, $data->source, array('alias' => TRUE)),
-        l(t('edit'), "admin/config/search/path/edit/$data->pid", array('query' => $destination)),
-        l(t('delete'), "admin/config/search/path/delete/$data->pid", array('query' => $destination)),
+        '#theme' => 'links',
+        '#links' => $operations,
+        '#attributes' => array('class' => array('links', 'inline', 'nowrap')),
       ),
     );
+
     // If the system path maps to a different URL alias, highlight this table
     // row to let the user know of old aliases.
     if ($data->alias != drupal_get_path_alias($data->source, $data->language)) {
       $row['class'] = array('warning');
     }
-    if ($multilanguage) {
-      array_splice($row['data'], 2, 0, module_invoke('locale', 'language_name', $data->language));
-    }
+
     $rows[] = $row;
   }
 
@@ -65,7 +80,7 @@ function path_admin_overview($keys = NULL) {
     '#theme' => 'table',
     '#header' => $header,
     '#rows' => $rows,
-    '#empty' => t('No URL aliases available.'),
+    '#empty' => t('No URL aliases available. <a href="@link">Add URL alias</a>.', array('@link' => url('admin/config/search/path/add'))),
   );
   $build['path_pager'] = array('#theme' => 'pager');
 
@@ -121,26 +136,38 @@ function path_admin_form($form, &$form_state, $path = array('source' => '', 'ali
     '#type' => 'value',
     '#value' => $path['language']
   );
+
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+  );
   if ($path['pid']) {
     $form['pid'] = array(
       '#type' => 'hidden',
       '#value' => $path['pid'],
     );
-    $form['submit'] = array(
+    $form['actions']['delete'] = array(
       '#type' => 'submit',
-      '#value' => t('Update alias'),
-    );
-  }
-  else {
-    $form['submit'] = array(
-      '#type' => 'submit',
-      '#value' => t('Create new alias'),
+      '#value' => t('Delete'),
+      '#submit' => array('path_admin_form_delete_submit'),
     );
   }
 
   return $form;
 }
 
+/**
+ * Submit function for the 'Delete' button on the URL alias editing form.
+ */
+function path_admin_form_delete_submit($form, &$form_state) {
+  $destination = array();
+  if (isset($_GET['destination'])) {
+    $destination = drupal_get_destination();
+    unset($_GET['destination']);
+  }
+  $form_state['redirect'] = array('admin/config/search/path/delete/' . $form_state['values']['pid'], array('query' => $destination));
+}
 
 /**
  * Verify that a URL alias is valid
@@ -163,8 +190,7 @@ function path_admin_form_validate($form, &$form_state) {
   if ($has_alias) {
     form_set_error('alias', t('The alias %alias is already in use in this language.', array('%alias' => $alias)));
   }
-  $item = menu_get_item($source);
-  if (!$item || !$item['access']) {
+  if (!drupal_valid_path($source)) {
     form_set_error('source', t("The path '@link_path' is either invalid or you do not have access to it.", array('@link_path' => $source)));
   }
 }
@@ -208,7 +234,6 @@ function path_admin_delete_confirm_submit($form, &$form_state) {
   }
 }
 
-
 /**
  * Return a form to filter URL aliases.
  *
@@ -218,23 +243,23 @@ function path_admin_delete_confirm_submit($form, &$form_state) {
 function path_admin_filter_form($form, &$form_state, $keys = '') {
   $form['#attributes'] = array('class' => array('search-form'));
   $form['basic'] = array('#type' => 'fieldset',
-    '#title' => t('Filter aliases')
+    '#title' => t('Filter aliases'),
+    '#attributes' => array('class' => array('container-inline')),
   );
-  $form['basic']['inline'] = array('#prefix' => '<div class="container-inline">', '#suffix' => '</div>');
-  $form['basic']['inline']['filter'] = array(
+  $form['basic']['filter'] = array(
     '#type' => 'textfield',
     '#title' => '',
     '#default_value' => $keys,
     '#maxlength' => 128,
     '#size' => 25,
   );
-  $form['basic']['inline']['submit'] = array(
+  $form['basic']['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Filter'),
     '#submit' => array('path_admin_filter_form_submit_filter'),
     );
   if ($keys) {
-    $form['basic']['inline']['reset'] = array(
+    $form['basic']['reset'] = array(
       '#type' => 'submit',
       '#value' => t('Reset'),
       '#submit' => array('path_admin_filter_form_submit_reset'),

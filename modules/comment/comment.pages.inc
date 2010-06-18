@@ -1,5 +1,5 @@
 <?php
-// $Id: comment.pages.inc,v 1.30 2009/12/02 19:26:21 dries Exp $
+// $Id: comment.pages.inc,v 1.39 2010/06/10 06:57:20 dries Exp $
 
 /**
  * @file
@@ -29,7 +29,7 @@
  */
 function comment_reply($node, $pid = NULL) {
   // Set the breadcrumb trail.
-  drupal_set_breadcrumb(array(l(t('Home'), NULL), l($node->title[LANGUAGE_NONE][0]['value'], 'node/' . $node->nid)));
+  drupal_set_breadcrumb(array(l(t('Home'), NULL), l($node->title, 'node/' . $node->nid)));
   $op = isset($_POST['op']) ? $_POST['op'] : '';
   $build = array();
 
@@ -48,7 +48,7 @@ function comment_reply($node, $pid = NULL) {
       // $pid indicates that this is a reply to a comment.
       if ($pid) {
         // Load the comment whose cid = $pid
-        $comment = db_query('SELECT c.*, u.uid, u.name AS registered_name, u.signature, u.picture, u.data FROM {comment} c INNER JOIN {users} u ON c.uid = u.uid WHERE c.cid = :cid AND c.status = :status', array(
+        $comment = db_query('SELECT c.*, u.uid, u.name AS registered_name, u.signature, u.signature_format, u.picture, u.data FROM {comment} c INNER JOIN {users} u ON c.uid = u.uid WHERE c.cid = :cid AND c.status = :status', array(
           ':cid' => $pid,
           ':status' => COMMENT_PUBLISHED,
         ))->fetchObject();
@@ -61,11 +61,10 @@ function comment_reply($node, $pid = NULL) {
             drupal_goto("node/$node->nid");
           }
           // Display the parent comment
-          $comment = drupal_unpack($comment);
           $comment->node_type = 'comment_node_' . $node->type;
           field_attach_load('comment', array($comment->cid => $comment));
           $comment->name = $comment->uid ? $comment->registered_name : $comment->name;
-          $build['comment_parent'] = comment_build($comment, $node);
+          $build['comment_parent'] = comment_view($comment, $node);
         }
         else {
           drupal_set_message(t('The comment you are replying to does not exist.'), 'error');
@@ -74,7 +73,7 @@ function comment_reply($node, $pid = NULL) {
       }
       // This is the case where the comment is in response to a node. Display the node.
       elseif (user_access('access content')) {
-        $build['comment_node'] = node_build($node);
+        $build['comment_node'] = node_view($node);
       }
 
       // Should we show the reply box?
@@ -103,14 +102,19 @@ function comment_reply($node, $pid = NULL) {
 /**
  * Menu callback; publish specified comment.
  *
- * @param $comment
- *   A comment object.
+ * @param $cid
+ *   A comment identifier.
  */
-function comment_approve($comment) {
-  $comment->status = COMMENT_PUBLISHED;
-  $comment->comment_format = $comment->format;
-  comment_save($comment);
+function comment_approve($cid) {
+  if (!isset($_GET['token']) || !drupal_valid_token($_GET['token'], "comment/$cid/approve")) {
+    return MENU_ACCESS_DENIED;
+  }
+  if ($comment = comment_load($cid)) {
+    $comment->status = COMMENT_PUBLISHED;
+    comment_save($comment);
 
-  drupal_set_message(t('Comment approved.'));
-  drupal_goto('node/' . $comment->nid);
+    drupal_set_message(t('Comment approved.'));
+    drupal_goto('node/' . $comment->nid);
+  }
+  return MENU_NOT_FOUND;
 }

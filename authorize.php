@@ -1,5 +1,5 @@
 <?php
-// $Id: authorize.php,v 1.4 2009/10/29 06:58:56 webchick Exp $
+// $Id: authorize.php,v 1.8 2010/04/22 10:16:24 webchick Exp $
 
 /**
  * @file
@@ -39,7 +39,7 @@ define('MAINTENANCE_MODE', 'update');
  * Render a 403 access denied page for authorize.php
  */
 function authorize_access_denied_page() {
-  drupal_add_http_header('403 Forbidden');
+  drupal_add_http_header('Status', '403 Forbidden');
   watchdog('access denied', 'authorize.php', NULL, WATCHDOG_WARNING);
   drupal_set_title('Access denied');
   return t('You are not allowed to access this page.');
@@ -65,6 +65,7 @@ require_once DRUPAL_ROOT . '/includes/session.inc';
 require_once DRUPAL_ROOT . '/includes/common.inc';
 require_once DRUPAL_ROOT . '/includes/file.inc';
 require_once DRUPAL_ROOT . '/includes/module.inc';
+require_once DRUPAL_ROOT . '/includes/ajax.inc';
 
 // We prepare only a minimal bootstrap. This includes the database and
 // variables, however, so we have access to the class autoloader registry.
@@ -134,7 +135,7 @@ if (authorize_access_allowed()) {
     }
 
     $output = theme('authorize_report', array('messages' => $results['messages']));
-    
+
     $links = array();
     if (is_array($results['tasks'])) {
       $links += $results['tasks'];
@@ -157,7 +158,8 @@ if (authorize_access_allowed()) {
     }
     elseif (!$batch = batch_get()) {
       // We have a batch to process, show the filetransfer form.
-      $output = drupal_render(drupal_get_form('authorize_filetransfer_form'));
+      $elements = drupal_get_form('authorize_filetransfer_form');
+      $output = drupal_render($elements);
     }
   }
   // We defer the display of messages until all operations are done.

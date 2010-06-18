@@ -1,5 +1,5 @@
 <?php
-// $Id: block.admin.inc,v 1.67 2009/12/14 13:32:53 dries Exp $
+// $Id: block.admin.inc,v 1.80 2010/05/13 07:53:02 dries Exp $
 
 /**
  * @file
@@ -102,7 +102,11 @@ function block_admin_display_form($form, &$form_state, $blocks, $theme) {
   // Do not allow disabling the main system content block.
   unset($form['system_main']['region']['#options'][BLOCK_REGION_NONE]);
 
-  $form['submit'] = array(
+  $form['actions'] = array(
+    '#tree' => FALSE,
+    '#type' => 'actions',
+  );
+  $form['actions']['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Save blocks'),
   );
@@ -166,10 +170,12 @@ function _block_compare($a, $b) {
   if ((!empty($a['region']) && !empty($b['region'])) && ($place = ($regions[$a['region']] - $regions[$b['region']]))) {
     return $place;
   }
-  // Sort by weight.
-  $weight = $a['weight'] - $b['weight'];
-  if ($weight) {
-    return $weight;
+  // Sort by weight, unless disabled.
+  if ($a['region'] != BLOCK_REGION_NONE) {
+    $weight = $a['weight'] - $b['weight'];
+    if ($weight) {
+      return $weight;
+    }
   }
   // Sort by title.
   return strcmp($a['info'], $b['info']);
@@ -199,7 +205,7 @@ function block_admin_configure($form, &$form_state, $module, $delta) {
     '#type' => 'textfield',
     '#title' => t('Block title'),
     '#maxlength' => 64,
-    '#description' => $block->module == 'block' ? t('The title of the block as shown to the user.') : t('Override the default title for the block. Use <em>&lt;none&gt;</em> to display no title, or leave blank to use the default block title.'),
+    '#description' => $block->module == 'block' ? t('The title of the block as shown to the user.') : t('Override the default title for the block. Use <em>!placeholder</em> to display no title, or leave blank to use the default block title.', array('!placeholder' => '&lt;none&gt;')),
     '#default_value' => isset($block->title) ? $block->title : '',
     '#weight' => -18,
   );
@@ -234,7 +240,7 @@ function block_admin_configure($form, &$form_state, $module, $delta) {
         '#type' => 'select',
         '#title' => $theme->info['name'],
         '#default_value' => (!empty($region) ? $region : BLOCK_REGION_NONE),
-        '#options' => array(BLOCK_REGION_NONE => t('Disabled')) + $theme->info['regions'],
+        '#options' => array(BLOCK_REGION_NONE => t('<none>')) + system_region_list($key, REGIONS_VISIBLE),
         '#expandable' => ($key !== $theme_default),
         '#weight' => ($key == $theme_default ? 9 : 10),
       );
@@ -260,6 +266,7 @@ function block_admin_configure($form, &$form_state, $module, $delta) {
     '#collapsible' => TRUE,
     '#collapsed' => TRUE,
     '#group' => 'visibility',
+    '#weight' => 0,
   );
 
   $access = user_access('use PHP for settings');
@@ -302,38 +309,19 @@ function block_admin_configure($form, &$form_state, $module, $delta) {
     );
   }
 
-  // Per-content type visibility.
-  $default_type_options = db_query("SELECT type FROM {block_node_type} WHERE module = :module AND delta = :delta", array(
-    ':module' => $block->module,
-    ':delta' => $block->delta,
-  ))->fetchCol();
-  $form['visibility']['node_type'] = array(
-    '#type' => 'fieldset',
-    '#title' => t('Content types'),
-    '#collapsible' => TRUE,
-    '#collapsed' => TRUE,
-    '#group' => 'visibility',
-  );
-  $form['visibility']['node_type']['types'] = array(
-    '#type' => 'checkboxes',
-    '#title' => t('Show block for specific content types'),
-    '#default_value' => $default_type_options,
-    '#options' => node_type_get_names(),
-    '#description' => t('Show this block only on pages that display content of the given type(s). If you select no types, there will be no type specific limitation.'),
-  );
-
   // Per-role visibility.
   $default_role_options = db_query("SELECT rid FROM {block_role} WHERE module = :module AND delta = :delta", array(
     ':module' => $block->module,
     ':delta' => $block->delta,
   ))->fetchCol();
-  $role_options = db_query('SELECT rid, name FROM {role} ORDER BY name')->fetchAllKeyed();
+  $role_options = array_map('check_plain', user_roles());
   $form['visibility']['role'] = array(
     '#type' => 'fieldset',
     '#title' => t('Roles'),
     '#collapsible' => TRUE,
     '#collapsed' => TRUE,
     '#group' => 'visibility',
+    '#weight' => 10,
   );
   $form['visibility']['role']['roles'] = array(
     '#type' => 'checkboxes',
@@ -350,6 +338,7 @@ function block_admin_configure($form, &$form_state, $module, $delta) {
     '#collapsible' => TRUE,
     '#collapsed' => TRUE,
     '#group' => 'visibility',
+    '#weight' => 20,
   );
   $form['visibility']['user']['custom'] = array(
     '#type' => 'radios',
@@ -363,7 +352,8 @@ function block_admin_configure($form, &$form_state, $module, $delta) {
     '#default_value' => isset($block->custom) ? $block->custom : 0,
   );
 
-  $form['submit'] = array(
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Save block'),
   );
@@ -378,7 +368,7 @@ function block_admin_configure_validate($form, &$form_state) {
       ':info' => $form_state['values']['info'],
     ))->fetchField();
     if (empty($form_state['values']['info']) || $custom_block_exists) {
-      form_set_error('info', t('Please ensure that each block description is unique.'));
+      form_set_error('info', t('Ensure that each block description is unique.'));
     }
   }
 }
@@ -406,20 +396,6 @@ function block_admin_configure_submit($form, &$form_state) {
     foreach (array_filter($form_state['values']['roles']) as $rid) {
       $query->values(array(
         'rid' => $rid,
-        'module' => $form_state['values']['module'],
-        'delta' => $form_state['values']['delta'],
-      ));
-    }
-    $query->execute();
-
-    db_delete('block_node_type')
-      ->condition('module', $form_state['values']['module'])
-      ->condition('delta', $form_state['values']['delta'])
-      ->execute();
-    $query = db_insert('block_node_type')->fields(array('type', 'module', 'delta'));
-    foreach (array_filter($form_state['values']['types']) as $type) {
-      $query->values(array(
-        'type' => $type,
         'module' => $form_state['values']['module'],
         'delta' => $form_state['values']['delta'],
       ));
@@ -456,7 +432,7 @@ function block_add_block_form_validate($form, &$form_state) {
   $custom_block_exists = (bool) db_query_range('SELECT 1 FROM {block_custom} WHERE info = :info', 0, 1, array(':info' => $form_state['values']['info']))->fetchField();
 
   if (empty($form_state['values']['info']) || $custom_block_exists) {
-    form_set_error('info', t('Please ensure that each block description is unique.'));
+    form_set_error('info', t('Ensure that each block description is unique.'));
   }
 }
 
@@ -466,11 +442,13 @@ function block_add_block_form_validate($form, &$form_state) {
 function block_add_block_form_submit($form, &$form_state) {
   $delta = db_insert('block_custom')
     ->fields(array(
-      'body' => $form_state['values']['body'],
+      'body' => $form_state['values']['body']['value'],
       'info' => $form_state['values']['info'],
-      'format' => $form_state['values']['body_format'],
+      'format' => $form_state['values']['body']['format'],
     ))
     ->execute();
+  // Store block delta to allow other modules to work with new block.
+  $form_state['values']['delta'] = $delta;
 
   $query = db_insert('block')->fields(array('visibility', 'pages', 'custom', 'title', 'module', 'theme', 'status', 'weight', 'delta', 'cache'));
   foreach (list_themes() as $key => $theme) {
@@ -495,16 +473,6 @@ function block_add_block_form_submit($form, &$form_state) {
   foreach (array_filter($form_state['values']['roles']) as $rid) {
     $query->values(array(
       'rid' => $rid,
-      'module' => $form_state['values']['module'],
-      'delta' => $delta,
-    ));
-  }
-  $query->execute();
-
-  $query = db_insert('block_node_type')->fields(array('type', 'module', 'delta'));
-  foreach (array_filter($form_state['values']['types']) as $type) {
-    $query->values(array(
-      'type' => $type,
       'module' => $form_state['values']['module'],
       'delta' => $delta,
     ));
@@ -548,6 +516,10 @@ function block_custom_block_delete_submit($form, &$form_state) {
     ->condition('bid', $form_state['values']['bid'])
     ->execute();
   db_delete('block')
+    ->condition('module', 'block')
+    ->condition('delta', $form_state['values']['bid'])
+    ->execute();
+  db_delete('block_role')
     ->condition('module', 'block')
     ->condition('delta', $form_state['values']['bid'])
     ->execute();

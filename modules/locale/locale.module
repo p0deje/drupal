@@ -1,5 +1,5 @@
 <?php
-// $Id: locale.module,v 1.275 2009/12/07 05:02:37 webchick Exp $
+// $Id: locale.module,v 1.293 2010/05/12 08:26:14 dries Exp $
 
 /**
  * @file
@@ -24,9 +24,9 @@ define('LOCALE_LANGUAGE_NEGOTIATION_URL', 'locale-url');
 define('LOCALE_LANGUAGE_NEGOTIATION_BROWSER', 'locale-browser');
 
 /**
- * The language is determined using the current content language.
+ * The language is determined using the current interface language.
  */
-define('LOCALE_LANGUAGE_NEGOTIATION_CONTENT', 'locale-content');
+define('LOCALE_LANGUAGE_NEGOTIATION_INTERFACE', 'locale-interface');
 
 /**
  * The language is set based on the user language settings.
@@ -67,12 +67,9 @@ function locale_help($path, $arg) {
       $output = '<p>' . t('With multiple languages enabled, interface text can be translated, registered users may select their preferred language, and authors can assign a specific language to content. <a href="@translations">Download contributed translations</a> from Drupal.org.', array('@translations' => 'http://drupal.org/project/translations')) . '</p>';
       return $output;
     case 'admin/config/regional/language/add':
-      return '<p>' . t('Add all languages to be supported by your site. If your desired language is not available in the <em>Language name</em> drop-down, click <em>Custom language</em> and provide a language code and other details manually. When providing a language code manually, be sure to enter a standardized language code, since this code may be used by browsers to determine an appropriate display language.') . '</p>';
+      return '<p>' . t('Add a language to be supported by your site. If your desired language is not available in the <em>Language name</em> drop-down, click <em>Custom language</em> and provide a language code and other details manually. When providing a language code manually, be sure to enter a standardized language code, since this code may be used by browsers to determine an appropriate display language.') . '</p>';
     case 'admin/config/regional/language/configure':
-      $output = '<p>' . t("Set which languages to use for content and for the administrative interface. Drag the detection methods into the order they should test for languages. The first method that gets a result will set the language for the relevant part of the site. <strong>Changing these settings may break all incoming URLs, use with caution in a production environment.</strong>") . '</p>';
-      return $output;
-    case 'admin/config/regional/language/configure/url':
-      $output = '<p>' . t('Determine the language by examining the URL. Example: "http://example.com/de/contact" sets language to German based on the use of "de" as the path prefix. "http://de.example.com/contact" sets presentation language to German based on the use of "http://de.example.com" in the domain.') . '</p>';
+      $output = '<p>' . t("Define how to decide which language is used to display page elements (primarily text provided by Drupal and modules, such as field labels and help text). This decision is made by evaluating a series of detection methods for languages; the first detection method that gets a result will determine which language is used for that type of text. Define the order of evaluation of language detection methods on this page.") . '</p>';
       return $output;
     case 'admin/config/regional/language/configure/session':
       $output = '<p>' . t('Determine the language from a request/session parameter. Example: "http://example.com?language=de" sets language to German based on the use of "de" within the "language" parameter.') . '</p>';
@@ -108,8 +105,8 @@ function locale_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('locale_languages_overview_form'),
     'access arguments' => array('administer languages'),
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
+    'weight' => -10,
   );
   $items['admin/config/regional/language/overview'] = array(
     'title' => 'List',
@@ -122,42 +119,37 @@ function locale_menu() {
     'access arguments' => array('administer languages'),
     'weight' => 5,
     'type' => MENU_LOCAL_ACTION,
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
   );
   $items['admin/config/regional/language/configure'] = array(
-    'title' => 'Configure',
+    'title' => 'Detection and selection',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('locale_languages_configure_form'),
     'access arguments' => array('administer languages'),
     'weight' => 10,
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
     'type' => MENU_LOCAL_TASK,
   );
   $items['admin/config/regional/language/configure/url'] = array(
-    'title' => 'URL language provider configuration',
+    'title' => 'URL language detection configuration',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('locale_language_providers_url_form'),
     'access arguments' => array('administer languages'),
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
   );
   $items['admin/config/regional/language/configure/session'] = array(
-    'title' => 'Session language provider configuration',
+    'title' => 'Session language detection configuration',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('locale_language_providers_session_form'),
     'access arguments' => array('administer languages'),
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
   );
   $items['admin/config/regional/language/edit/%'] = array(
     'title' => 'Edit language',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('locale_languages_edit_form', 5),
     'access arguments' => array('administer languages'),
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
     'type' => MENU_CALLBACK,
   );
   $items['admin/config/regional/language/delete/%'] = array(
@@ -165,8 +157,7 @@ function locale_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('locale_languages_delete_form', 5),
     'access arguments' => array('administer languages'),
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
     'type' => MENU_CALLBACK,
   );
 
@@ -174,11 +165,10 @@ function locale_menu() {
   $items['admin/config/regional/translate'] = array(
     'title' => 'Translate interface',
     'description' => 'Translate the built in interface and optionally other text.',
-    'page callback' => 'locale_inc_callback',
-    'page arguments' => array('locale_translate_overview_screen'), // not a form, just a table
+    'page callback' => 'locale_translate_overview_screen',
     'access arguments' => array('translate interface'),
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
+    'weight' => -5,
   );
   $items['admin/config/regional/translate/overview'] = array(
     'title' => 'Overview',
@@ -191,8 +181,7 @@ function locale_menu() {
     'type' => MENU_LOCAL_TASK,
     'page callback' => 'locale_translate_seek_screen', // search results and form concatenated
     'access arguments' => array('translate interface'),
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
   );
   $items['admin/config/regional/translate/import'] = array(
     'title' => 'Import',
@@ -201,8 +190,7 @@ function locale_menu() {
     'access arguments' => array('translate interface'),
     'weight' => 20,
     'type' => MENU_LOCAL_TASK,
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
   );
   $items['admin/config/regional/translate/export'] = array(
     'title' => 'Export',
@@ -210,8 +198,7 @@ function locale_menu() {
     'access arguments' => array('translate interface'),
     'weight' => 30,
     'type' => MENU_LOCAL_TASK,
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
   );
   $items['admin/config/regional/translate/edit/%'] = array(
     'title' => 'Edit string',
@@ -219,8 +206,7 @@ function locale_menu() {
     'page arguments' => array('locale_translate_edit_form', 5),
     'access arguments' => array('translate interface'),
     'type' => MENU_CALLBACK,
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
   );
   $items['admin/config/regional/translate/delete/%'] = array(
     'title' => 'Delete string',
@@ -228,8 +214,7 @@ function locale_menu() {
     'page arguments' => array(5),
     'access arguments' => array('translate interface'),
     'type' => MENU_CALLBACK,
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
   );
 
   // Localize date formats.
@@ -240,8 +225,7 @@ function locale_menu() {
     'access arguments' => array('administer site configuration'),
     'type' => MENU_LOCAL_TASK,
     'weight' => -8,
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
   );
   $items['admin/config/regional/date-time/locale/%/edit'] = array(
     'title' => 'Localize date formats',
@@ -250,8 +234,7 @@ function locale_menu() {
     'page arguments' => array('locale_date_format_form', 5),
     'access arguments' => array('administer site configuration'),
     'type' => MENU_CALLBACK,
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
   );
   $items['admin/config/regional/date-time/locale/%/reset'] = array(
     'title' => 'Reset date formats',
@@ -260,8 +243,7 @@ function locale_menu() {
     'page arguments' => array('locale_date_format_reset_form', 5),
     'access arguments' => array('administer site configuration'),
     'type' => MENU_CALLBACK,
-    'file' => 'locale.inc',
-    'file path' => 'includes',
+    'file' => 'locale.admin.inc',
   );
 
   return $items;
@@ -290,16 +272,6 @@ function locale_init() {
       $conf[$format_type] = $format;
     }
   }
-}
-
-/**
- * Wrapper function to be able to set callbacks in locale.inc
- */
-function locale_inc_callback() {
-  $args = func_get_args();
-  $function = array_shift($args);
-  include_once DRUPAL_ROOT . '/includes/locale.inc';
-  return call_user_func_array($function, $args);
 }
 
 /**
@@ -349,6 +321,7 @@ function locale_language_selector_form(&$form, &$form_state, $user) {
     '#type' => 'fieldset',
     '#title' => t('Language settings'),
     '#weight' => 1,
+    '#access' => ($form['#user_category'] == 'account' || ($form['#user_category'] == 'register' && user_access('administer users'))),
   );
 
   // Get language negotiation settings.
@@ -369,7 +342,7 @@ function locale_form_path_admin_form_alter(&$form, &$form_state) {
   $form['language'] = array(
     '#type' => 'select',
     '#title' => t('Language'),
-    '#options' => array('' => t('All languages')) + locale_language_list('name'),
+    '#options' => array(LANGUAGE_NONE => t('All languages')) + locale_language_list('name'),
     '#default_value' => $form['language']['#value'],
     '#weight' => -10,
     '#description' => t('A path alias set for a specific language will always be used when displaying this page in that language, and takes precedence over path aliases set for <em>All languages</em>.'),
@@ -380,7 +353,7 @@ function locale_form_path_admin_form_alter(&$form, &$form_state) {
  * Implements hook_form_FORM_ID_alter().
  */
 function locale_form_node_type_form_alter(&$form, &$form_state) {
-  if (isset($form['identity']['type'])) {
+  if (isset($form['type'])) {
     $form['workflow']['language_content_type'] = array(
       '#type' => 'radios',
       '#title' => t('Multilingual support'),
@@ -411,11 +384,11 @@ function locale_form_alter(&$form, &$form_state, $form_id) {
   if (drupal_multilingual()) {
     // Display language selector when either creating a user on the admin
     // interface or editing a user account.
-    if (($form_id == 'user_register_form' && user_access('administer users')) || ($form_id == 'user_profile_form' && $form['#user_category'] == 'account')) {
+    if ($form_id == 'user_register_form' || ($form_id == 'user_profile_form' && $form['#user_category'] == 'account')) {
       locale_language_selector_form($form, $form_state, $form['#user']);
     }
   }
-  if (isset($form['#id']) && $form['#id'] == 'node-form') {
+  if (!empty($form['#node_edit_form'])) {
     if (isset($form['#node']->type) && locale_multilingual_node_type($form['#node']->type)) {
       $form['language'] = array(
         '#type' => 'select',
@@ -439,13 +412,27 @@ function locale_form_alter(&$form, &$form_state, $form_id) {
 /**
  * Form submit handler for node_form().
  *
- * Check if Locale is registered as a translation handler and handle possible
+ * Checks if Locale is registered as a translation handler and handle possible
  * node language changes.
  */
 function locale_field_node_form_submit($form, &$form_state) {
-  if (field_multilingual_check_translation_handlers('node', 'locale')) {
-    module_load_include('inc', 'locale', 'locale.field');
-    locale_field_node_form_update_field_language($form, $form_state);
+  if (field_has_translation_handler('node', 'locale')) {
+    $node = (object) $form_state['values'];
+    $available_languages = field_content_languages();
+    list(, , $bundle) = entity_extract_ids('node', $node);
+
+    foreach (field_info_instances('node', $bundle) as $instance) {
+      $field_name = $instance['field_name'];
+      $field = field_info_field($field_name);
+      $previous_language = $form[$field_name]['#language'];
+
+      // Handle a possible language change: new language values are inserted,
+      // previous ones are deleted.
+      if ($field['translatable'] && $previous_language != $node->language) {
+        $form_state['values'][$field_name][$node->language] = $node->{$field_name}[$previous_language];
+        $form_state['values'][$field_name][$previous_language] = array();
+      }
+    }
   }
 }
 
@@ -460,9 +447,6 @@ function locale_theme() {
     'locale_languages_configure_form' => array(
       'render element' => 'form',
     ),
-    'locale_translation_filters' => array(
-      'render element' => 'form',
-    ),
     'locale_date_format_form' => array(
       'render element' => 'form',
     ),
@@ -470,20 +454,57 @@ function locale_theme() {
 }
 
 /**
- * Implements hook_field_attach_view_alter().
+ * Implements hook_field_language_alter().
  */
-function locale_field_attach_view_alter(&$output, $context) {
-  // In locale_field_fallback_view() we might call field_attach_view(). The
-  // static variable avoids unnecessary recursion.
-  static $recursion;
+function locale_field_language_alter(&$display_language, $context) {
+  // Do not apply core language fallback rules if they are disabled or if Locale
+  // is not registered as a translation handler.
+  if (variable_get('locale_field_language_fallback', TRUE) && field_has_translation_handler($context['entity_type'], 'locale')) {
+    locale_field_language_fallback($display_language, $context['entity'], $context['language']);
+  }
+}
 
-  // Do not apply fallback rules if disabled or if Locale is not registered as a
-  // translation handler.
-  if (!$recursion && variable_get('locale_field_fallback_view', TRUE) && field_multilingual_check_translation_handlers($context['obj_type'], 'locale')) {
-    $recursion = TRUE;
-    module_load_include('inc', 'locale', 'locale.field');
-    locale_field_fallback_view($output, $context);
-    $recursion = FALSE;
+/**
+ * Applies language fallback rules to the fields attached to the given entity.
+ *
+ * Core language fallback rules simply check if fields have a field translation
+ * for the requested language code. If so the requested language is returned,
+ * otherwise all the fallback candidates are inspected to see if there is a
+ * field translation available in another language.
+ * By default this is called by locale_field_language_alter(), but this
+ * behavior can be disabled by setting the 'locale_field_language_fallback'
+ * variable to FALSE.
+ *
+ * @param $display_language
+ *   A reference to an array of language codes keyed by field name.
+ * @param $entity
+ *   The entity to be displayed.
+ * @param $langcode
+ *   The language code $entity has to be displayed in. 
+ */
+function locale_field_language_fallback(&$display_language, $entity, $langcode) {
+  // Lazily init fallback candidates to avoid unnecessary calls.
+  $fallback_candidates = NULL;
+  $field_languages = array();
+
+  foreach ($display_language as $field_name => $field_language) {
+    // If the requested language is defined for the current field use it,
+    // otherwise search for a fallback value among the fallback candidates.
+    if (isset($entity->{$field_name}[$langcode])) {
+      $display_language[$field_name] = $langcode;
+    }
+    elseif (!empty($entity->{$field_name})) {
+      if (!isset($fallback_candidates)) {
+        require_once DRUPAL_ROOT . '/includes/language.inc';
+        $fallback_candidates = language_fallback_get_candidates();
+      }
+      foreach ($fallback_candidates as $fallback_language) {
+        if (isset($entity->{$field_name}[$fallback_language])) {
+          $display_language[$field_name] = $fallback_language;
+          break;
+        }
+      }
+    }
   }
 }
 
@@ -491,24 +512,30 @@ function locale_field_attach_view_alter(&$output, $context) {
  * Implements hook_entity_info_alter().
  */
 function locale_entity_info_alter(&$entity_info) {
-  $enabled = drupal_multilingual();
-  foreach ($entity_info as $type => $info) {
-    $entity_info[$type]['translation']['locale'] = $enabled;
-  }
+  $entity_info['node']['translation']['locale'] = TRUE;
 }
 
 /**
  * Implements hook_language_types_info().
+ *
+ * Defines the three core language types:
+ * - Interface language is the only configurable language type in core. It is
+ *   used by t() as the default language if none is specified.
+ * - Content language is by default non-configurable and inherits the interface
+ *   language negotiated value. It is used by the Field API to determine the
+ *   display language for fields if no explicit value is specified.
+ * - URL language is by default non-configurable and is determined through the
+ *   URL language provider. It is used by l() as the default language if none is
+ *   specified.
  */
 function locale_language_types_info() {
   return array(
-    LANGUAGE_TYPE_CONTENT => array(
-      'name' => t('Content'),
-      'description' => t('If a piece of content is available in multiple languages, the one matching the <em>content</em> language will be used.'),
-    ),
     LANGUAGE_TYPE_INTERFACE => array(
-      'name' => t('Interface'),
-      'description' => t('The interface labels will be displayed in the <em>interface</em> language.'),
+      'name' => t('User interface text'),
+      'description' => t('Order of language detection methods for user interface text. If a translation of user interface text is available in the detected language, it will be displayed.'),
+    ),
+    LANGUAGE_TYPE_CONTENT => array(
+      'fixed' => array(LOCALE_LANGUAGE_NEGOTIATION_INTERFACE),
     ),
     LANGUAGE_TYPE_URL => array(
       'fixed' => array(LOCALE_LANGUAGE_NEGOTIATION_URL),
@@ -546,7 +573,7 @@ function locale_language_negotiation_info() {
     'file' => $file,
     'weight' => -6,
     'name' => t('Session'),
-    'description' => t('The language is determined from a request/session parameter.'),
+    'description' => t('Determine the language from a request/session parameter.'),
     'config' => 'admin/config/regional/language/configure/session',
   );
 
@@ -555,25 +582,25 @@ function locale_language_negotiation_info() {
     'file' => $file,
     'weight' => -4,
     'name' => t('User'),
-    'description' => t("Show in this user's language preference."),
+    'description' => t("Follow the user's language preference."),
   );
 
   $providers[LOCALE_LANGUAGE_NEGOTIATION_BROWSER] = array(
     'callbacks' => array('language' => 'locale_language_from_browser'),
-    'name' => $file,
+    'file' => $file,
     'weight' => -2,
-    'cache' => CACHE_DISABLED,
+    'cache' => 0,
     'name' => t('Browser'),
-    'description' => t('The language is determined from the browser\'s language settings.'),
+    'description' => t("Determine the language from the browser's language settings."),
   );
 
-  $providers[LOCALE_LANGUAGE_NEGOTIATION_CONTENT] = array(
-    'types' => array(LANGUAGE_TYPE_INTERFACE),
-    'callbacks' => array('language' => 'locale_language_from_content'),
+  $providers[LOCALE_LANGUAGE_NEGOTIATION_INTERFACE] = array(
+    'types' => array(LANGUAGE_TYPE_CONTENT),
+    'callbacks' => array('language' => 'locale_language_from_interface'),
     'file' => $file,
     'weight' => 8,
-    'name' => t('Content'),
-    'description' => t('The interface language is the same as the negotiated content language.'),
+    'name' => t('Interface'),
+    'description' => t('Use the detected interface language.'),
   );
 
   return $providers;
@@ -595,17 +622,10 @@ function locale_language_negotiation_info() {
  *   The context of this string.
  * @param $langcode
  *   Language code to use for the lookup.
- * @param $reset
- *   Set to TRUE to reset the in-memory cache.
  */
-function locale($string = NULL, $context = NULL, $langcode = NULL, $reset = FALSE) {
+function locale($string = NULL, $context = NULL, $langcode = NULL) {
   global $language;
-  static $locale_t;
-
-  if ($reset) {
-    // Reset in-memory cache.
-    $locale_t = NULL;
-  }
+  $locale_t = &drupal_static(__FUNCTION__);
 
   if (!isset($string)) {
     // Return all cached strings if no string was specified
@@ -614,8 +634,9 @@ function locale($string = NULL, $context = NULL, $langcode = NULL, $reset = FALS
 
   $langcode = isset($langcode) ? $langcode : $language->language;
 
-  // Store database cached translations in a static var.
-  if (!isset($locale_t[$langcode])) {
+  // Store database cached translations in a static variable. Only build the
+  // cache after $language has been set to avoid an unnecessary cache rebuild.
+  if (!isset($locale_t[$langcode]) && isset($language)) {
     $locale_t[$langcode] = array();
     // Disabling the usage of string caching allows a module to watch for
     // the exact list of strings used on a page. From a performance
@@ -685,6 +706,13 @@ function locale($string = NULL, $context = NULL, $langcode = NULL, $reset = FALS
 }
 
 /**
+ * Reset static variables used by locale().
+ */
+function locale_reset() {
+  drupal_static_reset('locale');
+}
+
+/**
  * Returns plural form index for a specific number.
  *
  * The index is computed from the formula of this language.
@@ -697,12 +725,13 @@ function locale($string = NULL, $context = NULL, $langcode = NULL, $reset = FALS
  */
 function locale_get_plural($count, $langcode = NULL) {
   global $language;
-  static $locale_formula, $plurals = array();
+  $locale_formula = &drupal_static(__FUNCTION__, array());
+  $plurals = &drupal_static(__FUNCTION__ . ':plurals', array());
 
   $langcode = $langcode ? $langcode : $language->language;
 
   if (!isset($plurals[$langcode][$count])) {
-    if (!isset($locale_formula)) {
+    if (empty($locale_formula)) {
       $language_list = language_list();
       $locale_formula[$langcode] = $language_list[$langcode]->formula;
     }
@@ -724,7 +753,7 @@ function locale_get_plural($count, $langcode = NULL) {
  * Returns a language name
  */
 function locale_language_name($lang) {
-  static $list = NULL;
+  $list = &drupal_static(__FUNCTION__);
   if (!isset($list)) {
     $list = locale_language_list();
   }
@@ -787,6 +816,9 @@ function locale_js_alter(&$javascript) {
   $parsed = variable_get('javascript_parsed', array());
   $files = $new_files = FALSE;
 
+  // Require because locale_js_alter() could be called without locale_init().
+  require_once DRUPAL_ROOT . '/includes/locale.inc';
+
   foreach ($javascript as $item) {
     if ($item['type'] == 'file') {
       $files = TRUE;
@@ -794,8 +826,7 @@ function locale_js_alter(&$javascript) {
       if (!in_array($filepath, $parsed)) {
         // Don't parse our own translations files.
         if (substr($filepath, 0, strlen($dir)) != $dir) {
-          locale_inc_callback('_locale_parse_js_file', $filepath);
-          watchdog('locale', 'Parsed JavaScript file %file.', array('%file' => $filepath));
+          _locale_parse_js_file($filepath);
           $parsed[] = $filepath;
           $new_files = TRUE;
         }
@@ -807,14 +838,14 @@ function locale_js_alter(&$javascript) {
   // JavaScript translation files for all languages, adding the refresh
   // flags into the existing array.
   if ($new_files) {
-    $parsed += locale_inc_callback('_locale_invalidate_js');
+    $parsed += _locale_invalidate_js();
   }
 
   // If necessary, rebuild the translation file for the current language.
   if (!empty($parsed['refresh:' . $language->language])) {
     // Don't clear the refresh flag on failure, so that another try will
     // be performed later.
-    if (locale_inc_callback('_locale_rebuild_js')) {
+    if (_locale_rebuild_js()) {
       unset($parsed['refresh:' . $language->language]);
     }
     // Store any changes after refresh was attempted.
@@ -861,6 +892,28 @@ function locale_css_alter(&$css) {
   }
 }
 
+ /**
+ * Implement hook_library_alter().
+ *
+ * Provides the language support for the jQuery UI Date Picker.
+ */
+function locale_library_alter(&$libraries, $module) {
+  global $language;
+  if ($module == 'system' && isset($libraries['system']['ui.datepicker'])) {
+    $datepicker = drupal_get_path('module', 'locale') . '/locale.datepicker.js';
+    $libraries['system']['ui.datepicker']['js'][$datepicker] = array('weight' => JS_THEME);
+    $libraries['system']['ui.datepicker']['js'][] = array(
+      'data' => array(
+        'jqueryuidatepicker' => array(
+          'rtl' => $language->direction == LANGUAGE_RTL,
+          'firstDay' => variable_get('date_first_day', 0),
+        ),
+      ),
+      'type' => 'setting',
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------------
 // Language switcher block
 
@@ -894,183 +947,11 @@ function locale_block_view($type) {
     if (isset($links->links) && count($links->links > 1)) {
       $class = "language-switcher-{$links->provider}";
       $variables = array('links' => $links->links, 'attributes' => array('class' => array($class)));
-      $block['content'] = theme('links', $variables);
+      $block['content'] = theme('links__locale_block', $variables);
       $block['subject'] = t('Languages');
       return $block;
     }
   }
-}
-
-/**
- * Theme locale translation filter selector.
- *
- * @ingroup themeable
- */
-function theme_locale_translation_filters($variables) {
-  $form = $variables['form'];
-  $output = '';
-
-  foreach (element_children($form['status']) as $key) {
-    $output .= drupal_render($form['status'][$key]);
-  }
-  $output .= '<div id="locale-translation-buttons">' . drupal_render($form['buttons']) . '</div>';
-  return $output;
-}
-
-/**
- * Theme locale date format form.
- *
- * @ingroup themeable
- */
-function theme_locale_date_format_form($variables) {
-  $form = $variables['form'];
-  $header = array(
-    t('Date type'),
-    t('Format'),
-  );
-
-  foreach (element_children($form['date_formats']) as $key) {
-    $row = array();
-    $row[] = $form['date_formats'][$key]['#title'];
-    unset($form['date_formats'][$key]['#title']);
-    $row[] = array('data' => drupal_render($form['date_formats'][$key]));
-    $rows[] = $row;
-  }
-
-  $output = drupal_render($form['language']);
-  $output .= theme('table', array('header' => $header, 'rows' => $rows));
-  $output .= drupal_render_children($form);
-
-  return $output;
-}
-
-/**
- * Display edit date format links for each language.
- */
-function locale_date_format_language_overview_page() {
-  $header = array(
-    t('Language'),
-    array('data' => t('Operations'), 'colspan' => '2'),
-  );
-
-  // Get list of languages.
-  $languages = locale_language_list('native');
-
-  foreach ($languages as $langcode => $info) {
-    $row = array();
-    $row[] = $languages[$langcode];
-    $row[] = l(t('edit'), 'admin/config/regional/date-time/locale/' . $langcode . '/edit');
-    $row[] = l(t('reset'), 'admin/config/regional/date-time/locale/' . $langcode . '/reset');
-    $rows[] = $row;
-  }
-
-  return theme('table', array('header' => $header, 'rows' => $rows));
-}
-
-/**
- * Provide date localization configuration options to users.
- */
-function locale_date_format_form($form, &$form_state, $langcode) {
-  $languages = locale_language_list('native');
-  $language_name = $languages[$langcode];
-
-  // Display the current language name.
-  $form['language'] = array(
-    '#type' => 'item',
-    '#title' => t('Language'),
-    '#markup' => check_plain($language_name),
-    '#weight' => -10,
-  );
-  $form['langcode'] = array(
-    '#type' => 'value',
-    '#value' => $langcode,
-  );
-
-  // Get list of date format types.
-  $types = system_get_date_types();
-
-  // Get list of available formats.
-  $formats = system_get_date_formats();
-  $choices = array();
-  foreach ($formats as $type => $list) {
-    foreach ($list as $f => $format) {
-      $choices[$f] = format_date(REQUEST_TIME, 'custom', $f);
-    }
-  }
-
-  // Get configured formats for each language.
-  $locale_formats = system_date_format_locale($langcode);
-  // Display a form field for each format type.
-  foreach ($types as $type => $type_info) {
-    if (!empty($locale_formats) && in_array($type, array_keys($locale_formats))) {
-      $default = $locale_formats[$type];
-    }
-    else {
-      $default = variable_get('date_format_' . $type, array_shift(array_keys($formats)));
-    }
-
-    // Show date format select list.
-    $form['date_formats']['date_format_' . $type] = array(
-      '#type' => 'select',
-      '#title' => check_plain($type_info['title']),
-      '#attributes' => array('class' => array('date-format')),
-      '#default_value' => (isset($choices[$default]) ? $default : 'custom'),
-      '#options' => $choices,
-    );
-  }
-
-  $form['buttons']['submit'] = array(
-    '#type' => 'submit',
-    '#value' => t('Save configuration'),
-  );
-
-  return $form;
-}
-
-/**
- * Submit handler for configuring localized date formats on the locale_date_format_form.
- */
-function locale_date_format_form_submit($form, &$form_state) {
-  include_once DRUPAL_ROOT . '/includes/locale.inc';
-  $langcode = $form_state['values']['langcode'];
-
-  // Get list of date format types.
-  $types = system_get_date_types();
-  foreach ($types as $type => $type_info) {
-    $format = $form_state['values']['date_format_' . $type];
-    if ($format == 'custom') {
-      $format = $form_state['values']['date_format_' . $type . '_custom'];
-    }
-    locale_date_format_save($langcode, $type, $format);
-  }
-  drupal_set_message(t('Configuration saved.'));
-  $form_state['redirect'] = 'admin/config/regional/date-time/locale';
-}
-
-/**
- * Reset locale specific date formats to the global defaults.
- *
- * @param $langcode
- *   Language code, e.g. 'en'.
- */
-function locale_date_format_reset_form($form, &$form_state, $langcode) {
-  $form['langcode'] = array('#type' => 'value', '#value' => $langcode);
-  $languages = language_list();
-  return confirm_form($form,
-    t('Are you sure you want to reset the date formats for %language to the global defaults?', array('%language' => $languages[$langcode]->name)),
-    'admin/config/regional/date-time/locale',
-    t('Resetting will remove all localized date formats for this language. This action cannot be undone.'),
-    t('Reset'), t('Cancel'));
-}
-
-/**
- * Reset date formats for a specific language to global defaults.
- */
-function locale_date_format_reset_form_submit($form, &$form_state) {
-  db_delete('date_format_locale')
-    ->condition('language', $form_state['values']['langcode'])
-    ->execute();
-  $form_state['redirect'] = 'admin/config/regional/date-time/locale';
 }
 
 /**

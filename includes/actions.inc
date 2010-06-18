@@ -1,5 +1,5 @@
 <?php
-// $Id: actions.inc,v 1.34 2009/10/18 06:56:23 webchick Exp $
+// $Id: actions.inc,v 1.38 2010/05/06 05:59:30 webchick Exp $
 
 /**
  * @file
@@ -11,16 +11,17 @@
  * @{
  * Functions that perform an action on a certain system object.
  *
- * All modules should declare their action functions to be in this group and
- * each action function should reference its configuration form, validate, and
- * submit functions using \@see. Conversely, form, validate, and submit
- * functions should reference the action function using \@see. For examples of
- * this see comment_unpublish_by_keyword_action(), which has the following in
- * its doxygen documentation:
+ * Action functions are declared by modules by implementing hook_action_info().
+ * Modules can cause action functions to run by calling actions_do(), and
+ * trigger.module provides a user interface that lets administrators define
+ * events that cause action functions to run.
  *
- * \@ingroup actions
- * \@see comment_unpublish_by_keyword_action_form().
- * \@see comment_unpublish_by_keyword_action_submit().
+ * Each action function takes two to four arguments:
+ * - $entity: The object that the action acts on, such as a node, comment, or
+ *   user.
+ * - $context: Array of additional information about what triggered the action.
+ * - $a1, $a2: Optional additional information, which can be passed into
+ *   actions_do() and will be passed along to the action function.
  *
  * @} End of "defgroup actions".
  */
@@ -51,6 +52,8 @@
  * @return
  *   An associative array containing the results of the functions that
  *   perform the actions, keyed on action ID.
+ *
+ * @ingroup actions
  */
 function actions_do($action_ids, $object = NULL, $context = NULL, $a1 = NULL, $a2 = NULL) {
   // $stack tracks the number of recursive calls.
@@ -126,7 +129,13 @@ function actions_do($action_ids, $object = NULL, $context = NULL, $a1 = NULL, $a
     }
     // Singleton action; $action_ids is the function name.
     else {
-      $actions_result[$action_ids] = $action_ids($object, $context, $a1, $a2);
+      if (function_exists($action_ids)) {
+        $actions_result[$action_ids] = $action_ids($object, $context, $a1, $a2);
+      }
+      else {
+        // Set to avoid undefined index error messages later.
+        $actions_result[$action_ids] = FALSE;
+      }
     }
   }
   $stack--;
@@ -150,14 +159,14 @@ function actions_do($action_ids, $object = NULL, $context = NULL, $a1 = NULL, $a
  * @see hook_action_info()
  */
 function actions_list($reset = FALSE) {
-  static $actions;
+  $actions = &drupal_static(__FUNCTION__);
   if (!isset($actions) || $reset) {
     $actions = module_invoke_all('action_info');
     drupal_alter('action_info', $actions);
   }
 
   // See module_implements() for an explanation of this cast.
-  return (array)$actions;
+  return (array) $actions;
 }
 
 /**
@@ -188,7 +197,7 @@ function actions_get_all_actions() {
 }
 
 /**
- * Creates an associative array keyed by md5 hashes of function names or IDs.
+ * Creates an associative array keyed by hashes of function names or IDs.
  *
  * Hashes are used to prevent actual function names from going out into HTML
  * forms and coming back.
@@ -198,14 +207,14 @@ function actions_get_all_actions() {
  *   and associative arrays with keys 'label', 'type', etc. as values.
  *   This is usually the output of actions_list() or actions_get_all_actions().
  * @return
- *   An associative array whose keys are md5 hashes of the input array keys, and
+ *   An associative array whose keys are hashes of the input array keys, and
  *   whose corresponding values are associative arrays with components
  *   'callback', 'label', 'type', and 'configurable' from the input array.
  */
 function actions_actions_map($actions) {
   $actions_map = array();
   foreach ($actions as $callback => $array) {
-    $key = md5($callback);
+    $key = drupal_hash_base64($callback);
     $actions_map[$key]['callback']     = isset($array['callback']) ? $array['callback'] : $callback;
     $actions_map[$key]['label']        = $array['label'];
     $actions_map[$key]['type']         = $array['type'];
@@ -215,12 +224,12 @@ function actions_actions_map($actions) {
 }
 
 /**
- * Given an md5 hash of an action array key, returns the key (function or ID).
+ * Given a hash of an action array key, returns the key (function or ID).
  *
  * Faster than actions_actions_map() when you only need the function name or ID.
  *
  * @param $hash
- *   MD5 hash of a function name or action ID array key. The array key
+ *   Hash of a function name or action ID array key. The array key
  *   is a key into the return value of actions_list() (array key is the action
  *   function name) or actions_get_all_actions() (array key is the action ID).
  * @return
@@ -230,13 +239,20 @@ function actions_function_lookup($hash) {
   // Check for a function name match.
   $actions_list = actions_list();
   foreach ($actions_list as $function => $array) {
-    if (md5($function) == $hash) {
+    if (drupal_hash_base64($function) == $hash) {
       return $function;
     }
   }
-
+  $aid = FALSE;
   // Must be a configurable action; check database.
-  return db_query("SELECT aid FROM {actions} WHERE MD5(aid) = :hash AND parameters <> ''", array(':hash' => $hash))->fetchField();
+  $result = db_query("SELECT aid FROM {actions} WHERE parameters <> ''")->fetchAll(PDO::FETCH_ASSOC);
+  foreach ($result as $row) {
+    if (drupal_hash_base64($row['aid']) == $hash) {
+      $aid = $row['aid'];
+      break;
+    }
+  }
+  return $aid;
 }
 
 /**

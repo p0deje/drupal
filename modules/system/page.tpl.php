@@ -1,5 +1,5 @@
 <?php
-// $Id: page.tpl.php,v 1.39 2009/11/20 04:20:38 webchick Exp $
+// $Id: page.tpl.php,v 1.43 2010/01/30 07:59:25 dries Exp $
 
 /**
  * @file
@@ -34,7 +34,13 @@
  * - $breadcrumb: The breadcrumb trail for the current page.
  *
  * Page content (in order of occurrence in the default page.tpl.php):
+ * - $title_prefix (array): An array containing additional output populated by
+ *   modules, intended to be displayed in front of the main title tag that
+ *   appears in the template.
  * - $title: The page title, for use in the actual HTML content.
+ * - $title_suffix (array): An array containing additional output populated by
+ *   modules, intended to be displayed after the main title tag that appears in
+ *   the template.
  * - $messages: HTML for status and error messages. Should be displayed
  *   prominently.
  * - $tabs (array): Tabs linking to any sub-pages beneath the current page
@@ -55,7 +61,7 @@
  * - $page['sidebar_second']: Items for the second sidebar.
  * - $page['header']: Items for the header region.
  * - $page['footer']: Items for the footer region.
- * 
+ *
  * @see template_preprocess()
  * @see template_preprocess_page()
  * @see template_process()
@@ -98,7 +104,7 @@
 
     <?php if ($main_menu): ?>
       <div id="navigation"><div class="section">
-        <?php print theme('links', array('links' => $main_menu, 'attributes' => array('id' => 'main-menu', 'class' => array('links', 'clearfix')), 'heading' => t('Main menu'))); ?>
+        <?php print theme('links__system_main_menu', array('links' => $main_menu, 'attributes' => array('id' => 'main-menu', 'class' => array('links', 'clearfix')), 'heading' => t('Main menu'))); ?>
       </div></div> <!-- /.section, /#navigation -->
     <?php endif; ?>
 
@@ -112,8 +118,10 @@
 
       <div id="content" class="column"><div class="section">
         <?php if ($page['highlight']): ?><div id="highlight"><?php print render($page['highlight']); ?></div><?php endif; ?>
-        <a name="main-content" id="main-content"></a>
+        <a id="main-content"></a>
+        <?php print render($title_prefix); ?>
         <?php if ($title): ?><h1 class="title" id="page-title"><?php print $title; ?></h1><?php endif; ?>
+        <?php print render($title_suffix); ?>
         <?php if ($tabs): ?><div class="tabs"><?php print render($tabs); ?></div><?php endif; ?>
         <?php print render($page['help']); ?>
         <?php if ($action_links): ?><ul class="action-links"><?php print render($action_links); ?></ul><?php endif; ?>
@@ -136,7 +144,7 @@
     </div></div> <!-- /#main, /#main-wrapper -->
 
     <div id="footer"><div class="section">
-      <?php print theme('links', array('links' => $secondary_menu, 'attributes' => array('id' => 'secondary-menu', 'class' => array('links', 'clearfix')), 'heading' => t('Secondary menu'))); ?>
+      <?php print theme('links__system_secondary_menu', array('links' => $secondary_menu, 'attributes' => array('id' => 'secondary-menu', 'class' => array('links', 'clearfix')), 'heading' => t('Secondary menu'))); ?>
       <?php print render($page['footer']); ?>
     </div></div> <!-- /.section, /#footer -->
 

@@ -1,5 +1,5 @@
 <?php
-// $Id: forum.admin.inc,v 1.27 2009/10/15 12:27:33 dries Exp $
+// $Id: forum.admin.inc,v 1.33 2010/04/24 14:49:13 dries Exp $
 
 /**
  * @file
@@ -55,9 +55,10 @@ function forum_form_forum($form, &$form_state, $edit = array()) {
   );
 
   $form['vid'] = array('#type' => 'hidden', '#value' => variable_get('forum_nav_vocabulary', ''));
-  $form['submit' ] = array('#type' => 'submit', '#value' => t('Save'));
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit' ] = array('#type' => 'submit', '#value' => t('Save'));
   if ($edit['tid']) {
-    $form['delete'] = array('#type' => 'submit', '#value' => t('Delete'));
+    $form['actions']['delete'] = array('#type' => 'submit', '#value' => t('Delete'));
     $form['tid'] = array('#type' => 'hidden', '#value' => $edit['tid']);
   }
   $form['#submit'][] = 'forum_form_submit';
@@ -92,6 +93,8 @@ function forum_form_submit($form, &$form_state) {
       break;
     case SAVED_UPDATED:
       drupal_set_message(t('The @type %term has been updated.', array('%term' => $form_state['values']['name'], '@type' => $type)));
+      // Clear the page and block caches to avoid stale data.
+      cache_clear_all();
       break;
   }
   $form_state['redirect'] = 'admin/structure/forum';
@@ -99,14 +102,15 @@ function forum_form_submit($form, &$form_state) {
 }
 
 /**
- * Theme forum forms.
+ * Returns HTML for a forum form.
  *
  * By default this does not alter the appearance of a form at all,
  * but is provided as a convenience for themers.
  *
  * @param $variables
  *   An associative array containing:
- *   - form: An associative array containing the structure of the form.
+ *   - form: A render element representing the form.
+ *
  * @ingroup themeable
  */
 function theme_forum_form($variables) {
@@ -156,12 +160,13 @@ function forum_form_container($form, &$form_state, $edit = array()) {
     '#type' => 'hidden',
     '#value' => variable_get('forum_nav_vocabulary', ''),
   );
-  $form['submit'] = array(
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Save')
   );
   if ($edit['tid']) {
-    $form['delete'] = array('#type' => 'submit', '#value' => t('Delete'));
+    $form['actions']['delete'] = array('#type' => 'submit', '#value' => t('Delete'));
     $form['tid'] = array('#type' => 'value', '#value' => $edit['tid']);
   }
   $form['#submit'][] = 'forum_form_submit';
@@ -239,12 +244,14 @@ function forum_overview($form, &$form_state) {
   foreach (element_children($form) as $key) {
     if (isset($form[$key]['#term'])) {
       $term = $form[$key]['#term'];
-      $form[$key]['view']['#markup'] = l($term['name'], 'forum/' . $term['tid']);
+      $form[$key]['view']['#href'] = 'forum/' . $term['tid'];
       if (in_array($form[$key]['#term']['tid'], variable_get('forum_containers', array()))) {
-        $form[$key]['edit']['#markup'] = l(t('edit container'), 'admin/structure/forum/edit/container/' . $term['tid']);
+        $form[$key]['edit']['#title'] = t('edit container');
+        $form[$key]['edit']['#href'] = 'admin/structure/forum/edit/container/' . $term['tid'];
       }
       else {
-        $form[$key]['edit']['#markup'] = l(t('edit forum'), 'admin/structure/forum/edit/forum/' . $term['tid']);
+        $form[$key]['edit']['#title'] = t('edit forum');
+        $form[$key]['edit']['#href'] = 'admin/structure/forum/edit/forum/' . $term['tid'];
       }
     }
   }
@@ -255,7 +262,6 @@ function forum_overview($form, &$form_state) {
   // The form needs to have submit and validate handlers set explicitly.
   $form['#theme'] = 'taxonomy_overview_terms';
   $form['#submit'] = array('taxonomy_overview_terms_submit'); // Use the existing taxonomy overview submit handler.
-  $form['#validate'] = array('taxonomy_overview_terms_validate');
   $form['#empty_text'] = t('No containers or forums available. <a href="@container">Add container</a> or <a href="@forum">Add forum</a>.', array('@container' => url('admin/structure/forum/add/container'), '@forum' => url('admin/structure/forum/add/forum')));
   return $form;
 }

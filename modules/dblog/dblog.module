@@ -1,5 +1,5 @@
 <?php
-// $Id: dblog.module,v 1.46 2009/12/06 18:11:41 webchick Exp $
+// $Id: dblog.module,v 1.52 2010/03/27 14:24:14 dries Exp $
 
 /**
  * @file
@@ -28,21 +28,10 @@ function dblog_help($path, $arg) {
       $output .= '<dt>' . t('Debugging site problems') . '</dt>';
       $output .= '<dd>' . t('In case of errors or problems with the site, the <a href="@dblog">Recent log entries</a> page can be useful for debugging, since it shows the sequence of events. The log entries include usage information, warnings, and errors.', array('@dblog' => url('admin/reports/dblog'))) . '</dd>';
       $output .= '</dl>';
-      return $output;	
+      return $output;
     case 'admin/reports/dblog':
       return '<p>' . t('The Database logging module monitors your website, capturing system events in a log (shown here) to be reviewed by an authorized individual at a later time. This log is a list of recorded events containing usage data, performance data, errors, warnings and operational information. It is vital to check the Recent log entries report on a regular basis, as it is often the only way to tell what is going on.') . '</p>';
   }
-}
-
-/**
- * Implements hook_theme().
- */
-function dblog_theme() {
-  return array(
-    'dblog_filters' => array(
-      'render element' => 'form',
-    ),
-  );
 }
 
 /**
@@ -84,14 +73,15 @@ function dblog_menu() {
   return $items;
 }
 
+/**
+ * Implements hook_init().
+ */
 function dblog_init() {
   if (arg(0) == 'admin' && arg(1) == 'reports') {
     // Add the CSS for this module
     drupal_add_css(drupal_get_path('module', 'dblog') . '/dblog.css', array('preprocess' => FALSE));
   }
 }
-
-
 
 /**
  * Implements hook_cron().
@@ -101,30 +91,10 @@ function dblog_init() {
 function dblog_cron() {
   // Cleanup the watchdog table
   if (variable_get('dblog_row_limit', 1000) > 0) {
-    $max = db_query('SELECT MAX(wid) FROM {watchdog}')->fetchField();
-    db_delete('watchdog')
+    $max = Database::getConnection('default', 'default')->query('SELECT MAX(wid) FROM {watchdog}')->fetchField();
+    Database::getConnection('default', 'default')->delete('watchdog')
       ->condition('wid', $max - variable_get('dblog_row_limit', 1000), '<=')
       ->execute();
-  }
-}
-
-/**
- * Implements hook_user_cancel().
- */
-function dblog_user_cancel($edit, $account, $method) {
-  switch ($method) {
-    case 'user_cancel_reassign':
-      db_update('watchdog')
-        ->fields(array('uid' => 0))
-        ->condition('uid', $account->uid)
-        ->execute();
-      break;
-
-    case 'user_cancel_delete':
-      db_delete('watchdog')
-        ->condition('uid', $account->uid)
-        ->execute();
-      break;
   }
 }
 
@@ -172,21 +142,17 @@ function dblog_form_system_logging_settings_alter(&$form, $form_state) {
     '#options' => array(0 => t('All')) + drupal_map_assoc(array(100, 1000, 10000, 100000, 1000000)),
     '#description' => t('The maximum number of entries to keep in the database log. Requires a <a href="@cron">cron maintenance task</a>.', array('@cron' => url('admin/reports/status')))
   );
-  $form['buttons']['#weight'] = 1;
+  $form['actions']['#weight'] = 1;
 }
 
 /**
- * Theme dblog administration filter selector.
- *
- * @ingroup themeable
+ * Implements hook_theme().
  */
-function theme_dblog_filters($variables) {
-  $form = $variables['form'];
-  $output = '';
-
-  foreach (element_children($form['status']) as $key) {
-    $output .= drupal_render($form['status'][$key]);
-  }
-  $output .= '<div id="dblog-admin-buttons">' . drupal_render($form['buttons']) . '</div>';
-  return $output;
+function dblog_theme() {
+  return array(
+    'dblog_message' => array(
+      'variables' => array('event' => NULL, 'link' => FALSE),
+      'file' => 'dblog.admin.inc',
+    ),
+  );
 }

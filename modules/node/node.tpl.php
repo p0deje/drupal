@@ -1,5 +1,5 @@
 <?php
-// $Id: node.tpl.php,v 1.29 2009/12/06 01:00:27 dries Exp $
+// $Id: node.tpl.php,v 1.33 2010/04/08 18:26:42 dries Exp $
 
 /**
  * @file
@@ -7,8 +7,8 @@
  *
  * Available variables:
  * - $title: the (sanitized) title of the node.
- * - $content: An array of node items. Use render($content) to print them all, or
- *   print a subset such as render($content['field_example']). Use
+ * - $content: An array of node items. Use render($content) to print them all,
+ *   or print a subset such as render($content['field_example']). Use
  *   hide($content['field_example']) to temporarily suppress the printing of a
  *   given element.
  * - $user_picture: The node author's picture from user-picture.tpl.php.
@@ -16,12 +16,11 @@
  *   calling format_date() with the desired parameters on the $created variable.
  * - $name: Themed username of node author output from theme_username().
  * - $node_url: Direct url of the current node.
- * - $terms: the themed list of taxonomy term links output from theme_links().
  * - $display_submitted: whether submission information should be displayed.
- * - $contextual_links (array): An array of contextual links for the node.
  * - $classes: String of classes that can be used to style contextually through
  *   CSS. It can be manipulated through the variable $classes_array from
- *   preprocess functions. The default values can be one or more of the following:
+ *   preprocess functions. The default values can be one or more of the
+ *   following:
  *   - node: The current template type, i.e., "theming hook".
  *   - node-[type]: The current node type. For example, if the node is a
  *     "Blog entry" it would result in "node-blog". Note that the machine
@@ -30,8 +29,15 @@
  *   - node-preview: Nodes in preview mode.
  *   The following are controlled through the node publishing options.
  *   - node-promoted: Nodes promoted to the front page.
- *   - node-sticky: Nodes ordered above other non-sticky nodes in teaser listings.
+ *   - node-sticky: Nodes ordered above other non-sticky nodes in teaser
+ *     listings.
  *   - node-unpublished: Unpublished nodes visible only to administrators.
+ * - $title_prefix (array): An array containing additional output populated by
+ *   modules, intended to be displayed in front of the main title tag that
+ *   appears in the template.
+ * - $title_suffix (array): An array containing additional output populated by
+ *   modules, intended to be displayed after the main title tag that appears in
+ *   the template.
  *
  * Other variables:
  * - $node: Full node object. Contains data that may not be safe.
@@ -46,8 +52,8 @@
  * - $id: Position of the node. Increments each time it's output.
  *
  * Node status variables:
- * - $build_mode: Build mode, e.g. 'full', 'teaser'...
- * - $teaser: Flag for the teaser state (shortcut for $build_mode == 'teaser').
+ * - $view_mode: View mode, e.g. 'full', 'teaser'...
+ * - $teaser: Flag for the teaser state (shortcut for $view_mode == 'teaser').
  * - $page: Flag for the full page state.
  * - $promote: Flag for front page promotion state.
  * - $sticky: Flags for sticky post setting.
@@ -75,28 +81,18 @@
 
   <?php print $user_picture; ?>
 
-  <?php if (!$page && !empty($contextual_links)): ?>
-    <?php print render($contextual_links); ?>
-  <?php endif; ?>
-
+  <?php print render($title_prefix); ?>
   <?php if (!$page): ?>
-    <h2<?php print $title_attributes; ?>><a href="<?php print $node_url; ?>"><?php print $node_title; ?></a></h2>
+    <h2<?php print $title_attributes; ?>><a href="<?php print $node_url; ?>"><?php print $title; ?></a></h2>
   <?php endif; ?>
+  <?php print render($title_suffix); ?>
 
-  <?php if ($display_submitted || !empty($content['links']['terms'])): ?>
-    <div class="meta">
-      <?php if ($display_submitted): ?>
-        <span class="submitted">
-          <?php
-            print t('Submitted by !username on !datetime',
-              array('!username' => $name, '!datetime' => $date));
-          ?>
-        </span>
-      <?php endif; ?>
-
-      <?php if (!empty($content['links']['terms'])): ?>
-        <div class="terms terms-inline"><?php print render($content['links']['terms']); ?></div>
-      <?php endif; ?>
+  <?php if ($display_submitted): ?>
+    <div class="submitted">
+      <?php
+        print t('Submitted by !username on !datetime',
+          array('!username' => $name, '!datetime' => $date));
+      ?>
     </div>
   <?php endif; ?>
 

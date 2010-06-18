@@ -1,5 +1,5 @@
 <?php
-// $Id: openid.pages.inc,v 1.24 2009/11/04 04:56:54 webchick Exp $
+// $Id: openid.pages.inc,v 1.28 2010/04/24 14:49:14 dries Exp $
 
 /**
  * @file
@@ -54,8 +54,8 @@ function openid_user_identities($account) {
   }
 
   $build['openid_table'] = array(
-    '#theme' => 'table', 
-    '#header' => $header, 
+    '#theme' => 'table',
+    '#header' => $header,
     '#rows' => $rows,
   );
   $build['openid_user_add'] = drupal_get_form('openid_user_add');
@@ -73,13 +73,14 @@ function openid_user_add() {
     '#type' => 'textfield',
     '#title' => t('OpenID'),
   );
-  $form['submit'] = array('#type' => 'submit', '#value' => t('Add an OpenID'));
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array('#type' => 'submit', '#value' => t('Add an OpenID'));
   return $form;
 }
 
 function openid_user_add_validate($form, &$form_state) {
   // Check for existing entries.
-  $claimed_id = _openid_normalize($form_state['values']['openid_identifier']);
+  $claimed_id = openid_normalize($form_state['values']['openid_identifier']);
   if (db_query("SELECT authname FROM {authmap} WHERE authname = :authname", (array(':authname' => $claimed_id)))->fetchField()) {
     form_set_error('openid_identifier', t('That OpenID is already in use on this site.'));
   }

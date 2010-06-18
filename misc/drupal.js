@@ -1,4 +1,4 @@
-// $Id: drupal.js,v 1.62 2009/12/14 23:57:39 webchick Exp $
+// $Id: drupal.js,v 1.68 2010/05/24 07:22:12 dries Exp $
 
 var Drupal = Drupal || { 'settings': {}, 'behaviors': {}, 'locale': {} };
 
@@ -216,7 +216,7 @@ Drupal.formatPlural = function (count, singular, plural, args) {
   else {
     args['@count[' + index + ']'] = args['@count'];
     delete args['@count'];
-    return Drupal.t(plural.replace('@count', '@count[' + index + ']'));
+    return Drupal.t(plural.replace('@count', '@count[' + index + ']'), args);
   }
 };
 
@@ -248,18 +248,6 @@ Drupal.theme = function (func) {
 };
 
 /**
- * Parse a JSON response.
- *
- * The result is either the JSON object, or an object with 'status' 0 and 'data' an error message.
- */
-Drupal.parseJson = function (data) {
-  if ((data.substring(0, 1) != '{') && (data.substring(0, 1) != '[')) {
-    return { status: 0, data: data.length ? data : Drupal.t('Unspecified error') };
-  }
-  return eval('(' + data + ');');
-};
-
-/**
  * Freeze the current body height (as minimum height). Used to prevent
  * unnecessary upwards scrolling when doing DOM manipulations.
  */
@@ -282,14 +270,13 @@ Drupal.unfreezeHeight = function () {
 };
 
 /**
- * Wrapper around encodeURIComponent() which avoids Apache quirks (equivalent of
- * drupal_encode_path() in PHP). This function should only be used on paths, not
- * on query string arguments.
+ * Encodes a Drupal path for use in a URL.
+ *
+ * For aesthetic reasons slashes are not escaped.
  */
 Drupal.encodePath = function (item, uri) {
   uri = uri || location.href;
-  item = encodeURIComponent(item).replace(/%2F/g, '/');
-  return (uri.indexOf('?q=') != -1) ? item : item.replace(/%26/g, '%2526').replace(/%23/g, '%2523').replace(/\/\//g, '/%252F');
+  return encodeURIComponent(item).replace(/%2F/g, '/');
 };
 
 /**
@@ -366,16 +353,5 @@ Drupal.theme.prototype = {
     return '<em>' + Drupal.checkPlain(str) + '</em>';
   }
 };
-
-/**
- * Return whether the given variable is an object.
- *
- * The HEAD version of jQuery (http://code.jquery.com/jquery-nightly.js)
- * includes an isObject() function, so when that gets released and incorporated
- * into Drupal, this can be removed.
- */
-$.extend({isObject: function(value) {
-  return (value !== null && typeof value === 'object');
-}});
 
 })(jQuery);

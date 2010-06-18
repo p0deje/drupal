@@ -1,11 +1,11 @@
 <?php
-// $Id: filetransfer.inc,v 1.7 2009/12/04 16:31:04 dries Exp $
+// $Id: filetransfer.inc,v 1.9 2010/04/11 18:33:43 dries Exp $
 
 /*
  * Base FileTransfer class.
  *
  * Classes extending this class perform file operations on directories not
- * writeable by the webserver. To achieve this, the class should connect back
+ * writable by the webserver. To achieve this, the class should connect back
  * to the server using some backend (for example FTP or SSH). To keep security,
  * the password should always be asked from the user and never stored. For
  * safety, all methods operate only inside a "jail", by default the Drupal root.
@@ -17,14 +17,23 @@ abstract class FileTransfer {
   protected $port;
 
   /**
-   * The constructer for the UpdateConnection class. This method is also called
+   * The constructor for the UpdateConnection class. This method is also called
    * from the classes that extend this class and override this method.
    */
   function __construct($jail) {
     $this->jail = $jail;
   }
 
-  abstract static function factory($jail, $settings);
+  /**
+   * Classes that extend this class must override the factory() static method.
+   *
+   * @param string $jail
+   * @param array $settings
+   * @return object New instance of the appropriate FileTransfer subclass.
+   */
+  static function factory($jail, $settings) {
+    throw new FileTransferException('FileTransfer::factory() static method not overridden by FileTransfer subclass.');
+  }
 
   /**
    * Implementation of the magic __get() method.
@@ -150,7 +159,7 @@ abstract class FileTransfer {
 
   /**
    * Returns a modified path suitable for passing to the server.
-   * If a path is a windows path, makes it posix compliant by removing the drive letter.
+   * If a path is a windows path, makes it POSIX compliant by removing the drive letter.
    * If $this->chroot has a value, it is stripped from the path to allow for
    * chroot'd filetransfer systems.
    *
@@ -171,13 +180,13 @@ abstract class FileTransfer {
   }
 
   /**
-  * Changes backslahes to slashes, also removes a trailing slash.
+  * Changes backslashes to slashes, also removes a trailing slash.
   *
   * @param string $path
   * @return string
   */
   function sanitizePath($path) {
-    $path = str_replace('\\', '/', $path); // Windows path sanitiation.
+    $path = str_replace('\\', '/', $path); // Windows path sanitization.
     if (substr($path, -1) == '/') {
       $path = substr($path, 0, -1);
     }

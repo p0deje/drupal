@@ -1,5 +1,5 @@
 <?php
-// $Id: book.admin.inc,v 1.29 2009/12/02 19:26:21 dries Exp $
+// $Id: book.admin.inc,v 1.35 2010/05/01 08:12:22 dries Exp $
 
 /**
  * @file
@@ -36,7 +36,7 @@ function book_admin_settings() {
     '#title' => t('Content types allowed in book outlines'),
     '#default_value' => array('book'),
     '#options' => $types,
-    '#description' => t('Users with the %outline-perm permission can add all content types.', array('%add-perm' => t('add content to books'),  '%outline-perm' => t('administer book outlines'))),
+    '#description' => t('Users with the %outline-perm permission can add all content types.', array('%outline-perm' => t('Administer book outlines'))),
     '#required' => TRUE,
   );
   $form['book_child_type'] = array(
@@ -72,7 +72,7 @@ function book_admin_settings_validate($form, &$form_state) {
  * @ingroup forms.
  */
 function book_admin_edit($form, $form_state, $node) {
-  drupal_set_title($node->title[LANGUAGE_NONE][0]['value']);
+  drupal_set_title($node->title);
   $form['#node'] = $node;
   _book_admin_table($node, $form);
   $form['save'] = array(
@@ -124,20 +124,20 @@ function book_admin_edit_submit($form, &$form_state) {
 
       // Update the title if changed.
       if ($row['title']['#default_value'] != $values['title']) {
-        $node = node_load($values['nid'], FALSE);
+        $node = node_load($values['nid']);
         $langcode = LANGUAGE_NONE;
-        $node->title = array($langcode => array(array('value' => $values['title'])));
+        $node->title = $values['title'];
         $node->book['link_title'] = $values['title'];
         $node->revision = 1;
-        $node->log = t('Title changed from %original to %current.', array('%original' => $node->title[$langcode][0]['value'], '%current' => $values['title']));
+        $node->log = t('Title changed from %original to %current.', array('%original' => $node->title, '%current' => $values['title']));
 
         node_save($node);
-        watchdog('content', 'book: updated %title.', array('%title' => $node->title[$langcode][0]['value']), WATCHDOG_NOTICE, l(t('view'), 'node/' . $node->nid));
+        watchdog('content', 'book: updated %title.', array('%title' => $node->title), WATCHDOG_NOTICE, l(t('view'), 'node/' . $node->nid));
       }
     }
   }
 
-  drupal_set_message(t('Updated book %title.', array('%title' => $form['#node']->title[$langcode][0]['value'])));
+  drupal_set_message(t('Updated book %title.', array('%title' => $form['#node']->title)));
 }
 
 /**
@@ -154,7 +154,7 @@ function _book_admin_table($node, &$form) {
   $tree = book_menu_subtree_data($node->book);
   $tree = array_shift($tree); // Do not include the book item itself.
   if ($tree['below']) {
-    $hash = sha1(serialize($tree['below']));
+    $hash = drupal_hash_base64(serialize($tree['below']));
     // Store the hash value as a hidden form element so that we can detect
     // if another user changed the book hierarchy.
     $form['tree_hash'] = array(
@@ -212,10 +212,14 @@ function _book_admin_table_tree($tree, &$form) {
 }
 
 /**
- * Theme function for the book administration page form.
+ * Returns HTML for a book administration form.
  *
- * @ingroup themeable
+ * @param $variables
+ *   An associative array containing:
+ *   - form: A render element representing the form.
+ *
  * @see book_admin_table()
+ * @ingroup themeable
  */
 function theme_book_admin_table($variables) {
   $form = $variables['form'];
@@ -242,8 +246,8 @@ function theme_book_admin_table($variables) {
       drupal_render($form[$key]['weight']),
       drupal_render($form[$key]['plid']) . drupal_render($form[$key]['mlid']),
       l(t('view'), $href),
-      $access ? l(t('edit'), 'node/' . $nid . '/edit', array('query' => $destination)) : '&nbsp',
-      $access ? l(t('delete'), 'node/' . $nid . '/delete', array('query' => $destination) )  : '&nbsp',
+      $access ? l(t('edit'), 'node/' . $nid . '/edit', array('query' => $destination)) : '&nbsp;',
+      $access ? l(t('delete'), 'node/' . $nid . '/delete', array('query' => $destination) )  : '&nbsp;',
     );
     $row = array('data' => $data);
     if (isset($form[$key]['#attributes'])) {

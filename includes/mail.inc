@@ -1,5 +1,5 @@
 <?php
-// $Id: mail.inc,v 1.29 2009/12/04 16:31:04 dries Exp $
+// $Id: mail.inc,v 1.32 2010/06/17 13:16:57 dries Exp $
 
 /**
  * @file
@@ -151,7 +151,7 @@ function drupal_mail($module, $key, $to, $language, $params = array(), $from = N
     // Log errors
     if (!$message['result']) {
       watchdog('mail', 'Error sending e-mail (from %from to %to).', array('%from' => $message['from'], '%to' => $message['to']), WATCHDOG_ERROR);
-      drupal_set_message(t('Unable to send e-mail. Please contact the site administrator if the problem persists.'), 'error');
+      drupal_set_message(t('Unable to send e-mail. Contact the site administrator if the problem persists.'), 'error');
     }
   }
 
@@ -242,7 +242,7 @@ function drupal_mail_system($module, $key) {
   if (empty($instances[$class])) {
     $interfaces = class_implements($class);
     if (isset($interfaces['MailSystemInterface'])) {
-      $instances[$class] = new $class;
+      $instances[$class] = new $class();
     }
     else {
       throw new Exception(t('Class %class does not implement interface %interface', array('%class' => $class, '%interface' => 'MailSystemInterface')));
@@ -575,7 +575,7 @@ function _drupal_html_to_text_pad($text, $pad, $prefix = '') {
   if (($p = strrpos($text, "\n")) === FALSE) {
     $p = -1;
   }
-  $n = max(0, 79 - (strlen($text) - $p));
+  $n = max(0, 79 - (strlen($text) - $p) - strlen($prefix));
   // Add prefix and padding, and restore linebreak.
-  return $text . $prefix . str_repeat($pad, $n - strlen($prefix)) . "\n";
+  return $text . $prefix . str_repeat($pad, $n) . "\n";
 }

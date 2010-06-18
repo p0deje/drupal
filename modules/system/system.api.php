@@ -1,5 +1,5 @@
 <?php
-// $Id: system.api.php,v 1.109 2009/12/13 13:06:45 dries Exp $
+// $Id: system.api.php,v 1.169 2010/06/14 15:41:03 dries Exp $
 
 /**
  * @file
@@ -32,6 +32,8 @@
  *     exists, and automatically load it when required.
  *
  * See system_hook_info() for all hook groups defined by Drupal core.
+ *
+ * @see hook_hook_info_alter().
  */
 function hook_hook_info() {
   $hooks['token_info'] = array(
@@ -41,6 +43,21 @@ function hook_hook_info() {
     'group' => 'tokens',
   );
   return $hooks;
+}
+
+/**
+ * Alter information from hook_hook_info().
+ *
+ * @param $hooks
+ *   Information gathered by module_hook_info() from other modules'
+ *   implementations of hook_hook_info(). Alter this array directly.
+ *   See hook_hook_info() for information on what this may contain.
+ */
+function hook_hook_info_alter(&$hooks) {
+  // Our module wants to completely override the core tokens, so make
+  // sure the core token hooks are not found.
+  $hooks['token_info']['group'] = 'mytokens';
+  $hooks['tokens']['group'] = 'mytokens';
 }
 
 /**
@@ -55,50 +72,58 @@ function hook_hook_info() {
  *
  * @return
  *   An array whose keys are entity type names and whose values identify
- *   properties of those types that the  system needs to know about:
- *   - name: The human-readable name of the type.
+ *   properties of those types that the system needs to know about:
+ *   - label: The human-readable name of the type.
  *   - controller class: The name of the class that is used to load the objects.
- *     The class has to implement the DrupalEntityController interface. Leave
- *     blank to use the DefaultDrupalEntityController implementation.
- *   - base table: (used by DefaultDrupalEntityController) The name of the
+ *     The class has to implement the DrupalEntityControllerInterface interface.
+ *     Leave blank to use the DrupalDefaultEntityController implementation.
+ *   - base table: (used by DrupalDefaultEntityController) The name of the
  *     entity type's base table.
- *   - static cache: (used by DefaultDrupalEntityController) FALSE to disable
+ *   - static cache: (used by DrupalDefaultEntityController) FALSE to disable
  *     static caching of entities during a page request. Defaults to TRUE.
+ *   - field cache: (used by Field API loading and saving of field data) FALSE
+ *     to disable Field API's persistent cache of field data. Only recommended
+ *     if a higher level persistent cache is available for the entity type.
+ *     Defaults to TRUE.
  *   - load hook: The name of the hook which should be invoked by
  *     DrupalDefaultEntityController:attachLoad(), for example 'node_load'.
+ *   - uri callback: A function taking an entity as argument and returning the
+ *     uri elements of the entity, e.g. 'path' and 'options'. The actual entity
+ *     uri can be constructed by passing these elements to url().
  *   - fieldable: Set to TRUE if you want your entity type to be fieldable.
- *   - object keys: An array describing how the Field API can extract the
+ *   - entity keys: An array describing how the Field API can extract the
  *     information it needs from the objects of the type. Elements:
  *     - id: The name of the property that contains the primary id of the
- *       object. Every object passed to the Field API must have this property
- *       and its value must be numeric.
+ *       entity. Every entity object passed to the Field API must have this
+ *       property and its value must be numeric.
  *     - revision: The name of the property that contains the revision id of
- *       the object. The Field API assumes that all revision ids are unique
- *       across all objects of a type.
- *       This element can be omitted if the objects of this type are not
- *       versionable.
+ *       the entity. The Field API assumes that all revision ids are unique
+ *       across all entities of a type. This entry can be omitted if the
+ *       entities of this type are not versionable.
  *     - bundle: The name of the property that contains the bundle name for the
- *       object. The bundle name defines which set of fields are attached to
- *       the object (e.g. what nodes call "content type").
- *       This element can be omitted if this type has no bundles (all objects
- *       have the same fields).
+ *       entity. The bundle name defines which set of fields are attached to
+ *       the entity (e.g. what nodes call "content type"). This entry can be
+ *       omitted if this entity type exposes a single bundle (all entities have
+ *       the same collection of fields). The name of this single bundle will be
+ *       the same as the entity type.
  *   - bundle keys: An array describing how the Field API can extract the
  *     information it needs from the bundle objects for this type (e.g
- *     $vocabulary objects for terms; not applicable for nodes).
- *     This element can be omitted if this type's bundles do not exist as
- *     standalone objects. Elements:
+ *     $vocabulary objects for terms; not applicable for nodes). This entry can
+ *     be omitted if this type's bundles do not exist as standalone objects.
+ *     Elements:
  *     - bundle: The name of the property that contains the name of the bundle
  *       object.
- *   - cacheable: A boolean indicating whether Field API should cache
- *     loaded fields for each object, reducing the cost of
- *     field_attach_load().
- *   - bundles: An array describing all bundles for this object type.
- *     Keys are bundles machine names, as found in the objects' 'bundle'
- *     property (defined in the 'object keys' entry above). Elements:
+ *   - bundles: An array describing all bundles for this object type. Keys are
+ *     bundles machine names, as found in the objects' 'bundle' property
+ *     (defined in the 'entity keys' entry above). Elements:
  *     - label: The human-readable name of the bundle.
- *     - admin: An array of information that allow Field UI pages (currently
- *       implemented in a contributed module) to attach themselves to the
- *       existing administration pages for the bundle. Elements:
+ *     - uri callback: Same as the 'uri callback' key documented above for the
+ *       entity type, but for the bundle only. When determining the URI of an
+ *       entity, if a 'uri callback' is defined for both the entity type and
+ *       the bundle, the one for the bundle is used.
+ *     - admin: An array of information that allows Field UI pages to attach
+ *       themselves to the existing administration pages for the bundle.
+ *       Elements:
  *       - path: the path of the bundle's main administration page, as defined
  *         in hook_menu(). If the path includes a placeholder for the bundle,
  *         the 'bundle argument', 'bundle helper' and 'real path' keys below
@@ -109,24 +134,92 @@ function hook_hook_info() {
  *       - access callback: As in hook_menu(). 'user_access' will be assumed if
  *         no value is provided.
  *       - access arguments: As in hook_menu().
+ *   - view modes: An array describing the view modes for the entity type. View
+ *     modes let entities be displayed differently depending on the context.
+ *     For instance, a node can be displayed differently on its own page
+ *     ('full' mode), on the home page or taxonomy listings ('teaser' mode), or
+ *     in an RSS feed ('rss' mode). Modules taking part in the display of the
+ *     entity (notably the Field API) can adjust their behavior depending on
+ *     the requested view mode. An additional 'default' view mode is available
+ *     for all entity types. This view mode is not intended for actual entity
+ *     display, but holds default display settings. For each available view
+ *     mode, administrators can configure whether it should use its own set of
+ *     field display settings, or just replicate the settings of the 'default'
+ *     view mode, thus reducing the amount of display configurations to keep
+ *     track of. Keys of the array are view mode names. Each view mode is
+ *     described by an array with the following key/value pairs:
+ *     - label: The human-readable name of the view mode
+ *     - custom settings: A boolean specifying whether the view mode should by
+ *     default use its own custom field display settings. If FALSE, entities
+ *     displayed in this view mode will reuse the 'default' display settings by
+ *     default (e.g. right after the module exposing the view mode is enabled),
+ *     but administrators can later use the Field UI to apply custom display
+ *     settings specific to the view mode.
  */
 function hook_entity_info() {
   $return = array(
     'node' => array(
-      'name' => t('Node'),
+      'label' => t('Node'),
       'controller class' => 'NodeController',
       'base table' => 'node',
-      'id key' => 'nid',
-      'revision key' => 'vid',
+      'revision table' => 'node_revision',
+      'uri callback' => 'node_uri',
       'fieldable' => TRUE,
-      'bundle key' => array('bundle' => 'type'),
-      // Node.module handles its own caching.
-      // 'cacheable' => FALSE,
-      // Bundles must provide human readable name so
-      // we can create help and error messages about them.
-      'bundles' => node_type_get_names(),
+      'entity keys' => array(
+        'id' => 'nid',
+        'revision' => 'vid',
+        'bundle' => 'type',
+      ),
+      'bundle keys' => array(
+        'bundle' => 'type',
+      ),
+      'bundles' => array(),
+      'view modes' => array(
+        'full' => array(
+          'label' => t('Full content'),
+          'custom settings' => FALSE,
+        ),
+        'teaser' => array(
+          'label' => t('Teaser'),
+          'custom settings' => TRUE,
+        ),
+        'rss' => array(
+          'label' => t('RSS'),
+          'custom settings' => FALSE,
+        ),
+      ),
     ),
   );
+
+  // Search integration is provided by node.module, so search-related
+  // view modes for nodes are defined here and not in search.module.
+  if (module_exists('search')) {
+    $return['node']['view modes'] += array(
+      'search_index' => array(
+        'label' => t('Search index'),
+        'custom settings' => FALSE,
+      ),
+      'search_result' => array(
+        'label' => t('Search result'),
+        'custom settings' => FALSE,
+      ),
+    );
+  }
+
+  // Bundles must provide a human readable name so we can create help and error
+  // messages, and the path to attach Field admin pages to.
+  foreach (node_type_get_names() as $type => $name) {
+    $return['node']['bundles'][$type] = array(
+      'label' => $name,
+      'admin' => array(
+        'path' => 'admin/structure/types/manage/%node_type',
+        'real path' => 'admin/structure/types/manage/' . str_replace('_', '-', $type),
+        'bundle argument' => 4,
+        'access arguments' => array('administer content types'),
+      ),
+    );
+  }
+
   return $return;
 }
 
@@ -161,8 +254,53 @@ function hook_entity_info_alter(&$entity_info) {
  */
 function hook_entity_load($entities, $type) {
   foreach ($entities as $entity) {
-    $entity->foo = mymodule_add_something($entity, $entity_type);
+    $entity->foo = mymodule_add_something($entity, $type);
   }
+}
+
+/**
+ * Act on entities when inserted.
+ *
+ * Generic insert hook called for all entity types via entity_invoke().
+ *
+ * @param $entity
+ *   The entity object.
+ * @param $type
+ *   The type of entity being inserted (i.e. node, user, comment).
+ */
+function hook_entity_insert($entity, $type) {
+}
+
+/**
+ * Act on entities when updated.
+ *
+ * Generic update hook called for all entity types via entity_invoke().
+ *
+ * @param $entity
+ *   The entity object.
+ * @param $type
+ *   The type of entity being updated (i.e. node, user, comment).
+ */
+function hook_entity_update($entity, $type) {
+}
+
+/**
+ * Alter or execute an EntityFieldQuery.
+ *
+ * @param EntityFieldQuery $query
+ *   An EntityFieldQuery. One of the most important properties to be changed is
+ *   EntityFieldQuery::executeCallback. If this is set to an existing function,
+ *   this function will get the query as its single argument and its result
+ *   will be the returned as the result of EntityFieldQuery::execute(). This can
+ *   be used to change the behavior of EntityFieldQuery entirely. For example,
+ *   the default implementation can only deal with one field storage engine, but
+ *   it is possible to write a module that can query across field storage
+ *   engines. Also, the default implementation presumes entities are stored in
+ *   SQL, but the execute callback could instead query any other entity storage,
+ *   local or remote.
+ */
+function hook_entity_query_alter($query) {
+  $query->executeCallback = 'my_module_query_callback';
 }
 
 /**
@@ -209,6 +347,28 @@ function hook_admin_paths_alter(&$paths) {
   $paths['user/*'] = TRUE;
   // Treat the forum topic node form as a non-administrative page.
   $paths['node/add/forum'] = FALSE;
+}
+
+/**
+ * Act on entities as they are being prepared for view.
+ *
+ * Allows you to operate on multiple entities as they are being prepared for
+ * view. Only use this if attaching the data during the entity_load() phase
+ * is not appropriate, for example when attaching other 'entity' style objects.
+ *
+ * @param $entities
+ *   The entities keyed by entity ID.
+ * @param $type
+ *   The type of entities being loaded (i.e. node, user, comment).
+ */
+function hook_entity_prepare_view($entities, $type) {
+  // Load a specific node into the user object for later theming.
+  if ($type == 'user') {
+    $nodes = mymodule_get_user_nodes(array_keys($entities));
+    foreach ($entities as $uid => $entity) {
+      $entity->user_node = $nodes[$uid];
+    }
+  }
 }
 
 /**
@@ -279,13 +439,32 @@ function hook_cron() {
  *     worker in seconds. Defaults to 15.
  *
  * @see hook_cron()
+ * @see hook_cron_queue_info_alter()
  */
 function hook_cron_queue_info() {
   $queues['aggregator_feeds'] = array(
     'worker callback' => 'aggregator_refresh',
-    'time' => 15,
+    'time' => 60,
   );
   return $queues;
+}
+
+/**
+ * Alter cron queue information before cron runs.
+ *
+ * Called by drupal_cron_run() to allow modules to alter cron queue settings
+ * before any jobs are processesed.
+ *
+ * @param array $queues
+ *   An array of cron queue information.
+ *
+ * @see hook_cron_queue_info()
+ * @see drupal_cron_run()
+ */
+function hook_cron_queue_info_alter(&$queues) {
+  // This site has many feeds so let's spend 90 seconds on each cron run
+  // updating feeds instead of the default 60.
+  $queues['aggregator_feeds']['time'] = 90;
 }
 
 /**
@@ -381,6 +560,7 @@ function hook_exit($destination = NULL) {
  *
  * @param $javascript
  *   An array of all JavaScript being presented on the page.
+ *
  * @see drupal_add_js()
  * @see drupal_get_js()
  * @see drupal_js_defaults()
@@ -410,9 +590,9 @@ function hook_js_alter(&$javascript) {
  *   element of the value.
  * - 'css': Like 'js', an array of CSS elements passed to drupal_add_css().
  * - 'dependencies': An array of libraries that are required for a library. Each
- *   element is an array containing the module and name of the registered
- *   library. Note that all dependencies for each dependent library will be
- *   added when this library is added.
+ *   element is an array listing the module and name of another library. Note
+ *   that all dependencies for each dependent library will also be added when
+ *   this library is added.
  *
  * Registered information for a library should contain re-usable data only.
  * Module- or implementation-specific data and integration logic should be added
@@ -455,7 +635,7 @@ function hook_library() {
     ),
     'dependencies' => array(
       // Require jQuery UI core by System module.
-      array('system' => 'ui'),
+      array('system', 'ui'),
       // Require our other library.
       array('my_module', 'library-1'),
       // Require another library.
@@ -500,12 +680,26 @@ function hook_library_alter(&$libraries, $module) {
  *
  * @param $css
  *   An array of all CSS items (files and inline CSS) being requested on the page.
+ *
  * @see drupal_add_css()
  * @see drupal_get_css()
  */
 function hook_css_alter(&$css) {
   // Remove defaults.css file.
   unset($css[drupal_get_path('module', 'system') . '/defaults.css']);
+}
+
+/**
+ * Alter the commands that are sent to the user through the AJAX framework.
+ *
+ * @param $commands
+ *   An array of all commands that will be sent to the user.
+ *
+ * @see ajax_render()
+ */
+function hook_ajax_render_alter($commands) {
+  // Inject any new status messages into the content area.
+  $commands[] = ajax_command_prepend('#block-system-main .content', theme('status_messages'));
 }
 
 /**
@@ -537,6 +731,499 @@ function hook_page_build(&$page) {
     $page['content']['disclaimer'] = array(
       '#markup' => t('Acme, Inc. is not responsible for the contents of this sample code.'),
       '#weight' => 25,
+    );
+  }
+}
+
+/**
+ * Define menu items and page callbacks.
+ *
+ * This hook enables modules to register paths in order to define how URL
+ * requests are handled. Paths may be registered for URL handling only, or they
+ * can register a link to be placed in a menu (usually the Navigation menu). A
+ * path and its associated information is commonly called a "menu router item".
+ * This hook is rarely called (for example, when modules are enabled), and
+ * its results are cached in the database.
+ *
+ * hook_menu() implementations return an associative array whose keys define
+ * paths and whose values are an associative array of properties for each
+ * path. (The complete list of properties is in the return value section below.)
+ *
+ * The definition for each path may include a page callback function, which is
+ * invoked when the registered path is requested. If there is no other
+ * registered path that fits the requested path better, any further path
+ * components are passed to the callback function. For example, your module
+ * could register path 'abc/def':
+ * @code
+ *   function mymodule_menu() {
+ *     $items['abc/def'] = array(
+ *       'page callback' => 'mymodule_abc_view',
+ *     );
+ *   }
+ *
+ *   function mymodule_abc_view($ghi = 0, $jkl = '') {
+ *     // ...
+ *   }
+ * @endcode
+ * When path 'abc/def' is requested, no further path components are in the
+ * request, and no additional arguments are passed to the callback function (so
+ * $ghi and $jkl would take the default values as defined in the function
+ * signature). When 'abc/def/123/foo' is requested, $ghi will be '123' and
+ * $jkl will be 'foo'. Note that this automatic passing of optional path
+ * arguments applies only to page and theme callback functions.
+ *
+ * In addition to optional path arguments, the page callback and other callback
+ * functions may specify argument lists as arrays. These argument lists may
+ * contain both fixed/hard-coded argument values and integers that correspond
+ * to path components. When integers are used and the callback function is
+ * called, the corresponding path components will be substituted for the
+ * integers. That is, the integer 0 in an argument list will be replaced with
+ * the first path component, integer 1 with the second, and so on (path
+ * components are numbered starting from zero). This substitution feature allows
+ * you to re-use a callback function for several different paths. For example:
+ * @code
+ *   function mymodule_menu() {
+ *     $items['abc/def'] = array(
+ *       'page callback' => 'mymodule_abc_view',
+ *       'page arguments' => array(1, 'foo'),
+ *     );
+ *   }
+ * @endcode
+ * When path 'abc/def' is requested, the page callback function will get 'def'
+ * as the first argument and (always) 'foo' as the second argument.
+ *
+ * Note that if a page or theme callback function has an argument list array,
+ * these arguments will be passed first to the function, followed by any
+ * any arguments generated by optional path arguments as described above.
+ *
+ * Special care should be taken for the page callback drupal_get_form(), because
+ * your specific form callback function will always receive $form and
+ * &$form_state as the first function arguments:
+ * @code
+ *   function mymodule_abc_form($form, &$form_state) {
+ *     // ...
+ *     return $form;
+ *   }
+ * @endcode
+ * See @link form_api Form API documentation @endlink for details.
+ *
+ * Wildcards within paths also work with integer substitution. For example,
+ * your module could register path 'my-module/%/edit':
+ * @code
+ *   $items['my-module/%/edit'] = array(
+ *     'page callback' => 'mymodule_abc_edit',
+ *     'page arguments' => array(1),
+ *   );
+ * @endcode
+ * When path 'my-module/foo/edit' is requested, integer 1 will be replaced
+ * with 'foo' and passed to the callback function.
+ *
+ * Registered paths may also contain special "auto-loader" wildcard components
+ * in the form of '%mymodule_abc', where the '%' part means that this path
+ * component is a wildcard, and the 'mymodule_abc' part defines the prefix for a
+ * load function, which here would be named mymodule_abc_load(). When a matching
+ * path is requested, your load function will receive as its first argument the
+ * path component in the position of the wildcard; load functions may also be
+ * passed additional arguments (see "load arguments" in the return value
+ * section below). For example, your module could register path
+ * 'my-module/%mymodule_abc/edit':
+ * @code
+ *   $items['my-module/%mymodule_abc/edit'] = array(
+ *     'page callback' => 'mymodule_abc_edit',
+ *     'page arguments' => array(1),
+ *   );
+ * @endcode
+ * When path 'my-module/123/edit' is requested, your load function
+ * mymodule_abc_load() will be invoked with the argument '123', and should
+ * load and return an "abc" object with internal id 123:
+ * @code
+ *   function mymodule_abc_load($abc_id) {
+ *     return db_query("SELECT * FROM {mymodule_abc} WHERE abc_id = :abc_id", array(':abc_id' => $abc_id))->fetchObject();
+ *   }
+ * @endcode
+ * This 'abc' object will then be passed into the page callback function
+ * mymodule_abc_edit() to replace the integer 1 in the page arguments.
+ *
+ * You can also make groups of menu items to be rendered (by default) as tabs
+ * on a page. To do that, first create one menu item of type MENU_NORMAL_ITEM,
+ * with your chosen path, such as 'foo'. Then duplicate that menu item, using a
+ * subdirectory path, such as 'foo/tab1', and changing the type to
+ * MENU_DEFAULT_LOCAL_TASK to make it the default tab for the group. Then add
+ * the additional tab items, with paths such as "foo/tab2" etc., with type
+ * MENU_LOCAL_TASK. Example:
+ * @code
+ * // Make "Foo settings" appear on the admin Config page
+ * $items['admin/config/foo'] = array(
+ *   'title' => 'Foo settings',
+ *   'type' => MENU_NORMAL_ITEM,
+ *   // page callback, etc. need to be added here
+ * );
+ * // Make "Global settings" the main tab on the "Foo settings" page
+ * $items['admin/config/foo/global'] = array(
+ *   'title' => 'Global settings',
+ *   'type' => MENU_DEFAULT_LOCAL_TASK,
+ *   // access callback, page callback, and theme callback will be inherited
+ *   // from 'admin/config/foo', if not specified here to override
+ * );
+ * // Make an additional tab called "Node settings" on "Foo settings"
+ * $items['admin/config/foo/node'] = array(
+ *   'title' => 'Node settings',
+ *   'type' => MENU_LOCAL_TASK,
+ *   // access callback, page callback, and theme callback will be inherited
+ *   // from 'admin/config/foo', if not specified here to override
+ * );
+ * @endcode
+ *
+ * @return
+ *   An array of menu items. Each menu item has a key corresponding to the
+ *   Drupal path being registered. The corresponding array value is an
+ *   associative array that may contain the following key-value pairs:
+ *   - "title": Required. The untranslated title of the menu item.
+ *   - "title callback": Function to generate the title; defaults to t().
+ *     If you require only the raw string to be output, set this to FALSE.
+ *   - "title arguments": Arguments to send to t() or your custom callback,
+ *     with path component substitution as described above.
+ *   - "description": The untranslated description of the menu item.
+ *   - "page callback": The function to call to display a web page when the user
+ *     visits the path. If omitted, the parent menu item's callback will be used
+ *     instead.
+ *   - "page arguments": An array of arguments to pass to the page callback
+ *     function, with path component substitution as described above.
+ *   - "delivery callback": The function to call to package the result of the
+ *     page callback function and send it to the browser. Defaults to
+ *     drupal_deliver_html_page() unless a value is inherited from a parent menu
+ *     item.
+ *   - "access callback": A function returning a boolean value that determines
+ *     whether the user has access rights to this menu item. Defaults to
+ *     user_access() unless a value is inherited from a parent menu item.
+ *   - "access arguments": An array of arguments to pass to the access callback
+ *     function, with path component substitution as described above.
+ *   - "theme callback": Optional. A function returning the machine-readable
+ *     name of the default theme that will be used to render the page. If this
+ *     function is provided, it is expected to return a currently-active theme
+ *     on the site (otherwise, the main site theme will be used instead). If no
+ *     function is provided, the main site theme will also be used, unless a
+ *     value is inherited from a parent menu item. In all cases, the results of
+ *     this function can be dynamically overridden for a particular page
+ *     request by modules which implement hook_custom_theme().
+ *   - "theme arguments": An array of arguments to pass to the theme callback
+ *     function, with path component substitution as described above.
+ *   - "file": A file that will be included before the page callback is called;
+ *     this allows page callback functions to be in separate files. The file
+ *     should be relative to the implementing module's directory unless
+ *     otherwise specified by the "file path" option. Does not apply to other
+ *     callbacks (only page callback).
+ *   - "file path": The path to the directory containing the file specified in
+ *     "file". This defaults to the path to the module implementing the hook.
+ *   - "load arguments": An array of arguments to be passed to each of the
+ *     wildcard object loaders in the path, after the path argument itself.
+ *     For example, if a module registers path node/%node/revisions/%/view
+ *     with load arguments set to array(3), the '%node' in the path indicates
+ *     that the loader function node_load() will be called with the second
+ *     path component as the first argument. The 3 in the load arguments
+ *     indicates that the fourth path component will also be passed to
+ *     node_load() (numbering of path components starts at zero). So, if path
+ *     node/12/revisions/29/view is requested, node_load(12, 29) will be called.
+ *     There are also two "magic" values that can be used in load arguments.
+ *     "%index" indicates the index of the wildcard path component. "%map"
+ *     indicates the path components as an array. For example, if a module
+ *     registers for several paths of the form 'user/%user_category/edit/*', all
+ *     of them can use the same load function user_category_load(), by setting
+ *     the load arguments to array('%map', '%index'). For instance, if the user
+ *     is editing category 'foo' by requesting path 'user/32/edit/foo', the load
+ *     function user_category_load() will be called with 32 as its first
+ *     argument, the array ('user', 32, 'edit', 'foo') as the map argument,
+ *     and 1 as the index argument (because %user_category is the second path
+ *     component and numbering starts at zero). user_category_load() can then
+ *     use these values to extract the information that 'foo' is the category
+ *     being requested.
+ *   - "weight": An integer that determines the relative position of items in
+ *     the menu; higher-weighted items sink. Defaults to 0. Menu items with the
+ *     same weight are ordered alphabetically.
+ *   - "menu_name": Optional. Set this to a custom menu if you don't want your
+ *     item to be placed in Navigation.
+ *   - "context": (optional) Defines the context a tab may appear in. By
+ *     default, all tabs are only displayed as local tasks when being rendered
+ *     in a page context. All tabs that should be accessible as contextual links
+ *     in page region containers outside of the parent menu item's primary page
+ *     context should be registered using one of the following contexts:
+ *     - MENU_CONTEXT_PAGE: (default) The tab is displayed as local task for the
+ *       page context only.
+ *     - MENU_CONTEXT_INLINE: The tab is displayed as contextual link outside of
+ *       the primary page context only.
+ *     Contexts can be combined. For example, to display a tab both on a page
+ *     and inline, a menu router item may specify:
+ *     @code
+ *       'context' => MENU_CONTEXT_PAGE | MENU_CONTEXT_INLINE,
+ *     @endcode
+ *   - "tab_parent": For local task menu items, the path of the task's parent
+ *     item; defaults to the same path without the last component (e.g., the
+ *     default parent for 'admin/people/create' is 'admin/people').
+ *   - "tab_root": For local task menu items, the path of the closest non-tab
+ *     item; same default as "tab_parent".
+ *   - "block callback": Name of a function used to render the block on the
+ *     system administration page for this item (called with no arguments).
+ *     If not provided, system_admin_menu_block() is used to generate it.
+ *   - "position": Position of the block ('left' or 'right') on the system
+ *     administration page for this item.
+ *   - "type": A bitmask of flags describing properties of the menu item.
+ *     Many shortcut bitmasks are provided as constants in menu.inc:
+ *     - MENU_NORMAL_ITEM: Normal menu items show up in the menu tree and can be
+ *       moved/hidden by the administrator.
+ *     - MENU_CALLBACK: Callbacks simply register a path so that the correct
+ *       information is generated when the path is accessed.
+ *     - MENU_SUGGESTED_ITEM: Modules may "suggest" menu items that the
+ *       administrator may enable.
+ *     - MENU_LOCAL_ACTION: Local actions are menu items that describe actions
+ *       on the parent item such as adding a new user or block, and are
+ *       rendered in the action-links list in your theme.
+ *     - MENU_LOCAL_TASK: Local tasks are menu items that describe different
+ *       displays of data, and are generally rendered as tabs.
+ *     - MENU_DEFAULT_LOCAL_TASK: Every set of local tasks should provide one
+ *       "default" task, which should display the same page as the parent item.
+ *     If the "type" element is omitted, MENU_NORMAL_ITEM is assumed.
+ *
+ * For a detailed usage example, see page_example.module.
+ * For comprehensive documentation on the menu system, see
+ * http://drupal.org/node/102338.
+ */
+function hook_menu() {
+  $items['blog'] = array(
+    'title' => 'blogs',
+    'page callback' => 'blog_page',
+    'access arguments' => array('access content'),
+    'type' => MENU_SUGGESTED_ITEM,
+  );
+  $items['blog/feed'] = array(
+    'title' => 'RSS feed',
+    'page callback' => 'blog_feed',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+ * Alter the data being saved to the {menu_router} table after hook_menu is invoked.
+ *
+ * This hook is invoked by menu_router_build(). The menu definitions are passed
+ * in by reference. Each element of the $items array is one item returned
+ * by a module from hook_menu. Additional items may be added, or existing items
+ * altered.
+ *
+ * @param $items
+ *   Associative array of menu router definitions returned from hook_menu().
+ */
+function hook_menu_alter(&$items) {
+  // Example - disable the page at node/add
+  $items['node/add']['access callback'] = FALSE;
+}
+
+/**
+ * Alter the data being saved to the {menu_links} table by menu_link_save().
+ *
+ * @param $item
+ *   Associative array defining a menu link as passed into menu_link_save().
+ */
+function hook_menu_link_alter(&$item) {
+  // Example 1 - make all new admin links hidden (a.k.a disabled).
+  if (strpos($item['link_path'], 'admin') === 0 && empty($item['mlid'])) {
+    $item['hidden'] = 1;
+  }
+  // Example 2  - flag a link to be altered by hook_translated_menu_link_alter()
+  if ($item['link_path'] == 'devel/cache/clear') {
+    $item['options']['alter'] = TRUE;
+  }
+}
+
+/**
+ * Alter a menu link after it's translated, but before it's rendered.
+ *
+ * This hook may be used, for example, to add a page-specific query string.
+ * For performance reasons, only links that have $item['options']['alter'] == TRUE
+ * will be passed into this hook. The $item['options']['alter'] flag should
+ * generally be set using hook_menu_link_alter().
+ *
+ * @param $item
+ *   Associative array defining a menu link after _menu_link_translate()
+ * @param $map
+ *   Associative array containing the menu $map (path parts and/or objects).
+ */
+function hook_translated_menu_link_alter(&$item, $map) {
+  if ($item['href'] == 'devel/cache/clear') {
+    $item['localized_options']['query'] = drupal_get_destination();
+  }
+}
+
+/**
+ * Inform modules that a menu link has been created.
+ *
+ * This hook is used to notify modules that menu items have been
+ * created. Contributed modules may use the information to perform
+ * actions based on the information entered into the menu system.
+ *
+ * @param $link
+ *   Associative array defining a menu link as passed into menu_link_save().
+ *
+ * @see hook_menu_link_update()
+ * @see hook_menu_link_delete()
+ */
+function hook_menu_link_insert($link) {
+  // In our sample case, we track menu items as editing sections
+  // of the site. These are stored in our table as 'disabled' items.
+  $record['mlid'] = $link['mlid'];
+  $record['menu_name'] = $link['menu_name'];
+  $record['status'] = 0;
+  drupal_write_record('menu_example', $record);
+}
+
+/**
+ * Inform modules that a menu link has been updated.
+ *
+ * This hook is used to notify modules that menu items have been
+ * updated. Contributed modules may use the information to perform
+ * actions based on the information entered into the menu system.
+ *
+ * @param $link
+ *   Associative array defining a menu link as passed into menu_link_save().
+ *
+ * @see hook_menu_link_insert()
+ * @see hook_menu_link_delete()
+ */
+function hook_menu_link_update($link) {
+  // If the parent menu has changed, update our record.
+  $menu_name = db_result(db_query("SELECT mlid, menu_name, status FROM {menu_example} WHERE mlid = :mlid", array(':mlid' => $link['mlid'])));
+  if ($menu_name != $link['menu_name']) {
+    db_update('menu_example')
+      ->fields(array('menu_name' => $link['menu_name']))
+      ->condition('mlid', $link['mlid'])
+      ->execute();
+  }
+}
+
+/**
+ * Inform modules that a menu link has been deleted.
+ *
+ * This hook is used to notify modules that menu items have been
+ * deleted. Contributed modules may use the information to perform
+ * actions based on the information entered into the menu system.
+ *
+ * @param $link
+ *   Associative array defining a menu link as passed into menu_link_save().
+ *
+ * @see hook_menu_link_insert()
+ * @see hook_menu_link_update()
+ */
+function hook_menu_link_delete($link) {
+  // Delete the record from our table.
+  db_delete('menu_example')
+    ->condition('mlid', $link['mlid'])
+    ->execute();
+}
+
+/**
+ * Alter tabs and actions displayed on the page before they are rendered.
+ *
+ * This hook is invoked by menu_local_tasks(). The system-determined tabs and
+ * actions are passed in by reference. Additional tabs or actions may be added,
+ * or existing items altered.
+ *
+ * Each tab or action is an associative array containing:
+ * - #theme: The theme function to use to render.
+ * - #link: An associative array containing:
+ *   - title: The localized title of the link.
+ *   - href: The system path to link to.
+ *   - localized_options: An array of options to pass to url().
+ * - #active: Whether the link should be marked as 'active'.
+ *
+ * @param $data
+ *   An associative array containing:
+ *   - actions: An associative array containing:
+ *     - count: The amount of actions determined by the menu system, which can
+ *       be ignored.
+ *     - output: A list of of actions, each one being an associative array
+ *       as described above.
+ *   - tabs: An indexed array (list) of tab levels (up to 2 levels), each
+ *     containing an associative array:
+ *     - count: The amount of tabs determined by the menu system. This value
+ *       does not need to be altered if there is more than one tab.
+ *     - output: A list of of tabs, each one being an associative array as
+ *       described above.
+ */
+function hook_menu_local_tasks_alter(&$data, $router_item, $root_path) {
+  // Add an action linking to node/add to all pages.
+  $data['actions']['output'][] = array(
+    '#theme' => 'menu_local_task',
+    '#link' => array(
+      'title' => t('Add new content'),
+      'href' => 'node/add',
+      'localized_options' => array(
+        'attributes' => array(
+          'title' => t('Add new content'),
+        ),
+      ),
+    ),
+  );
+
+  // Add a tab linking to node/add to all pages.
+  $data['tabs'][0]['output'][] = array(
+    '#theme' => 'menu_local_task',
+    '#link' => array(
+      'title' => t('Example tab'),
+      'href' => 'node/add',
+      'localized_options' => array(
+        'attributes' => array(
+          'title' => t('Add new content'),
+        ),
+      ),
+    ),
+    // Define whether this link is active. This can be omitted for
+    // implementations that add links to pages outside of the current page
+    // context.
+    '#active' => ($router_item['path'] == $root_path),
+  );
+}
+
+/**
+ * Alter contextual links before they are rendered.
+ *
+ * This hook is invoked by menu_contextual_links(). The system-determined
+ * contextual links are passed in by reference. Additional links may be added
+ * or existing links can be altered.
+ *
+ * Each contextual link must at least contain:
+ * - title: The localized title of the link.
+ * - href: The system path to link to.
+ * - localized_options: An array of options to pass to url().
+ *
+ * @param $links
+ *   An associative array containing contextual links for the given $root_path,
+ *   as described above. The array keys are used to build CSS class names for
+ *   contextual links and must therefore be unique for each set of contextual
+ *   links.
+ * @param $router_item
+ *   The menu router item belonging to the $root_path being requested.
+ * @param $root_path
+ *   The (parent) path that has been requested to build contextual links for.
+ *   This is a normalized path, which means that an originally passed path of
+ *   'node/123' became 'node/%'.
+ *
+ * @see menu_contextual_links()
+ * @see hook_menu()
+ * @see system_preprocess()
+ */
+function hook_menu_contextual_links_alter(&$links, $router_item, $root_path) {
+  // Add a link to all contextual links for nodes.
+  if ($root_path == 'node/%') {
+    $links['foo'] = array(
+      'title' => t('Do fu'),
+      'href' => 'foo/do',
+      'localized_options' => array(
+        'query' => array(
+          'foo' => 'bar',
+        ),
+      ),
     );
   }
 }
@@ -604,10 +1291,14 @@ function hook_page_alter(&$page) {
  * Perform alterations before a form is rendered.
  *
  * One popular use of this hook is to add form elements to the node form. When
- * altering a node form, the node object retrieved at from $form['#node'].
+ * altering a node form, the node object can be accessed at $form['#node'].
  *
  * Note that instead of hook_form_alter(), which is called for all forms, you
- * can also use hook_form_FORM_ID_alter() to alter a specific form.
+ * can also use hook_form_FORM_ID_alter() to alter a specific form. For each
+ * module (in system weight order) the general form alter hook implementation
+ * is invoked first, then the form ID specific alter implementation is called.
+ * After all module hook implementations are invoked, the hook_form_alter()
+ * implementations from themes are invoked in the same manner.
  *
  * @param $form
  *   Nested array of form elements that comprise the form.
@@ -616,6 +1307,8 @@ function hook_page_alter(&$page) {
  * @param $form_id
  *   String representing the name of the form itself. Typically this is the
  *   name of the function that generated the form.
+ *
+ * @see hook_form_FORM_ID_alter()
  */
 function hook_form_alter(&$form, &$form_state, $form_id) {
   if (isset($form['type']) && $form['type']['#value'] . '_node_settings' == $form_id) {
@@ -635,16 +1328,13 @@ function hook_form_alter(&$form, &$form_state, $form_id) {
  * rather than implementing hook_form_alter() and checking the form ID, or
  * using long switch statements to alter multiple forms.
  *
- * Note that this hook fires before hook_form_alter(). Therefore all
- * implementations of hook_form_FORM_ID_alter() will run before all implementations
- * of hook_form_alter(), regardless of the module order.
- *
  * @param $form
  *   Nested array of form elements that comprise the form.
  * @param $form_state
  *   A keyed array containing the current state of the form.
  *
- * @see drupal_prepare_form().
+ * @see hook_form_alter()
+ * @see drupal_prepare_form()
  */
 function hook_form_FORM_ID_alter(&$form, &$form_state) {
   // Modification for the form with the given form ID goes here. For example, if
@@ -660,53 +1350,29 @@ function hook_form_FORM_ID_alter(&$form, &$form_state) {
 }
 
 /**
- * Allow themes to alter the theme-specific settings form.
+ * Map form_ids to form builder functions.
  *
- * With this hook, themes can alter the theme-specific settings form in any way
- * allowable by Drupal's Forms API, such as adding form elements, changing
- * default values and removing form elements. See the Forms API documentation on
- * api.drupal.org for detailed information.
+ * By default, when drupal_get_form() is called, the system will look for a
+ * function with the same name as the form ID, and use that function to build
+ * the form. This hook allows you to override that behavior in two ways.
  *
- * Note that the base theme's form alterations will be run before any sub-theme
- * alterations.
+ * First, you can use this hook to tell the form system to use a different
+ * function to build certain forms in your module; this is often used to define
+ * a form "factory" function that is used to build several similar forms. In
+ * this case, your hook implementation will likely ignore all of the input
+ * arguments. See node_forms() for an example of this.
  *
- * @param $form
- *   Nested array of form elements that comprise the form.
- * @param $form_state
- *   A keyed array containing the current state of the form.
- */
-function hook_form_system_theme_settings_alter(&$form, &$form_state) {
-  // Add a checkbox to toggle the breadcrumb trail.
-  $form['toggle_breadcrumb'] = array(
-    '#type' => 'checkbox',
-    '#title' => t('Display the breadcrumb'),
-    '#default_value' => theme_get_setting('toggle_breadcrumb'),
-    '#description'   => t('Show a trail of links from the homepage to the current page.'),
-  );
-}
-
-/**
- * Map form_ids to builder functions.
- *
- * This hook allows modules to build multiple forms from a single form "factory"
- * function but each form will have a different form id for submission,
- * validation, theming or alteration by other modules.
- *
- * The 'callback arguments' will be passed as parameters to the function defined
- * in 'callback'. In case the code that calls drupal_get_form() also passes
- * parameters, then the 'callback' function will receive the
- * 'callback arguments' specified in hook_forms() before those that have been
- * passed to drupal_get_form().
- *
- * See node_forms() for an actual example of how multiple forms share a common
- * building function.
+ * Second, you could use this hook to define how to build a form with a
+ * dynamically-generated form ID. In this case, you would need to verify that
+ * the $form_id input matched your module's format for dynamically-generated
+ * form IDs, and if so, act appropriately.
  *
  * @param $form_id
  *   The unique string identifying the desired form.
  * @param $args
- *   An array containing the original arguments provided to drupal_get_form().
- *   These are always passed to the form builder and do not have to be specified
- *   manually in 'callback arguments'.
+ *   An array containing the original arguments provided to drupal_get_form()
+ *   or drupal_form_submit(). These are always passed to the form builder and
+ *   do not have to be specified manually in 'callback arguments'.
  *
  * @return
  *   An associative array whose keys define form_ids and whose values are an
@@ -761,7 +1427,7 @@ function hook_forms($form_id, $args) {
 function hook_boot() {
   // we need user_access() in the shutdown function. make sure it gets loaded
   drupal_load('module', 'user');
-  register_shutdown_function('devel_shutdown');
+  drupal_register_shutdown_function('devel_shutdown');
 }
 
 /**
@@ -828,7 +1494,7 @@ function hook_image_toolkits() {
  * invoke hook_mail_alter(). For example, a contributed module directly
  * calling the drupal_mail_system()->mail() or PHP mail() function
  * will not invoke this hook. All core modules use drupal_mail() for
- * messaging, it is best practice but not manditory in contributed modules.
+ * messaging, it is best practice but not mandatory in contributed modules.
  *
  * @param $message
  *   An array containing the message data. Keys in this array include:
@@ -863,6 +1529,32 @@ function hook_image_toolkits() {
 function hook_mail_alter(&$message) {
   if ($message['id'] == 'modulename_messagekey') {
     $message['body'][] = "--\nMail sent out from " . variable_get('sitename', t('Drupal'));
+  }
+}
+
+/**
+ * Alter the registry of modules implementing a hook.
+ *
+ * This hook is invoked during module_implements(). A module may implement this
+ * hook in order to reorder the implementing modules, which are otherwise
+ * ordered by the module's system weight.
+ *
+ * @param &$implementations
+ *   An array keyed by the module's name. The value of each item corresponds
+ *   to a $group, which is usually FALSE, unless the implementation is in a
+ *   file named $module.$group.inc.
+ * @param $hook
+ *   The name of the module hook being implemented.
+ */
+function hook_module_implements_alter(&$implementations, $hook) {
+  if ($hook == 'rdf_mapping') {
+    // Move my_module_rdf_mapping() to the end of the list. module_implements()
+    // iterates through $implementations with a foreach loop which PHP iterates
+    // in the order that the items were added, so to move an item to the end of
+    // the array, we remove it and then add it.
+    $group = $implementations['my_module'];
+    unset($implementations['my_module']);
+    $implementations['my_module'] = $group;
   }
 }
 
@@ -902,13 +1594,22 @@ function hook_system_info_alter(&$info, $file, $type) {
  * For a detailed usage example, see page_example.module.
  *
  * @return
- *   An array of which permission names are the keys and their corresponding
- *   values are descriptions of each permission.
- *   The permission names (keys of the array) must not be wrapped with
- *   the t() function, since the string extractor takes care of
- *   extracting permission names defined in the perm hook for
- *   translation. The permission descriptions (values of the array)
- *   should be wrapped in the t() function so they can be translated.
+ *   An array whose keys are permission names and whose corresponding values
+ *   are arrays containing the following key-value pairs:
+ *   - title: The human-readable name of the permission, to be shown on the
+ *     permission administration page. This should be wrapped in the t()
+ *     function so it can be translated.
+ *   - description: (optional) A description of what the permission does. This
+ *     should be wrapped in the t() function so it can be translated.
+ *   - restrict access: (optional) A boolean which can be set to TRUE to
+ *     indicate that site administrators should restrict access to this
+ *     permission to trusted users. This should be used for permissions that
+ *     have inherent security risks across a variety of potential use cases
+ *     (for example, the "administer filters" and "bypass node access"
+ *     permissions provided by Drupal core). When set to TRUE, a standard
+ *     warning message defined in user_admin_permissions() will be associated
+ *     with the permission and displayed with it on the permission
+ *     administration page. Defaults to FALSE.
  */
 function hook_permission() {
   return array(
@@ -922,93 +1623,92 @@ function hook_permission() {
 /**
  * Register a module (or theme's) theme implementations.
  *
- * Modules and themes implementing this return an array of arrays. The key
- * to each sub-array is the internal name of the hook, and the array contains
- * info about the hook. Each array may contain the following items:
- *
- * - variables: (required if "render element" not present) An array of
- *   variables that this theme hook uses. This value allows the theme layer to
- *   properly utilize templates. Each array key represents the name of the
- *   variable and the value will be used as the default value if it is not given
- *   when theme() is called. Template implementations receive these arguments as
- *   variables in the template file. Function implementations are passed this
- *   array data in the $variables parameter.
- * - render element: (required if "variables" not present) A string that is the
- *   name of the sole renderable element to pass to the theme function. The
- *   string represents the name of the "variable" that will hold the renderable
- *   array inside any optional preprocess or process functions. Cannot be used
- *   with the "variables" item; only one or the other, not both, can be present
- *   in a hook's info array.
- * - file: The file the implementation resides in. This file will be included
- *   prior to the theme being rendered, to make sure that the function or
- *   preprocess function (as needed) is actually loaded; this makes it possible
- *   to split theme functions out into separate files quite easily.
- * - path: Override the path of the file to be used. Ordinarily the module or
- *   theme path will be used, but if the file will not be in the default path,
- *   include it here. This path should be relative to the Drupal root
- *   directory.
- * - template: If specified, this theme implementation is a template, and this
- *   is the template file <b>without an extension</b>. Do not put .tpl.php
- *   on this file; that extension will be added automatically by the default
- *   rendering engine (which is PHPTemplate). If 'path', above, is specified,
- *   the template should also be in this path.
- * - function: If specified, this will be the function name to invoke for this
- *   implementation. If neither file nor function is specified, a default
- *   function name will be assumed. For example, if a module registers
- *   the 'node' theme hook, 'theme_node' will be assigned to its function.
- *   If the chameleon theme registers the node hook, it will be assigned
- *   'chameleon_node' as its function.
- * - pattern: A regular expression pattern to be used to allow this theme
- *   implementation to have a dynamic name. The convention is to use __ to
- *   differentiate the dynamic portion of the theme. For example, to allow
- *   forums to be themed individually, the pattern might be: 'forum__'. Then,
- *   when the forum is themed, call: <code>theme(array('forum__' . $tid, 'forum'),
- *   $forum)</code>.
- * - preprocess functions: A list of functions used to preprocess this data.
- *   Ordinarily this won't be used; it's automatically filled in. By default,
- *   for a module this will be filled in as template_preprocess_HOOK. For
- *   a theme this will be filled in as phptemplate_preprocess and
- *   phptemplate_preprocess_HOOK as well as themename_preprocess and
- *   themename_preprocess_HOOK.
- * - override preprocess functions: Set to TRUE when a theme does NOT want the
- *   standard preprocess functions to run. This can be used to give a theme
- *   FULL control over how variables are set. For example, if a theme wants
- *   total control over how certain variables in the page.tpl.php are set,
- *   this can be set to true. Please keep in mind that when this is used
- *   by a theme, that theme becomes responsible for making sure necessary
- *   variables are set.
- * - type: (automatically derived) Where the theme hook is defined:
- *   'module', 'theme_engine', or 'theme'.
- * - theme path: (automatically derived) The directory path of the theme or
- *   module, so that it doesn't need to be looked up.
- * - theme paths: (automatically derived) An array of template suggestions where
- *   .tpl.php files related to this theme hook may be found.
- *
  * The following parameters are all optional.
  *
- * @param $existing
+ * @param array $existing
  *   An array of existing implementations that may be used for override
  *   purposes. This is primarily useful for themes that may wish to examine
  *   existing implementations to extract data (such as arguments) so that
  *   it may properly register its own, higher priority implementations.
  * @param $type
- *   What 'type' is being processed. This is primarily useful so that themes
- *   tell if they are the actual theme being called or a parent theme.
- *   May be one of:
- *     - module: A module is being checked for theme implementations.
- *     - base_theme_engine: A theme engine is being checked for a theme which is a parent of the actual theme being used.
- *     - theme_engine: A theme engine is being checked for the actual theme being used.
- *     - base_theme: A base theme is being checked for theme implementations.
- *     - theme: The actual theme in use is being checked.
+ *   Whether a theme, module, etc. is being processed. This is primarily useful
+ *   so that themes tell if they are the actual theme being called or a parent
+ *   theme. May be one of:
+ *   - 'module': A module is being checked for theme implementations.
+ *   - 'base_theme_engine': A theme engine is being checked for a theme that is
+ *     a parent of the actual theme being used.
+ *   - 'theme_engine': A theme engine is being checked for the actual theme
+ *     being used.
+ *   - 'base_theme': A base theme is being checked for theme implementations.
+ *   - 'theme': The actual theme in use is being checked.
  * @param $theme
- *   The actual name of theme that is being being checked (mostly only useful for
- *   theme engine).
+ *   The actual name of theme, module, etc. that is being being processed.
  * @param $path
  *   The directory path of the theme or module, so that it doesn't need to be
  *   looked up.
  *
- * @return
- *   A keyed array of theme hooks.
+ * @return array
+ *   An associative array of theme hook information. The keys on the outer
+ *   array are the internal names of the hooks, and the values are arrays
+ *   containing information about the hook. Each array may contain the
+ *   following elements:
+ *   - variables: (required if "render element" not present) An array of
+ *     variables that this theme hook uses. This value allows the theme layer to
+ *     properly utilize templates. Each array key represents the name of the
+ *     variable and the value will be used as the default value if it is not
+ *     given when theme() is called. Template implementations receive these
+ *     arguments as variables in the template file. Function implementations
+ *     are passed this array data in the $variables parameter.
+ *   - render element: (required if "variables" not present) A string that is
+ *     the name of the sole renderable element to pass to the theme function.
+ *     The string represents the name of the "variable" that will hold the
+ *     renderable array inside any optional preprocess or process functions.
+ *     Cannot be used with the "variables" item; only one or the other, not
+ *     both, can be present in a hook's info array.
+ *   - file: The file the implementation resides in. This file will be included
+ *     prior to the theme being rendered, to make sure that the function or
+ *     preprocess function (as needed) is actually loaded; this makes it
+ *     possible to split theme functions out into separate files quite easily.
+ *   - path: Override the path of the file to be used. Ordinarily the module or
+ *     theme path will be used, but if the file will not be in the default path,
+ *     include it here. This path should be relative to the Drupal root
+ *     directory.
+ *   - template: If specified, this theme implementation is a template, and this
+ *     is the template file without an extension. Do not put .tpl.php on this
+ *     file; that extension will be added automatically by the default rendering
+ *     engine (which is PHPTemplate). If 'path', above, is specified, the
+ *     template should also be in this path.
+ *   - function: If specified, this will be the function name to invoke for this
+ *     implementation. If neither file nor function is specified, a default
+ *     function name will be assumed. For example, if a module registers
+ *     the 'node' theme hook, 'theme_node' will be assigned to its function.
+ *     If the chameleon theme registers the node hook, it will be assigned
+ *     'chameleon_node' as its function.
+ *   - pattern: A regular expression pattern to be used to allow this theme
+ *     implementation to have a dynamic name. The convention is to use __ to
+ *     differentiate the dynamic portion of the theme. For example, to allow
+ *     forums to be themed individually, the pattern might be: 'forum__'. Then,
+ *     when the forum is themed, call:
+ *     @code
+ *     theme(array('forum__' . $tid, 'forum'), $forum)
+ *     @endcode
+ *   - preprocess functions: A list of functions used to preprocess this data.
+ *     Ordinarily this won't be used; it's automatically filled in. By default,
+ *     for a module this will be filled in as template_preprocess_HOOK. For
+ *     a theme this will be filled in as phptemplate_preprocess and
+ *     phptemplate_preprocess_HOOK as well as themename_preprocess and
+ *     themename_preprocess_HOOK.
+ *   - override preprocess functions: Set to TRUE when a theme does NOT want the
+ *     standard preprocess functions to run. This can be used to give a theme
+ *     FULL control over how variables are set. For example, if a theme wants
+ *     total control over how certain variables in the page.tpl.php are set,
+ *     this can be set to true. Please keep in mind that when this is used
+ *     by a theme, that theme becomes responsible for making sure necessary
+ *     variables are set.
+ *   - type: (automatically derived) Where the theme hook is defined:
+ *     'module', 'theme_engine', or 'theme'.
+ *   - theme path: (automatically derived) The directory path of the theme or
+ *     module, so that it doesn't need to be looked up.
  */
 function hook_theme($existing, $type, $theme, $path) {
   return array(
@@ -1059,9 +1759,6 @@ function hook_theme($existing, $type, $theme, $path) {
  *    'file' => 'modules/user/user.pages.inc',
  *    'type' => 'module',
  *    'theme path' => 'modules/user',
- *    'theme paths' => array(
- *      0 => 'modules/user',
- *    ),
  *    'preprocess functions' => array(
  *      0 => 'template_preprocess',
  *      1 => 'template_preprocess_user_profile',
@@ -1081,6 +1778,31 @@ function hook_theme_registry_alter(&$theme_registry) {
     if ($value = 'template_preprocess_forum_topic_navigation') {
       unset($theme_registry['forum_topic_navigation']['preprocess functions'][$key]);
     }
+  }
+}
+
+/**
+ * Return the machine-readable name of the theme to use for the current page.
+ *
+ * This hook can be used to dynamically set the theme for the current page
+ * request. It overrides the default theme as well as any per-page or
+ * per-section theme set by the theme callback function in hook_menu(). This
+ * should be used by modules which need to override the theme based on dynamic
+ * conditions.
+ *
+ * Since only one theme can be used at a time, the last (i.e., highest
+ * weighted) module which returns a valid theme name from this hook will
+ * prevail.
+ *
+ * @return
+ *   The machine-readable name of the theme that should be used for the current
+ *   page request. The value returned from this function will only have an
+ *   effect if it corresponds to a currently-active theme on the site.
+ */
+function hook_custom_theme() {
+  // Allow the user to request a particular theme via a query parameter.
+  if (isset($_GET['theme'])) {
+    return $_GET['theme'];
   }
 }
 
@@ -1180,9 +1902,9 @@ function hook_xmlrpc_alter(&$methods) {
  *   - request_uri: The Request URI for the page the event happened in.
  *   - referer: The page that referred the use to the page where the event occurred.
  *   - ip: The IP address where the request for the page came from.
- *   - timestamp: The UNIX timetamp of the date/time the event occurred
+ *   - timestamp: The UNIX timestamp of the date/time the event occurred
  *   - severity: One of the following values as defined in RFC 3164 http://www.faqs.org/rfcs/rfc3164.html
- *     WATCHDOG_EMERG     Emergency: system is unusable
+ *     WATCHDOG_EMERGENCY Emergency: system is unusable
  *     WATCHDOG_ALERT     Alert: action must be taken immediately
  *     WATCHDOG_CRITICAL  Critical: critical conditions
  *     WATCHDOG_ERROR     Error: error conditions
@@ -1197,14 +1919,14 @@ function hook_watchdog(array $log_entry) {
   global $base_url, $language;
 
   $severity_list = array(
-    WATCHDOG_EMERG    => t('Emergency'),
-    WATCHDOG_ALERT    => t('Alert'),
-    WATCHDOG_CRITICAL => t('Critical'),
-    WATCHDOG_ERROR    => t('Error'),
-    WATCHDOG_WARNING  => t('Warning'),
-    WATCHDOG_NOTICE   => t('Notice'),
-    WATCHDOG_INFO     => t('Info'),
-    WATCHDOG_DEBUG    => t('Debug'),
+    WATCHDOG_EMERGENCY => t('Emergency'),
+    WATCHDOG_ALERT     => t('Alert'),
+    WATCHDOG_CRITICAL  => t('Critical'),
+    WATCHDOG_ERROR     => t('Error'),
+    WATCHDOG_WARNING   => t('Warning'),
+    WATCHDOG_NOTICE    => t('Notice'),
+    WATCHDOG_INFO      => t('Info'),
+    WATCHDOG_DEBUG     => t('Debug'),
   );
 
   $to = 'someone@example.com';
@@ -1283,12 +2005,12 @@ function hook_mail($key, &$message, $params) {
     '%username' => format_username($account),
   );
   if ($context['hook'] == 'taxonomy') {
-    $object = $params['object'];
-    $vocabulary = taxonomy_vocabulary_load($object->vid);
+    $entity = $params['entity'];
+    $vocabulary = taxonomy_vocabulary_load($entity->vid);
     $variables += array(
-      '%term_name' => $object->name,
-      '%term_description' => $object->description,
-      '%term_id' => $object->tid,
+      '%term_name' => $entity->name,
+      '%term_description' => $entity->description,
+      '%term_id' => $entity->tid,
       '%vocabulary_name' => $vocabulary->name,
       '%vocabulary_description' => $vocabulary->description,
       '%vocabulary_id' => $vocabulary->vid,
@@ -1302,7 +2024,7 @@ function hook_mail($key, &$message, $params) {
       '%uid' => $node->uid,
       '%node_url' => url('node/' . $node->nid, array('absolute' => TRUE)),
       '%node_type' => node_type_get_name($node),
-      '%title' => $node->title[LANGUAGE_NONE][0]['value'],
+      '%title' => $node->title,
       '%teaser' => $node->teaser,
       '%body' => $node->body,
     );
@@ -1401,7 +2123,7 @@ function hook_modules_disabled($modules) {
  * @see hook_uninstall()
  *
  * @param $modules
- *   The name of the uninstalled module.
+ *   An array of the uninstalled modules.
  */
 function hook_modules_uninstalled($modules) {
   foreach ($modules as $module) {
@@ -1430,6 +2152,9 @@ function hook_modules_uninstalled($modules) {
  *   - 'class' A string specifying the PHP class that implements the
  *     DrupalStreamWrapperInterface interface.
  *   - 'description' A string with a short description of what the wrapper does.
+ *   - 'type' A bitmask of flags indicating what type of streams this wrapper
+ *     will access - local or remote, readable and/or writeable, etc. Many
+ *     shortcut constants are defined in stream_wrappers.inc.
  *
  * @see file_get_stream_wrappers()
  * @see hook_stream_wrappers_alter()
@@ -1451,6 +2176,7 @@ function hook_stream_wrappers() {
       'name' => t('Temporary files'),
       'class' => 'DrupalTempStreamWrapper',
       'description' => t('Temporary local files for upload and previews.'),
+      'type' => STREAM_WRAPPERS_HIDDEN,
     )
   );
 }
@@ -1527,7 +2253,7 @@ function hook_file_validate(&$file) {
  *
  * @see file_save()
  */
-function hook_file_insert(&$file) {
+function hook_file_insert($file) {
 
 }
 
@@ -1541,7 +2267,7 @@ function hook_file_insert(&$file) {
  *
  * @see file_save()
  */
-function hook_file_update(&$file) {
+function hook_file_update($file) {
 
 }
 
@@ -1590,11 +2316,11 @@ function hook_file_move($file, $source) {
  * @see upload_file_references()
  */
 function hook_file_references($file) {
-  // If upload.module is still using a file, do not let other modules delete it.
-  $file_used = (bool) db_query_range('SELECT 1 FROM {upload} WHERE fid = :fid', 0, 1, array(':fid' => $file->fid))->fetchField();
+  // If user.module is still using a file, do not let other modules delete it.
+  $file_used = (bool) db_query_range('SELECT 1 FROM {user} WHERE pictire = :fid', 0, 1, array(':fid' => $file->fid))->fetchField();
   if ($file_used) {
     // Return the name of the module and how many references it has to the file.
-    return array('upload' => $count);
+    return array('user' => 1);
   }
 }
 
@@ -1635,7 +2361,7 @@ function hook_file_download($uri) {
   if (!file_prepare_directory($uri)) {
     $uri = FALSE;
   }
-  $result = db_query("SELECT f.* FROM {file} f INNER JOIN {upload} u ON f.fid = u.fid WHERE uri = :uri", array('uri' => $uri));
+  $result = db_query("SELECT f.* FROM {file_managed} f INNER JOIN {upload} u ON f.fid = u.fid WHERE uri = :uri", array('uri' => $uri));
   foreach ($result as $file) {
     if (!user_access('view uploaded files')) {
       return -1;
@@ -1792,7 +2518,7 @@ function hook_requirements($phase) {
     }
     else {
       $requirements['cron'] = array(
-        'description' => $t('Cron has not run. It appears cron jobs have not been setup on your system. Please check the help pages for <a href="@url">configuring cron jobs</a>.', array('@url' => 'http://drupal.org/cron')),
+        'description' => $t('Cron has not run. It appears cron jobs have not been setup on your system. Check the help pages for <a href="@url">configuring cron jobs</a>.', array('@url' => 'http://drupal.org/cron')),
         'severity' => REQUIREMENT_ERROR,
         'value' => $t('Never run'),
       );
@@ -1997,10 +2723,11 @@ function hook_install() {
 }
 
 /**
- * Perform a single update. For each patch which requires a database change add
- * a new hook_update_N() which will be called by update.php.
+ * Perform a single update.
  *
- * The database updates are numbered sequentially according to the version of Drupal you are compatible with.
+ * For each patch which requires a database change add a new hook_update_N()
+ * which will be called by update.php. The database updates are numbered
+ * sequentially according to the version of Drupal you are compatible with.
  *
  * Schema updates should adhere to the Schema API:
  * @link http://drupal.org/node/150215 http://drupal.org/node/150215 @endlink
@@ -2105,6 +2832,51 @@ function hook_update_N(&$sandbox) {
 }
 
 /**
+ * Return an array of information about module update dependencies.
+ *
+ * This can be used to indicate update functions from other modules that your
+ * module's update functions depend on, or vice versa. It is used by the update
+ * system to determine the appropriate order in which updates should be run, as
+ * well as to search for missing dependencies.
+ *
+ * Implementations of this hook should be placed in a mymodule.install file in
+ * the same directory as mymodule.module.
+ *
+ * @return
+ *   A multidimensional array containing information about the module update
+ *   dependencies. The first two levels of keys represent the module and update
+ *   number (respectively) for which information is being returned, and the
+ *   value is an array of information about that update's dependencies. Within
+ *   this array, each key represents a module, and each value represents the
+ *   number of an update function within that module. In the event that your
+ *   update function depends on more than one update from a particular module,
+ *   you should always list the highest numbered one here (since updates within
+ *   a given module always run in numerical order).
+ *
+ * @see update_resolve_dependencies()
+ * @see hook_update_N()
+ */
+function hook_update_dependencies() {
+  // Indicate that the mymodule_update_7000() function provided by this module
+  // must run after the another_module_update_7002() function provided by the
+  // 'another_module' module.
+  $dependencies['mymodule'][7000] = array(
+    'another_module' => 7002,
+  );
+  // Indicate that the mymodule_update_7001() function provided by this module
+  // must run before the yet_another_module_update_7004() function provided by
+  // the 'yet_another_module' module. (Note that declaring dependencies in this
+  // direction should be done only in rare situations, since it can lead to the
+  // following problem: If a site has already run the yet_another_module
+  // module's database updates before it updates its codebase to pick up the
+  // newest mymodule code, then the dependency declared here will be ignored.)
+  $dependencies['yet_another_module'][7004] = array(
+    'mymodule' => 7001,
+  );
+  return $dependencies;
+}
+
+/**
  * Return a number which is no longer available as hook_update_N().
  *
  * If you remove some update functions from your mymodule.install file, you
@@ -2183,7 +2955,7 @@ function hook_disable() {
  *   files found in each enabled module's info file and the core includes
  *   directory. The array is keyed by the file path and contains an array of
  *   the related module's name and weight as used internally by
- *   _registry_rebuild() and related functions.
+ *   _registry_update() and related functions.
  *
  *   For example:
  *   @code
@@ -2193,17 +2965,17 @@ function hook_disable() {
  *     );
  *   @endcode
  * @param $modules
- *   List of all the modules provided as returned by drupal_system_listing().
- *   The list also contains the .info file information in the property 'info'.
- *   An additional 'dir' property has been added to the module information
- *   which provides the path to the directory in which the module resides. The
- *   example shows how to take advantage of the property both properties.
+ *   An array containing all module information stored in the {system} table.
+ *   Each element of the array also contains the module's .info file
+ *   information in the property 'info'. An additional 'dir' property has been
+ *   added to the module information which provides the path to the directory
+ *   in which the module resides. The example shows how to take advantage of
+ *   both properties.
  *
- * @see _registry_rebuild()
- * @see drupal_system_listing()
+ * @see _registry_update()
  * @see simpletest_test_get_all()
  */
-function hook_registry_files_alter(&$files, $module_cache) {
+function hook_registry_files_alter(&$files, $modules) {
   foreach ($modules as $module) {
     // Only add test files for disabled modules, as enabled modules should
     // already include any test files they provide.
@@ -2504,6 +3276,8 @@ function hook_file_mimetype_mapping_alter(&$mapping) {
  *       Modules that are processing actions (like Trigger module) should take
  *       special care for the "presave" hook, in which case a dependent "save"
  *       action should NOT be invoked.
+ *
+ * @ingroup actions
  */
 function hook_action_info() {
   return array(
@@ -2548,7 +3322,7 @@ function hook_actions_delete($aid) {
  * Called by actions_list() to allow modules to alter the return values from
  * implementations of hook_action_info().
  *
- * @see trigger_example_action_info_alter().
+ * @see trigger_example_action_info_alter()
  */
 function hook_action_info_alter(&$actions) {
   $actions['node_unpublish_action']['label'] = t('Unpublish and remove from public view.');
@@ -2569,6 +3343,8 @@ function hook_action_info_alter(&$actions) {
  * - weight: This optional key specifies the weight of this archiver.
  *   When mapping file extensions to archivers, the first archiver by
  *   weight found that supports the requested extension will be used.
+ *
+ * @see hook_archiver_info_alter()
  */
 function hook_archiver_info() {
   return array(
@@ -2579,6 +3355,18 @@ function hook_archiver_info() {
   );
 }
 
+/**
+ * Alter archiver information declared by other modules.
+ *
+ * See hook_archiver_info() for a description of archivers and the archiver
+ * information structure.
+ *
+ * @param $info
+ *   Archiver information to alter (return values from hook_archiver_info()).
+ */
+function hook_archiver_info_alter(&$info) {
+  $info['tar']['extensions'][] = 'tgz';
+}
 
 /**
  * Defines additional date types.
@@ -2604,6 +3392,30 @@ function hook_date_format_types() {
     'medium' => t('Medium'),
     'short' => t('Short'),
   );
+}
+
+/**
+ * Modify existing date format types.
+ *
+ * Allows other modules to modify existing date types like 'long'. Called
+ * by _system_date_format_types_build(). For instance, A module may use this
+ * hook to apply settings across all date format types, such as locking all
+ * date format types so they appear to be provided by the system.
+ *
+ * @param $types
+ *   An associative array of date format types containing:
+ *   - types:  An array of date format types including configuration settings
+ *     for each type:
+ *     - is_new: Set to FALSE to override previous settings.
+ *     - module: The name of the module that created the date format type.
+ *     - type: The date type name.
+ *     - title: The title of the date type.
+ *     - locked: Specifies that the date type is system-provided.
+ */
+function hook_date_format_types_alter(&$types) {
+  foreach ($types as $type_name => $type) {
+    $types[$type_name]['locked'] = 1;
+  }
 }
 
 /**
@@ -2851,6 +3663,310 @@ function hook_username_alter(&$name, $account) {
   if (isset($account->uid)) {
     $name = t('User !uid', array('!uid' => $account->uid));
   }
+}
+
+/**
+ * Provide replacement values for placeholder tokens.
+ *
+ * @param $type
+ *   The type of token being replaced. 'node', 'user', and 'date' are common.
+ * @param $tokens
+ *   An array of tokens to be replaced, keyed by the literal text of the token
+ *   as it appeared in the source text.
+ * @param $data
+ *   (optional) An associative array of objects to be used when generating replacement
+ *   values.
+ * @param $options
+ *   (optional) A associative array of options to control the token
+ *   replacement process. Common options are:
+ *   - 'language' A language object to be used when generating locale-sensitive
+ *     tokens.
+ *   - 'sanitize' A boolean flag indicating that tokens should be sanitized for
+ *     display to a web browser.
+ *
+ * @return
+ *   An associative array of replacement values, keyed by the original 'raw'
+ *   tokens that were found in the source text. For example:
+ *   $results['[node:title]'] = 'My new node';
+ */
+function hook_tokens($type, $tokens, array $data = array(), array $options = array()) {
+  $url_options = array('absolute' => TRUE);
+  if (isset($options['language'])) {
+    $url_options['language'] = $options['language'];
+    $language_code = $options['language']->language;
+  }
+  else {
+    $language_code = NULL;
+  }
+  $sanitize = !empty($options['sanitize']);
+
+  $replacements = array();
+
+  if ($type == 'node' && !empty($data['node'])) {
+    $node = $data['node'];
+
+    foreach ($tokens as $name => $original) {
+      switch ($name) {
+        // Simple key values on the node.
+        case 'nid':
+          $replacements[$original] = $node->nid;
+          break;
+
+        case 'title':
+          $replacements[$original] = $sanitize ? check_plain($node->title) : $node->title;
+          break;
+
+        case 'edit-url':
+          $replacements[$original] = url('node/' . $node->nid . '/edit', $url_options);
+          break;
+
+        // Default values for the chained tokens handled below.
+        case 'author':
+          $name = ($node->uid == 0) ? variable_get('anonymous', t('Anonymous')) : $node->name;
+          $replacements[$original] = $sanitize ? filter_xss($name) : $name;
+          break;
+
+        case 'created':
+          $replacements[$original] = format_date($node->created, 'medium', '', NULL, $language_code);
+          break;
+      }
+    }
+
+    if ($author_tokens = token_find_with_prefix($tokens, 'author')) {
+      $author = user_load($node->uid);
+      $replacements += token_generate('user', $author_tokens, array('user' => $author), $options);
+    }
+
+    if ($created_tokens = token_find_with_prefix($tokens, 'created')) {
+      $replacements += token_generate('date', $created_tokens, array('date' => $node->created), $options);
+    }
+  }
+
+  return $replacements;
+}
+
+/**
+ * Provide metadata about available placeholder tokens and token types.
+ *
+ * @return
+ *   An associative array of available tokens and token types, each containing
+ *   the raw name of the token or type, its user-friendly name, and a verbose
+ *   description.
+ *
+ * @see hook_token_info_alter()
+ */
+function hook_token_info() {
+  $type = array(
+    'name' => t('Nodes'),
+    'description' => t('Tokens related to individual nodes.'),
+    'needs-data' => 'node',
+  );
+
+  // Core tokens for nodes.
+  $node['nid'] = array(
+    'name' => t("Node ID"),
+    'description' => t("The unique ID of the node."),
+  );
+  $node['title'] = array(
+    'name' => t("Title"),
+    'description' => t("The title of the node."),
+  );
+  $node['edit-url'] = array(
+    'name' => t("Edit URL"),
+    'description' => t("The URL of the node's edit page."),
+  );
+
+  // Chained tokens for nodes.
+  $node['created'] = array(
+    'name' => t("Date created"),
+    'description' => t("The date the node was posted."),
+    'type' => 'date',
+  );
+  $node['author'] = array(
+    'name' => t("Author"),
+    'description' => t("The author of the node."),
+    'type' => 'user',
+  );
+
+  return array(
+    'types' => array('node' => $type),
+    'tokens' => array('node' => $node),
+  );
+}
+
+/**
+ * Alter batch information before a batch is processed.
+ *
+ * Called by batch_process() to allow modules to alter a batch before it is
+ * processed.
+ *
+ * @param $batch
+ *   The associative array of batch information. See batch_set() for details on
+ *   what this could contain.
+ *
+ * @see batch_set()
+ * @see batch_process()
+ *
+ * @ingroup batch
+ */
+function hook_batch_alter(&$batch) {
+  // If the current page request is inside the overlay, add ?render=overlay to
+  // the success callback URL, so that it appears correctly within the overlay.
+  if (overlay_get_mode() == 'child') {
+    if (isset($batch['url_options']['query'])) {
+      $batch['url_options']['query']['render'] = 'overlay';
+    }
+    else {
+      $batch['url_options']['query'] = array('render' => 'overlay');
+    }
+  }
+}
+
+/**
+ * Alter the metadata about available placeholder tokens and token types.
+ *
+ * @param $data
+ *   The associative array of token definitions from hook_token_info().
+ *
+ * @see hook_token_info()
+ */
+function hook_token_info_alter(&$data) {
+  // Modify description of node tokens for our site.
+  $node['nid'] = array(
+    'name' => t("Node ID"),
+    'description' => t("The unique ID of the article."),
+  );
+  $node['title'] = array(
+    'name' => t("Title"),
+    'description' => t("The title of the article."),
+  );
+
+  // Chained tokens for nodes.
+  $node['created'] = array(
+    'name' => t("Date created"),
+    'description' => t("The date the article was posted."),
+    'type' => 'date',
+  );
+}
+
+
+/**
+ * Provide information on Updaters (classes that can update Drupal).
+ *
+ * An Updater is a class that knows how to update various parts of the Drupal
+ * file system, for example to update modules that have newer releases, or to
+ * install a new theme.
+ *
+ * @return
+ *   An associative array of information about the updater(s) being provided.
+ *   This array is keyed by a unique identifier for each updater, and the
+ *   values are subarrays that can contain the following keys:
+ *   - class: The name of the PHP class which implements this updater.
+ *   - name: Human-readable name of this updater.
+ *   - weight: Controls what order the Updater classes are consulted to decide
+ *     which one should handle a given task. When an update task is being run,
+ *     the system will loop through all the Updater classes defined in this
+ *     registry in weight order and let each class respond to the task and
+ *     decide if each Updater wants to handle the task. In general, this
+ *     doesn't matter, but if you need to override an existing Updater, make
+ *     sure your Updater has a lighter weight so that it comes first.
+ *
+ * @see drupal_get_updaters()
+ * @see hook_updater_info_alter()
+ */
+function hook_updater_info() {
+  return array(
+    'module' => array(
+      'class' => 'ModuleUpdater',
+      'name' => t('Update modules'),
+      'weight' => 0,
+    ),
+    'theme' => array(
+      'class' => 'ThemeUpdater',
+      'name' => t('Update themes'),
+      'weight' => 0,
+    ),
+  );
+}
+
+/**
+ * Alter the Updater information array.
+ *
+ * An Updater is a class that knows how to update various parts of the Drupal
+ * file system, for example to update modules that have newer releases, or to
+ * install a new theme.
+ *
+ * @param array $updaters
+ *   Associative array of updaters as defined through hook_updater_info().
+ *   Alter this array directly.
+ *
+ * @see drupal_get_updaters()
+ * @see hook_updater_info()
+ */
+function hook_updater_info_alter(&$updaters) {
+  // Adjust weight so that the theme Updater gets a chance to handle a given
+  // update task before module updaters.
+  $updaters['theme']['weight'] = -1;
+}
+
+/**
+ * Alter the default country list.
+ *
+ * @param $countries
+ *   The associative array of countries keyed by ISO 3166-1 country code.
+ *
+ * @see country_get_list()
+ * @see _country_get_predefined_list()
+ */
+function hook_countries_alter(&$countries) {
+  // Elbonia is now independent, so add it to the country list.
+  $countries['EB'] = 'Elbonia';
+}
+
+/**
+ * Provide information on available file transfer backends.
+ *
+ * File transfer backends are used by modules to transfer files from remote
+ * locations to Drupal sites. For instance, update.module uses a file transfer
+ * backend to download new versions of modules and themes from drupal.org.
+ *
+ * @return
+ *   An associative array of information about the file transfer backend(s).
+ *   being provided. This array can contain the following keys:
+ *   - title: Title of the backend to be shown to the end user.
+ *   - class: Name of the PHP class which implements this backend.
+ *   - settings_form: An optional callback function that provides additional
+ *     configuration information required by this backend (for instance a port
+ *     number.)
+ *   - weight: Controls what order the backends are presented to the user.
+ *
+ * @see authorize.php
+ * @see FileTransfer
+ */
+function hook_filetransfer_backends() {
+  $backends = array();
+
+  // This is the default, will be available on most systems.
+  if (function_exists('ftp_connect')) {
+    $backends['ftp'] = array(
+      'title' => t('FTP'),
+      'class' => 'FileTransferFTP',
+      'settings_form' => 'system_filetransfer_backend_form_ftp',
+      'weight' => 0,
+    );
+  }
+
+  // SSH2 lib connection is only available if the proper PHP extension is
+  // installed.
+  if (function_exists('ssh2_connect')) {
+    $backends['ssh'] = array(
+      'title' => t('SSH'),
+      'class' => 'FileTransferSSH',
+      'settings_form' => 'system_filetransfer_backend_form_ssh',
+      'weight' => 20,
+    );
+  }
+  return $backends;
 }
 
 /**

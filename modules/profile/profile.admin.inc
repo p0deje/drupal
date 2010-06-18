@@ -1,5 +1,5 @@
 <?php
-// $Id: profile.admin.inc,v 1.36 2009/12/02 14:56:32 dries Exp $
+// $Id: profile.admin.inc,v 1.42 2010/04/24 14:49:14 dries Exp $
 
 /**
  * @file
@@ -40,7 +40,8 @@ function profile_admin_overview($form) {
 
   // Display the submit button only when there's more than one field
   if (count($form) > 1) {
-    $form['submit'] = array('#type' => 'submit', '#value' => t('Save configuration'));
+    $form['actions'] = array('#type' => 'actions');
+    $form['actions']['submit'] = array('#type' => 'submit', '#value' => t('Save configuration'));
   }
   else {
     // Disable combo boxes when there isn't a submit button
@@ -91,17 +92,21 @@ function profile_admin_overview_submit($form, &$form_state) {
 }
 
 /**
- * Theme the profile field overview into a drag and drop enabled table.
+ * Returns HTML for the profile field overview form into a drag and drop enabled table.
  *
- * @ingroup themeable
+ * @param $variables
+ *   An associative array containing:
+ *   - form: A render element representing the form.
+ *
  * @see profile_admin_overview()
+ * @ingroup themeable
  */
 function theme_profile_admin_overview($variables) {
   $form = $variables['form'];
 
   drupal_add_css(drupal_get_path('module', 'profile') . '/profile.css');
   // Add javascript if there's more than one field.
-  if (isset($form['submit'])) {
+  if (isset($form['actions'])) {
     drupal_add_js(drupal_get_path('module', 'profile') . '/profile.js');
   }
 
@@ -119,11 +124,11 @@ function theme_profile_admin_overview($variables) {
         // class names won't contain invalid characters.
         $categories[$category] = $category_number;
         $category_field['#attributes']['class'] = array('profile-category', 'profile-category-' . $category_number);
-        $rows[] = array(array('data' => $category, 'colspan' => 7, 'class' => array('category')));
+        $rows[] = array(array('data' => check_plain($category), 'colspan' => 7, 'class' => array('category')));
         $rows[] = array('data' => array(array('data' => '<em>' . t('No fields in this category. If this category remains empty when saved, it will be removed.') . '</em>', 'colspan' => 7)), 'class' => array('category-' . $category_number . '-message', 'category-message', 'category-populated'));
 
         // Make it draggable only if there is more than one field
-        if (isset($form['submit'])) {
+        if (isset($form['actions'])) {
           drupal_add_tabledrag('profile-fields', 'order', 'sibling', 'profile-weight', 'profile-weight-' . $category_number);
           drupal_add_tabledrag('profile-fields', 'match', 'sibling', 'profile-category', 'profile-category-' . $category_number);
         }
@@ -139,7 +144,7 @@ function theme_profile_admin_overview($variables) {
       $row[] = drupal_render($field['title']);
       $row[] = drupal_render($field['name']);
       $row[] = drupal_render($field['type']);
-      if (isset($form['submit'])) {
+      if (isset($form['actions'])) {
         $row[] = drupal_render($field['category']);
         $row[] = drupal_render($field['weight']);
       }
@@ -150,7 +155,7 @@ function theme_profile_admin_overview($variables) {
   }
 
   $header = array(t('Title'), t('Name'), t('Type'));
-  if (isset($form['submit'])) {
+  if (isset($form['actions'])) {
     $header[] = t('Category');
     $header[] = t('Weight');
   }
@@ -180,7 +185,7 @@ function profile_field_form($form, &$form_state, $arg = NULL) {
         drupal_not_found();
         return;
       }
-      drupal_set_title(t('edit %title', array('%title' => $edit['title'])), PASS_THROUGH);
+      drupal_set_title(t('Edit %title', array('%title' => $edit['title'])), PASS_THROUGH);
       $form['fid'] = array('#type' => 'value',
         '#value' => $fid,
       );
@@ -198,7 +203,7 @@ function profile_field_form($form, &$form_state, $arg = NULL) {
       return;
     }
     $type = $arg;
-    drupal_set_title(t('add new %type', array('%type' => $types[$type])), PASS_THROUGH);
+    drupal_set_title(t('Add new %type', array('%type' => $types[$type])), PASS_THROUGH);
     $edit = array('name' => 'profile_');
     $form['type'] = array('#type' => 'value', '#value' => $type);
   }
@@ -212,30 +217,27 @@ function profile_field_form($form, &$form_state, $arg = NULL) {
     'required' => '',
     'register' => '',
   );
-  $form['fields'] = array('#type' => 'fieldset',
-    '#title' => t('Field settings'),
-  );
-  $form['fields']['category'] = array('#type' => 'textfield',
+  $form['category'] = array('#type' => 'textfield',
     '#title' => t('Category'),
     '#default_value' => $edit['category'],
     '#autocomplete_path' => 'admin/config/people/profile/autocomplete',
     '#description' => t('The category the new field should be part of. Categories are used to group fields logically. An example category is "Personal information".'),
     '#required' => TRUE,
   );
-  $form['fields']['title'] = array('#type' => 'textfield',
+  $form['title'] = array('#type' => 'textfield',
     '#title' => t('Title'),
     '#default_value' => $edit['title'],
     '#description' => t('The title of the new field. The title will be shown to the user. An example title is "Favorite color".'),
     '#required' => TRUE,
   );
-  $form['fields']['name'] = array('#type' => 'textfield',
+  $form['name'] = array('#type' => 'textfield',
     '#title' => t('Form name'),
     '#default_value' => $edit['name'],
     '#description' => t('The name of the field. The form name is not shown to the user but used internally in the HTML code and URLs.
 Unless you know what you are doing, it is highly recommended that you prefix the form name with <code>profile_</code> to avoid name clashes with other fields. Spaces or any other special characters except dash (-) and underscore (_) are not allowed. An example name is "profile_favorite_color" or perhaps just "profile_color".'),
     '#required' => TRUE,
   );
-  $form['fields']['explanation'] = array('#type' => 'textarea',
+  $form['explanation'] = array('#type' => 'textarea',
     '#title' => t('Explanation'),
     '#default_value' => $edit['explanation'],
     '#description' => t('An optional explanation to go with the new field. The explanation will be shown to the user.'),
@@ -247,7 +249,7 @@ Unless you know what you are doing, it is highly recommended that you prefix the
       '#description' => t('A list of all options. Put each option on a separate line. Example options are "red", "blue", "green", etc.'),
     );
   }
-  $form['fields']['visibility'] = array('#type' => 'radios',
+  $form['visibility'] = array('#type' => 'radios',
     '#title' => t('Visibility'),
     '#default_value' => isset($edit['visibility']) ? $edit['visibility'] : PROFILE_PUBLIC,
     '#options' => array(PROFILE_HIDDEN => t('Hidden profile field, only accessible by administrators, modules and themes.'), PROFILE_PRIVATE => t('Private field, content only available to privileged users.'), PROFILE_PUBLIC => t('Public field, content shown on profile page but not used on member list pages.'), PROFILE_PUBLIC_LISTINGS => t('Public field, content shown on profile page and on member list pages.')),
@@ -266,25 +268,27 @@ Unless you know what you are doing, it is highly recommended that you prefix the
       '#description' => t('To enable browsing this field by value, enter a title for the resulting page. An example page title is "People who are employed" . This is only applicable for a public field.'),
     );
   }
-  $form['fields']['weight'] = array('#type' => 'weight',
+  $form['weight'] = array('#type' => 'weight',
     '#title' => t('Weight'),
     '#default_value' => $edit['weight'],
     '#description' => t('The weights define the order in which the form fields are shown. Lighter fields "float up" towards the top of the category.'),
   );
-  $form['fields']['autocomplete'] = array('#type' => 'checkbox',
+  $form['autocomplete'] = array('#type' => 'checkbox',
     '#title' => t('Form will auto-complete while user is typing.'),
     '#default_value' => $edit['autocomplete'],
     '#description' => t('For security, auto-complete will be disabled if the user does not have access to user profiles.'),
   );
-  $form['fields']['required'] = array('#type' => 'checkbox',
+  $form['required'] = array('#type' => 'checkbox',
     '#title' => t('The user must enter a value.'),
     '#default_value' => $edit['required'],
   );
-  $form['fields']['register'] = array('#type' => 'checkbox',
+  $form['register'] = array('#type' => 'checkbox',
     '#title' => t('Visible in user registration form.'),
     '#default_value' => $edit['register'],
   );
-  $form['submit'] = array('#type' => 'submit',
+
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array('#type' => 'submit',
     '#value' => t('Save field'),
   );
   return $form;
@@ -419,7 +423,12 @@ function profile_field_delete_submit($form, &$form_state) {
  */
 function profile_admin_settings_autocomplete($string) {
   $matches = array();
-  $result = db_query_range("SELECT category FROM {profile_field} WHERE LOWER(category) LIKE LOWER(:category)", 0, 10, array(':category' => $string . '%'));
+  $result = db_select('profile_field')
+    ->fields('profile_field', array('category'))
+    ->condition('category', db_like($string) . '%', 'LIKE')
+    ->range(0, 10)
+    ->execute();
+
   foreach ($result as $data) {
     $matches[$data->category] = check_plain($data->category);
   }

@@ -1,5 +1,5 @@
 <?php
-// $Id: content_types.inc,v 1.105 2009/12/04 16:49:46 dries Exp $
+// $Id: content_types.inc,v 1.114 2010/05/05 06:55:25 webchick Exp $
 
 /**
  * @file
@@ -48,12 +48,23 @@ function node_overview_types() {
     '#theme' => 'table',
     '#header' => $header,
     '#rows' => $rows,
-    '#empty' => t('No content types available.'),
+    '#empty' => t('No content types available. <a href="@link">Add content type</a>.', array('@link' => url('admin/structure/types/add'))),
   );
 
   return $build;
 }
 
+/**
+ * Returns HTML for a node type description for the content type admin overview page.
+ *
+ * @param $variables
+ *   An associative array containing:
+ *   - name: The human-readable name of the content type.
+ *   - type: An object containing the 'type' (machine name) and 'description' of
+ *     the content type.
+ *
+ * @ingroup themeable
+ */
 function theme_node_admin_overview($variables) {
   $name = $variables['name'];
   $type = $variables['type'];
@@ -76,18 +87,14 @@ function node_type_form($form, &$form_state, $type = NULL) {
   // Make the type object available to implementations of hook_form_alter.
   $form['#node_type'] = $type;
 
-  $form['identity'] = array(
-    '#type' => 'fieldset',
-    '#title' => t('Identification'),
-  );
-  $form['identity']['name'] = array(
+  $form['name'] = array(
     '#title' => t('Name'),
     '#type' => 'textfield',
     '#default_value' => $type->name,
-    '#description' => t('The human-readable name of this content type. This text will be displayed as part of the list on the <em>add new content</em> page. It is recommended that this name begin with a capital letter and contain only letters, numbers, and <strong>spaces</strong>. This name must be unique.'),
+    '#description' => t('The human-readable name of this content type. This text will be displayed as part of the list on the <em>Add new content</em> page. It is recommended that this name begin with a capital letter and contain only letters, numbers, and spaces. This name must be unique.'),
     '#required' => TRUE,
     '#size' => 30,
-    '#field_suffix' => ' <small id="edit-name-suffix">' . ($type->locked ? t('Machine name: @name', array('@name' => $type->type)) : '&nbsp') . '</small>',
+    '#field_suffix' => ' <small id="edit-name-suffix">' . ($type->locked ? t('Machine name: @name', array('@name' => $type->type)) : '&nbsp;') . '</small>',
   );
 
   if (!$type->locked) {
@@ -104,7 +111,7 @@ function node_type_form($form, &$form_state, $type = NULL) {
         ),
       ),
     );
-    $form['identity']['type'] = array(
+    $form['type'] = array(
       '#title' => t('Machine name'),
       '#type' => 'textfield',
       '#default_value' => $type->type,
@@ -117,17 +124,17 @@ function node_type_form($form, &$form_state, $type = NULL) {
     );
   }
   else {
-    $form['identity']['type'] = array(
+    $form['type'] = array(
       '#type' => 'value',
       '#value' => $type->type,
     );
   }
 
-  $form['identity']['description'] = array(
+  $form['description'] = array(
     '#title' => t('Description'),
     '#type' => 'textarea',
     '#default_value' => $type->description,
-    '#description' => t('Describe this content type. It will be displayed on the <em>Add new content</em> page.'),
+    '#description' => t('Describe this content type. The text will be displayed on the <em>Add new content</em> page.'),
   );
 
   $form['additional_settings'] = array(
@@ -153,12 +160,6 @@ function node_type_form($form, &$form_state, $type = NULL) {
     $form['submission']['title_label']['#description'] = t('This content type does not have a title field.');
     $form['submission']['title_label']['#required'] = FALSE;
   }
-  $form['submission']['body_label'] = array(
-    '#title' => t('Body field label'),
-    '#type' => 'textfield',
-    '#default_value' => isset($type->body_label) ? $type->body_label : '',
-    '#description' => t('To remove the body field, remove text and leave blank.'),
-  );
   $form['submission']['node_preview'] = array(
     '#type' => 'radios',
     '#title' => t('Preview before submitting'),
@@ -173,7 +174,7 @@ function node_type_form($form, &$form_state, $type = NULL) {
     '#type' => 'textarea',
     '#title' => t('Explanation or submission guidelines'),
     '#default_value' => $type->help,
-    '#description' => t('This text will be displayed at the top of the page when creating new content of this type.'),
+    '#description' => t('This text will be displayed at the top of the page when creating or editing content of this type.'),
   );
   $form['workflow'] = array(
     '#type' => 'fieldset',
@@ -191,7 +192,7 @@ function node_type_form($form, &$form_state, $type = NULL) {
       'sticky' => t('Sticky at top of lists'),
       'revision' => t('Create new revision'),
     ),
-    '#description' => t('Users with the <em>administer nodes</em> permission will be able to override these options.'),
+    '#description' => t('Users with the <em>Administer content</em> permission will be able to override these options.'),
   );
   $form['display'] = array(
     '#type' => 'fieldset',
@@ -208,7 +209,7 @@ function node_type_form($form, &$form_state, $type = NULL) {
   );
   $form['display']['teaser_length'] = array(
     '#type' => 'select',
-    '#title' => t('Length of trimmed posts'),
+    '#title' => t('Length of trimmed content'),
     '#default_value' => variable_get('teaser_length_' . $type->type, 600),
     '#options' => drupal_map_assoc(array(0, 200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000), '_node_characters'),
     '#description' => t("The maximum number of characters used in the trimmed version of content.")
@@ -238,7 +239,8 @@ function node_type_form($form, &$form_state, $type = NULL) {
     '#value' => $type->locked,
   );
 
-  $form['submit'] = array(
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Save content type'),
     '#weight' => 40,
@@ -246,7 +248,7 @@ function node_type_form($form, &$form_state, $type = NULL) {
 
   if ($type->custom) {
     if (!empty($type->type)) {
-      $form['delete'] = array(
+      $form['actions']['delete'] = array(
         '#type' => 'submit',
         '#value' => t('Delete content type'),
         '#weight' => 45,
@@ -287,7 +289,7 @@ function node_type_form_validate($form, &$form_state) {
     // 'theme' conflicts with theme_node_form().
     // '0' is invalid, since elsewhere we check it using empty().
     if (in_array($type->type, array('0', 'theme'))) {
-      form_set_error('type', t("Invalid machine-readable name. Please enter a name other than %invalid.", array('%invalid' => $type->type)));
+      form_set_error('type', t("Invalid machine-readable name. Enter a name other than %invalid.", array('%invalid' => $type->type)));
     }
   }
 
@@ -314,12 +316,9 @@ function node_type_form_submit($form, &$form_state) {
   $type->description = $form_state['values']['description'];
   $type->help = $form_state['values']['help'];
   $type->title_label = $form_state['values']['title_label'];
-  $type->body_label = $form_state['values']['body_label'];
-
   // title_label is required in core; has_title will always be true, unless a
   // module alters the title field.
   $type->has_title = ($type->title_label != '');
-  $type->has_body = ($type->body_label != '');
 
   $type->base = !empty($form_state['values']['base']) ? $form_state['values']['base'] : 'node_content';
   $type->custom = $form_state['values']['custom'];
@@ -364,6 +363,7 @@ function node_type_form_submit($form, &$form_state) {
 
   node_types_rebuild();
   menu_rebuild();
+  node_add_body_field($type);
   $t_args = array('%name' => $type->name);
 
   if ($status == SAVED_UPDATED) {

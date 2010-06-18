@@ -1,5 +1,5 @@
 <?php
-// $Id: schema.inc,v 1.27 2009/09/29 15:13:54 dries Exp $
+// $Id: schema.inc,v 1.37 2010/06/14 12:26:32 dries Exp $
 
 /**
  * @file
@@ -25,6 +25,26 @@ class DatabaseSchema_mysql extends DatabaseSchema {
   const COMMENT_MAX_COLUMN = 255;
 
   /**
+   * Get information about the table and database name from the db_prefix.
+   *
+   * @return
+   *   A keyed array with information about the database, table name and prefix.
+   */
+  protected function getPrefixInfo($table = 'default') {
+    $info = array('prefix' => $this->connection->tablePrefix($table));
+    if (($pos = strpos($info['prefix'], '.')) !== FALSE) {
+      $info['database'] = substr($info['prefix'], 0, $pos);
+      $info['table'] = substr($info['prefix'], ++$pos) . $table;
+    }
+    else {
+      $db_info = Database::getConnectionInfo();
+      $info['database'] = $db_info['default']['database'];
+      $info['table'] = $info['prefix'] . $table;
+    }
+    return $info;
+  }
+
+  /**
    * Build a condition to match a table name against a standard information_schema.
    *
    * MySQL uses databases like schemas rather than catalogs so when we build
@@ -33,18 +53,13 @@ class DatabaseSchema_mysql extends DatabaseSchema {
    * from the condition criteria.
    */
   protected function buildTableNameCondition($table_name, $operator = '=') {
-    $info = Database::getConnectionInfo();
+    $info = $this->connection->getConnectionOptions();
 
-    if (strpos($table_name, '.')) {
-      list($schema, $table_name) = explode('.', $table_name);
-    }
-    else {
-      $schema = $info['default']['database'];
-    }
+    $table_info = $this->getPrefixInfo($table_name);
 
     $condition = new DatabaseCondition('AND');
-    $condition->condition('table_schema', $schema);
-    $condition->condition('table_name', $table_name, $operator);
+    $condition->condition('table_schema', $table_info['database']);
+    $condition->condition('table_name', $table_info['table'], $operator);
     return $condition;
   }
 
@@ -161,7 +176,7 @@ class DatabaseSchema_mysql extends DatabaseSchema {
 
     // Set the correct database-engine specific datatype.
     if (!isset($field['mysql_type'])) {
-      $map = db_type_map();
+      $map = $this->getFieldTypeMap();
       $field['mysql_type'] = $map[$field['type'] . ':' . $field['size']];
     }
 
@@ -219,9 +234,6 @@ class DatabaseSchema_mysql extends DatabaseSchema {
     return $map;
   }
 
-
-
-
   protected function createKeysSql($spec) {
     $keys = array();
 
@@ -269,14 +281,34 @@ class DatabaseSchema_mysql extends DatabaseSchema {
   }
 
   public function renameTable($table, $new_name) {
-  	$this->connection->query('ALTER TABLE {' . $table . '} RENAME TO {' . $new_name . '}');
+    if (!$this->tableExists($table)) {
+      throw new DatabaseSchemaObjectDoesNotExistException(t("Cannot rename %table to %table_new: table %table doesn't exist.", array('%table' => $table, '%table_new' => $new_name)));
+    }
+    if ($this->tableExists($new_name)) {
+      throw new DatabaseSchemaObjectExistsException(t("Cannot rename %table to %table_new: table %table_new already exists.", array('%table' => $table, '%table_new' => $new_name)));
+    }
+
+    $info = $this->getPrefixInfo($new_name);
+    return $this->connection->query('ALTER TABLE {' . $table . '} RENAME TO `' . $info['table'] . '`');
   }
 
   public function dropTable($table) {
-  	$this->connection->query('DROP TABLE {' . $table . '}');
+    if (!$this->tableExists($table)) {
+      return FALSE;
+    }
+
+    $this->connection->query('DROP TABLE {' . $table . '}');
+    return TRUE;
   }
 
   public function addField($table, $field, $spec, $keys_new = array()) {
+    if (!$this->tableExists($table)) {
+      throw new DatabaseSchemaObjectDoesNotExistException(t("Cannot add field %table.%field: table doesn't exist.", array('%field' => $field, '%table' => $table)));
+    }
+    if ($this->fieldExists($table, $field)) {
+      throw new DatabaseSchemaObjectExistsException(t("Cannot add field %table.%field: field already exists.", array('%field' => $field, '%table' => $table)));
+    }
+
     $fixnull = FALSE;
     if (!empty($spec['not null']) && !isset($spec['default'])) {
       $fixnull = TRUE;
@@ -284,8 +316,8 @@ class DatabaseSchema_mysql extends DatabaseSchema {
     }
     $query = 'ALTER TABLE {' . $table . '} ADD ';
     $query .= $this->createFieldSql($field, $this->processField($spec));
-    if (count($keys_new)) {
-      $query .= ', ADD ' . implode(', ADD ', $this->createKeysSql($keys_new));
+    if ($keys_sql = $this->createKeysSql($keys_new)) {
+      $query .= ', ADD ' . implode(', ADD ', $keys_sql);
     }
     $this->connection->query($query);
     if (isset($spec['initial'])) {
@@ -300,10 +332,19 @@ class DatabaseSchema_mysql extends DatabaseSchema {
   }
 
   public function dropField($table, $field) {
-  	$this->connection->query('ALTER TABLE {' . $table . '} DROP `' . $field . '`');
+    if (!$this->fieldExists($table, $field)) {
+      return FALSE;
+    }
+
+    $this->connection->query('ALTER TABLE {' . $table . '} DROP `' . $field . '`');
+    return TRUE;
   }
 
   public function fieldSetDefault($table, $field, $default) {
+    if (!$this->fieldExists($table, $field)) {
+      throw new DatabaseSchemaObjectDoesNotExistException(t("Cannot set default value of field %table.%field: field doesn't exist.", array('%table' => $table, '%field' => $field)));
+    }
+
     if (is_null($default)) {
       $default = 'NULL';
     }
@@ -315,37 +356,91 @@ class DatabaseSchema_mysql extends DatabaseSchema {
   }
 
   public function fieldSetNoDefault($table, $field) {
-  	$this->connection->query('ALTER TABLE {' . $table . '} ALTER COLUMN `' . $field . '` DROP DEFAULT');
+    if (!$this->fieldExists($table, $field)) {
+      throw new DatabaseSchemaObjectDoesNotExistException(t("Cannot remove default value of field %table.%field: field doesn't exist.", array('%table' => $table, '%field' => $field)));
+    }
+
+    $this->connection->query('ALTER TABLE {' . $table . '} ALTER COLUMN `' . $field . '` DROP DEFAULT');
+  }
+
+  public function indexExists($table, $name) {
+    // Returns one row for each column in the index. Result is string or FALSE.
+    // Details at http://dev.mysql.com/doc/refman/5.0/en/show-index.html
+    $row = $this->connection->query('SHOW INDEX FROM {' . $table . "} WHERE key_name = '$name'")->fetchAssoc();
+    return isset($row['key_name']);
   }
 
   public function addPrimaryKey($table, $fields) {
-  	$this->connection->query('ALTER TABLE {' . $table . '} ADD PRIMARY KEY (' . $this->createKeySql($fields) . ')');
+    if (!$this->tableExists($table)) {
+      throw new DatabaseSchemaObjectDoesNotExistException(t("Cannot add primary key to table %table: table doesn't exist.", array('%table' => $table)));
+    }
+    if ($this->indexExists($table, 'PRIMARY')) {
+      throw new DatabaseSchemaObjectExistsException(t("Cannot add primary key to table %table: primary key already exists.", array('%table' => $table)));
+    }
+
+    $this->connection->query('ALTER TABLE {' . $table . '} ADD PRIMARY KEY (' . $this->createKeySql($fields) . ')');
   }
 
   public function dropPrimaryKey($table) {
-  	$this->connection->query('ALTER TABLE {' . $table . '} DROP PRIMARY KEY');
+    if (!$this->indexExists($table, 'PRIMARY')) {
+      return FALSE;
+    }
+
+    $this->connection->query('ALTER TABLE {' . $table . '} DROP PRIMARY KEY');
+    return TRUE;
   }
 
   public function addUniqueKey($table, $name, $fields) {
-  	$this->connection->query('ALTER TABLE {' . $table . '} ADD UNIQUE KEY `' . $name . '` (' . $this->createKeySql($fields) . ')');
+    if (!$this->tableExists($table)) {
+      throw new DatabaseSchemaObjectDoesNotExistException(t("Cannot add unique key %name to table %table: table doesn't exist.", array('%table' => $table, '%name' => $name)));
+    }
+    if ($this->indexExists($table, $name)) {
+      throw new DatabaseSchemaObjectExistsException(t("Cannot add unique key %name to table %table: unique key already exists.", array('%table' => $table, '%name' => $name)));
+    }
+
+    $this->connection->query('ALTER TABLE {' . $table . '} ADD UNIQUE KEY `' . $name . '` (' . $this->createKeySql($fields) . ')');
   }
 
   public function dropUniqueKey($table, $name) {
-  	$this->connection->query('ALTER TABLE {' . $table . '} DROP KEY `' . $name . '`');
+    if (!$this->indexExists($table, $name)) {
+      return FALSE;
+    }
+
+    $this->connection->query('ALTER TABLE {' . $table . '} DROP KEY `' . $name . '`');
+    return TRUE;
   }
 
   public function addIndex($table, $name, $fields) {
-  	$this->connection->query('ALTER TABLE {' . $table . '} ADD INDEX `' . $name . '` (' . $this->createKeySql($fields) . ')');
+    if (!$this->tableExists($table)) {
+      throw new DatabaseSchemaObjectDoesNotExistException(t("Cannot add index %name to table %table: table doesn't exist.", array('%table' => $table, '%name' => $name)));
+    }
+    if ($this->indexExists($table, $name)) {
+      throw new DatabaseSchemaObjectExistsException(t("Cannot add index %name to table %table: index already exists.", array('%table' => $table, '%name' => $name)));
+    }
+
+    $this->connection->query('ALTER TABLE {' . $table . '} ADD INDEX `' . $name . '` (' . $this->createKeySql($fields) . ')');
   }
 
   public function dropIndex($table, $name) {
-  	$this->connection->query('ALTER TABLE {' . $table . '} DROP INDEX `' . $name . '`');
+    if (!$this->indexExists($table, $name)) {
+      return FALSE;
+    }
+
+    $this->connection->query('ALTER TABLE {' . $table . '} DROP INDEX `' . $name . '`');
+    return TRUE;
   }
 
   public function changeField($table, $field, $field_new, $spec, $keys_new = array()) {
+    if (!$this->fieldExists($table, $field)) {
+      throw new DatabaseSchemaObjectDoesNotExistException(t("Cannot change the definition of field %table.%name: field doesn't exist.", array('%table' => $table, '%name' => $field)));
+    }
+    if (($field != $field_new) && $this->fieldExists($table, $field_new)) {
+      throw new DatabaseSchemaObjectExistsException(t("Cannot rename field %table.%name to %name_new: target field already exists.", array('%table' => $table, '%name' => $field, '%name_new' => $field_new)));
+    }
+
     $sql = 'ALTER TABLE {' . $table . '} CHANGE `' . $field . '` ' . $this->createFieldSql($field_new, $this->processField($spec));
-    if (count($keys_new)) {
-      $sql .= ', ADD ' . implode(', ADD ', $this->createKeysSql($keys_new));
+    if ($keys_sql = $this->createKeysSql($keys_new)) {
+      $sql .= ', ADD ' . implode(', ADD ', $keys_sql);
     }
     $this->connection->query($sql);
   }
@@ -367,7 +462,7 @@ class DatabaseSchema_mysql extends DatabaseSchema {
    * Retrieve a table or column comment.
    */
   public function getComment($table, $column = NULL) {
-    $condition = $this->buildTableNameCondition($this->connection->prefixTables('{' . $table . '}'));
+    $condition = $this->buildTableNameCondition($table);
     if (isset($column)) {
       $condition->condition('column_name', $column);
       $condition->compile($this->connection, $this);
@@ -379,6 +474,40 @@ class DatabaseSchema_mysql extends DatabaseSchema {
     $comment = $this->connection->query("SELECT table_comment FROM information_schema.tables WHERE " . (string) $condition, $condition->arguments())->fetchField();
     // Work-around for MySQL 5.0 bug http://bugs.mysql.com/bug.php?id=11379
     return preg_replace('/; InnoDB free:.*$/', '', $comment);
+  }
+
+  public function tableExists($table) {
+    // The information_schema table is very slow to query under MySQL 5.0.
+    // Instead, we try to select from the table in question.  If it fails,
+    // the most likely reason is that it does not exist. That is dramatically
+    // faster than using information_schema.
+    // @link http://bugs.mysql.com/bug.php?id=19588
+    // @todo: This override should be removed once we require a version of MySQL
+    // that has that bug fixed.
+    try {
+      $this->connection->queryRange("SELECT 1 FROM {" . $table . "}", 0, 1);
+      return TRUE;
+    }
+    catch (Exception $e) {
+      return FALSE;
+    }
+  }
+
+  public function fieldExists($table, $column) {
+    // The information_schema table is very slow to query under MySQL 5.0.
+    // Instead, we try to select from the table and field in question. If it
+    // fails, the most likely reason is that it does not exist. That is
+    // dramatically faster than using information_schema.
+    // @link http://bugs.mysql.com/bug.php?id=19588
+    // @todo: This override should be removed once we require a version of MySQL
+    // that has that bug fixed.
+    try {
+      $this->connection->queryRange("SELECT $column FROM {" . $table . "}", 0, 1);
+      return TRUE;
+    }
+    catch (Exception $e) {
+      return FALSE;
+    }
   }
 
 }

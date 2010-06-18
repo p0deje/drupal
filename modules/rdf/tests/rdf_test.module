@@ -1,5 +1,5 @@
 <?php
-// $Id: rdf_test.module,v 1.2 2009/10/20 17:33:43 webchick Exp $
+// $Id: rdf_test.module,v 1.4 2010/04/22 21:41:09 webchick Exp $
 
 /**
  * @file
@@ -26,9 +26,22 @@ function rdf_test_rdf_mapping() {
         ),
         'uid' => array(
           'predicates' => array('sioc:has_creator', 'dc:creator'),
+          'type' => 'rel',
         ),
         'foobar' => array(
           'predicates' => array('foo:bar'),
+        ),
+        'foobar1' => array(
+          'datatype' => 'foo:bar1type',
+          'predicates' => array('foo:bar1'),
+        ),
+        'foobar_objproperty1' => array(
+          'predicates' => array('sioc:has_creator', 'dc:creator'),
+          'type' => 'rel',
+        ),
+        'foobar_objproperty2' => array(
+          'predicates' => array('sioc:reply_of'),
+          'type' => 'rev',
         ),
       ),
     ),
@@ -39,5 +52,16 @@ function rdf_test_rdf_mapping() {
         'rdftype' => array('sioct:Weblog'),
       ),
     ),
+  );
+}
+
+/**
+ * Implements hook_rdf_namespaces().
+ */
+function rdf_test_rdf_namespaces() {
+  return array(
+    'dc'       => 'http://purl.org/conflicting/namespace',
+    'foaf'     => 'http://xmlns.com/foaf/0.1/',
+    'foaf1'    => 'http://xmlns.com/foaf/0.1/',
   );
 }

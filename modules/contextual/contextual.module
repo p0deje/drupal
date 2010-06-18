@@ -1,5 +1,5 @@
 <?php
-// $Id: contextual.module,v 1.2 2009/12/11 16:57:24 dries Exp $
+// $Id: contextual.module,v 1.6 2010/06/13 05:36:58 dries Exp $
 
 /**
  * @file
@@ -59,13 +59,10 @@ function contextual_library() {
 /**
  * Template variable preprocessor for contextual links.
  *
- * @see contextual_links_build()
+ * @see contextual_links_view()
  */
 function contextual_preprocess(&$variables, $hook) {
   static $hooks;
-
-  // Initialize the $contextual_links template variable.
-  $variables['contextual_links'] = array();
 
   // Nothing to do here if the user is not permitted to access contextual links.
   if (!user_access('access contextual links')) {
@@ -81,16 +78,16 @@ function contextual_preprocess(&$variables, $hook) {
     $keys = array_keys($hooks[$hook]['variables']);
     $key = $keys[0];
   }
-  else {
+  else if (!empty($hooks[$hook]['render element'])) {
     $key = $hooks[$hook]['render element'];
   }
-  if (isset($variables[$key])) {
+  if (!empty($key) && isset($variables[$key])) {
     $element = $variables[$key];
   }
 
   if (isset($element) && is_array($element) && !empty($element['#contextual_links'])) {
-    $variables['contextual_links'] = contextual_links_build($element);
-    if (!empty($variables['contextual_links'])) {
+    $variables['title_suffix']['contextual_links'] = contextual_links_view($element);
+    if (!empty($variables['title_suffix']['contextual_links'])) {
       $variables['classes_array'][] = 'contextual-links-region';
     }
   }
@@ -116,7 +113,7 @@ function contextual_preprocess(&$variables, $hook) {
  *
  * @see menu_contextual_links()
  */
-function contextual_links_build($element) {
+function contextual_links_view($element) {
   static $destination;
 
   // Retrieve contextual menu links.
@@ -149,7 +146,7 @@ function contextual_links_build($element) {
     $build = array(
       '#prefix' => '<div class="contextual-links-wrapper">',
       '#suffix' => '</div>',
-      '#theme' => 'links',
+      '#theme' => 'links__contextual',
       '#links' => $links,
       '#attributes' => array('class' => array('contextual-links')),
       '#attached' => array(

@@ -1,5 +1,5 @@
 <?php
-// $Id: book.pages.inc,v 1.23 2009/12/02 19:26:21 dries Exp $
+// $Id: book.pages.inc,v 1.26 2010/06/11 11:06:37 dries Exp $
 
 /**
  * @file
@@ -79,7 +79,7 @@ function book_export_html($nid) {
       $contents = book_export_traverse($tree, 'book_node_export');
     }
 
-    return theme('book_export_html', array('title' => $node->title[LANGUAGE_NONE][0]['value'], 'contents' => $contents, 'depth' => $node->book['depth']));
+    return theme('book_export_html', array('title' => $node->title, 'contents' => $contents, 'depth' => $node->book['depth']));
   }
   else {
     drupal_access_denied();
@@ -90,7 +90,7 @@ function book_export_html($nid) {
  * Menu callback; show the outline form for a single node.
  */
 function book_outline($node) {
-  drupal_set_title($node->title[LANGUAGE_NONE][0]['value']);
+  drupal_set_title($node->title);
   return drupal_get_form('book_outline_form', $node);
 }
 
@@ -188,7 +188,7 @@ function book_outline_form_submit($form, &$form_state) {
  */
 function book_remove_form($form, &$form_state, $node) {
   $form['#node'] = $node;
-  $title = array('%title' => $node->title[LANGUAGE_NONE][0]['value']);
+  $title = array('%title' => $node->title);
 
   if ($node->book['has_children']) {
     $description = t('%title has associated child pages, which will be relocated automatically to maintain their connection to the book. To recreate the hierarchy (as it was before removing this page), %title may be added again using the Outline tab, and each of its former child pages will need to be relocated manually.', $title);
@@ -219,25 +219,20 @@ function book_remove_form_submit($form, &$form_state) {
 }
 
 /**
- * AJAX callback to replace the book parent select options.
+ * Renders a new parent page select element when the book selection changes.
  *
- * This function is called when the selected book is changed. It updates the
- * cached form (either the node form or the book outline form) and returns
- * rendered output to be used to replace the select containing the possible
- * parent pages in the newly selected book.
+ * This function is called via AJAX when the selected book is changed on a node
+ * or book outline form. It creates a new parent page select element, adds it
+ * to the cached form, and then returns the rendered element so it can be
+ * displayed on the form.
  *
- * @param $build_id
- *   The form's build_id.
- * @param $bid
- *   A bid from from among those in the form's book select.
  * @return
- *   Prints the replacement HTML in JSON format.
+ *   The rendered parent page select element.
  */
 function book_form_update() {
   // Load the form based upon the $_POST data sent via the ajax call.
   list($form, $form_state) = ajax_get_form();
 
-  $commands = array();
   $bid = $_POST['book']['bid'];
 
   // Validate the bid.
@@ -248,15 +243,9 @@ function book_form_update() {
     $form['book']['plid'] = _book_parent_select($book_link);
     form_set_cache($form['values']['form_build_id'], $form, $form_state);
 
-    // Build and render the new select element, then return it in JSON format.
+    // Build the new select element and return it.
     $form_state = array();
     $form = form_builder($form['form_id']['#value'], $form, $form_state);
-
-    $commands[] = ajax_command_replace(NULL, drupal_render($form['book']['plid']));
+    return $form['book']['plid'];
   }
-
-  // @todo: We could and should just return $form['book']['plid'] and skip the
-  // ajax_command_replace() above. But for now, this provides a test case of
-  // returning an AJAX commands array.
-  return array('#type' => 'ajax_commands', '#ajax_commands' => $commands);
 }
