@@ -1,5 +1,5 @@
 <?php
-// $Id: common.inc,v 1.1177 2010/06/17 13:44:44 dries Exp $
+// $Id: common.inc,v 1.1179 2010/06/21 01:35:25 webchick Exp $
 
 /**
  * @file
@@ -3266,14 +3266,21 @@ function drupal_load_stylesheet_content($contents, $optimize = FALSE) {
 
   if ($optimize) {
     // Perform some safe CSS optimizations.
-    $contents = preg_replace('{
-      (?<=\\\\\*/)([^/\*]+/\*)([^\*/]+\*/)  # Add a backslash also at the end ie-mac hack comment, so the next pass will not touch it.
-                                            # The added backslash does not affect the effectiveness of the hack.
-      }x', '\1\\\\\2', $contents);
-    $contents = preg_replace('<
-      \s*([@{}:;,]|\)\s|\s\()\s* |          # Remove whitespace around separators, but keep space around parentheses.
-      /\*[^*\\\\]*\*+([^/*][^*]*\*+)*/ |    # Remove comments that are not CSS hacks.
-      >x', '\1', $contents);
+    // Regexp to match comment blocks.
+    $comment     = '/\*[^*]*\*+(?:[^/*][^*]*\*+)*/';
+    // Regexp to match double quoted strings.
+    $double_quot = '"[^"\\\\]*(?:\\\\.[^"\\\\]*)*"';
+    // Regexp to match single quoted strings.
+    $single_quot = "'[^'\\\\]*(?:\\\\.[^'\\\\]*)*'";
+    $contents = preg_replace(
+      "<($double_quot|$single_quot)|$comment>Sus", // Strip all comment blocks
+      "$1",                                        // but keep double/single
+      $contents);                                  // quoted strings.
+    $contents = preg_replace(
+      '<\s*([@{}:;,]|\)\s|\s\()\s*>S',             // Remove whitespace around separators,
+      '\1', $contents);                            // but keep space around parentheses.
+    // End the file with a new line.
+    $contents .= "\n";
   }
 
   // Replaces @import commands with the actual stylesheet content.
@@ -4277,6 +4284,7 @@ function drupal_add_tabledrag($table_id, $action, $relationship, $group, $subgro
     // Add the table drag JavaScript to the page before the module JavaScript
     // to ensure that table drag behaviors are registered before any module
     // uses it.
+    drupal_add_js('misc/jquery.cookie.js', array('weight' => JS_DEFAULT - 2));
     drupal_add_js('misc/tabledrag.js', array('weight' => JS_DEFAULT - 1));
     $js_added = TRUE;
   }

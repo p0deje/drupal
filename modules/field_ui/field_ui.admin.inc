@@ -1,5 +1,5 @@
 <?php
-// $Id: field_ui.admin.inc,v 1.52 2010/05/31 18:15:20 dries Exp $
+// $Id: field_ui.admin.inc,v 1.54 2010/06/21 03:11:49 webchick Exp $
 
 /**
  * @file
@@ -137,7 +137,9 @@ function field_ui_field_overview_form($form, &$form_state, $entity_type, $bundle
         '#type' => 'textfield',
         '#default_value' => $weight,
         '#size' => 3,
-       ),
+        '#title_display' => 'invisible',
+        '#title' => t('Weight for @row', array('@row' => $instance['label'])),
+      ),
       'hidden_name' => array(
         '#type' => 'hidden',
         '#default_value' => $instance['field_name'],
@@ -171,6 +173,8 @@ function field_ui_field_overview_form($form, &$form_state, $entity_type, $bundle
         '#type' => 'textfield',
         '#default_value' => $weight,
         '#size' => 3,
+        '#title_display' => 'invisible',
+        '#title' => t('Weight for @row', array('@row' => $extra_field['label'])),
       ),
       'edit' => array(
         '#markup' => isset($extra_field['edit']) ? $extra_field['edit'] : '',
@@ -226,6 +230,8 @@ function field_ui_field_overview_form($form, &$form_state, $entity_type, $bundle
         '#type' => 'textfield',
         '#default_value' => $weight,
         '#size' => 3,
+        '#title_display' => 'invisible',
+        '#title' => t('Weight for new field'),
       ),
       'hidden_name' => array(
         '#type' => 'hidden',
@@ -263,6 +269,8 @@ function field_ui_field_overview_form($form, &$form_state, $entity_type, $bundle
         '#type' => 'textfield',
         '#default_value' => $weight,
         '#size' => 3,
+        '#title_display' => 'invisible',
+        '#title' => t('Weight for added field'),
       ),
       'hidden_name' => array(
         '#type' => 'hidden',
@@ -1387,12 +1395,12 @@ function field_ui_field_edit_form_submit($form, &$form_state) {
  * Helper functions to handle multipage redirects.
  */
 function field_ui_get_destinations($destinations) {
-  $query = array();
   $path = array_shift($destinations);
+  $options = drupal_parse_url($path);
   if ($destinations) {
-    $query['destinations'] = $destinations;
+    $options['query']['destinations'] = $destinations;
   }
-  return array($path, array('query' => $query));
+  return array($options['path'], $options);
 }
 
 /**
