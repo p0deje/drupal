@@ -1,5 +1,5 @@
 <?php
-// $Id: module.inc,v 1.192 2010/05/09 13:49:33 dries Exp $
+// $Id: module.inc,v 1.194 2010/06/24 21:40:06 dries Exp $
 
 /**
  * @file
@@ -173,6 +173,7 @@ function system_list($type) {
  */
 function system_list_reset() {
   drupal_static_reset('system_list');
+  drupal_static_reset('list_themes');
   cache_clear_all('bootstrap_modules', 'cache_bootstrap');
   cache_clear_all('system_list', 'cache_bootstrap');
 }
@@ -585,6 +586,9 @@ function module_implements($hook, $sort = FALSE, $reset = FALSE) {
   }
 
   if (!isset($implementations[$hook])) {
+    // The hook is not cached, so ensure that whether or not it has
+    // implementations, that the cache is updated at the end of the request.
+    $implementations['#write_cache'] = TRUE;
     $hook_info = module_hook_info();
     $implementations[$hook] = array();
     $list = module_list(FALSE, FALSE, $sort);
@@ -592,8 +596,6 @@ function module_implements($hook, $sort = FALSE, $reset = FALSE) {
       $include_file = isset($hook_info[$hook]['group']) && module_load_include('inc', $module, $module . '.' . $hook_info[$hook]['group']);
       if (module_hook($module, $hook)) {
         $implementations[$hook][$module] = $include_file ? $hook_info[$hook]['group'] : FALSE;
-        // We added something to the cache, so write it when we are done.
-        $implementations['#write_cache'] = TRUE;
       }
     }
     // Allow modules to change the weight of specific implementations but avoid
