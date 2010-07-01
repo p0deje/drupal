@@ -1,5 +1,5 @@
 <?php
-// $Id: bootstrap.inc,v 1.400 2010/06/24 18:56:10 dries Exp $
+// $Id: bootstrap.inc,v 1.405 2010/06/29 18:50:36 dries Exp $
 
 /**
  * @file
@@ -560,7 +560,7 @@ function drupal_settings_initialize() {
   global $base_url, $base_path, $base_root;
 
   // Export the following settings.php variables to the global namespace
-  global $databases, $db_prefix, $cookie_domain, $conf, $installed_profile, $update_free_access, $db_url, $drupal_hash_salt, $is_https, $base_secure_url, $base_insecure_url;
+  global $databases, $cookie_domain, $conf, $installed_profile, $update_free_access, $db_url, $drupal_hash_salt, $is_https, $base_secure_url, $base_insecure_url;
   $conf = array();
 
   if (file_exists(DRUPAL_ROOT . '/' . conf_path() . '/settings.php')) {
@@ -902,10 +902,12 @@ function drupal_page_is_cacheable($allow_caching = NULL) {
  *
  * @param $hook
  *   The name of the bootstrap hook to invoke.
+ *
+ * @see bootstrap_hooks()
  */
 function bootstrap_invoke_all($hook) {
-  // _drupal_bootstrap_page_cache() already loaded the bootstrap modules, so we
-  // don't need to tell module_list() to reset its bootstrap list.
+  // Bootstrap modules should have been loaded when this function is called, so
+  // we don't need to tell module_list() to reset its bootstrap list.
   foreach (module_list(FALSE, TRUE) as $module) {
     drupal_load('module', $module);
     module_invoke($module, $hook);
@@ -1603,7 +1605,8 @@ function watchdog_exception($type, Exception $exception, $message = NULL, $varia
  * Log a system message.
  *
  * @param $type
- *   The category to which this message belongs.
+ *   The category to which this message belongs. Can be any string, but the
+ *   general practice is to use the name of the module calling watchdog().
  * @param $message
  *   The message to store in the log. Keep $message translatable
  *   by not concatenating dynamic values into it! Variables in the
@@ -1615,7 +1618,8 @@ function watchdog_exception($type, Exception $exception, $message = NULL, $varia
  *   NULL if message is already translated or not possible to
  *   translate.
  * @param $severity
- *   The severity of the message, as per RFC 3164.
+ *   The severity of the message, as per RFC 3164. Possible values are
+ *   WATCHDOG_ERROR, WATCHDOG_WARNING, etc.
  * @param $link
  *   A link to associate with the message.
  *
@@ -1647,7 +1651,7 @@ function watchdog($type, $message, $variables = array(), $severity = WATCHDOG_NO
     );
 
     // Call the logging hooks to log/process the message
-    foreach (module_implements('watchdog', TRUE) as $module) {
+    foreach (module_implements('watchdog') as $module) {
       module_invoke($module, 'watchdog', $log_entry);
     }
 
@@ -2147,20 +2151,48 @@ function _drupal_bootstrap_page_cache() {
  * Bootstrap database: Initialize database system and register autoload functions.
  */
 function _drupal_bootstrap_database() {
-  // The user agent header is used to pass a database prefix in the request when
-  // running tests. However, for security reasons, it is imperative that we
-  // validate we ourselves made the request.
-  if (isset($_SERVER['HTTP_USER_AGENT']) && (strpos($_SERVER['HTTP_USER_AGENT'], "simpletest") !== FALSE) && !drupal_valid_test_ua($_SERVER['HTTP_USER_AGENT'])) {
-    header($_SERVER['SERVER_PROTOCOL'] . ' 403 Forbidden');
-    exit;
-  }
-
   // Redirect the user to the installation script if Drupal has not been
   // installed yet (i.e., if no $databases array has been defined in the
   // settings.php file) and we are not already installing.
   if (empty($GLOBALS['databases']) && !drupal_installation_attempted()) {
     include_once DRUPAL_ROOT . '/includes/install.inc';
     install_goto('install.php');
+  }
+
+  // The user agent header is used to pass a database prefix in the request when
+  // running tests. However, for security reasons, it is imperative that we
+  // validate we ourselves made the request.
+  if (isset($_SERVER['HTTP_USER_AGENT']) && preg_match("/^(simpletest\d+);/", $_SERVER['HTTP_USER_AGENT'], $matches)) {
+    if (!drupal_valid_test_ua($_SERVER['HTTP_USER_AGENT'])) {
+      header($_SERVER['SERVER_PROTOCOL'] . ' 403 Forbidden');
+      exit;
+    }
+
+    // The first part of the user agent is the prefix itself.
+    $test_prefix = $matches[1];
+
+    // Set the test run id for use in other parts of Drupal.
+    $test_info = &$GLOBALS['drupal_test_info'];
+    $test_info['test_run_id'] = $test_prefix;
+    $test_info['in_child_site'] = TRUE;
+
+    foreach ($GLOBALS['databases']['default'] as &$value) {
+      // Extract the current default database prefix.
+      if (!isset($value['prefix'])) {
+        $current_prefix = '';
+      }
+      else if (is_array($value['prefix'])) {
+        $current_prefix = $value['prefix']['default'];
+      }
+      else {
+        $current_prefix = $value['prefix'];
+      }
+
+      // Remove the current database prefix and replace it by our own.
+      $value['prefix'] = array(
+        'default' => $current_prefix . $test_prefix,
+      );
+    }
   }
 
   // Initialize the database system. Note that the connection
@@ -2220,15 +2252,15 @@ function drupal_get_bootstrap_phase() {
  * Validate the HMAC and timestamp of a user agent header from simpletest.
  */
 function drupal_valid_test_ua($user_agent) {
-  global $databases;
+  global $drupal_hash_salt;
 
   list($prefix, $time, $salt, $hmac) = explode(';', $user_agent);
   $check_string =  $prefix . ';' . $time . ';' . $salt;
-  // We use the database credentials from settings.php to make the HMAC key, since
+  // We use the salt from settings.php to make the HMAC key, since
   // the database is not yet initialized and we can't access any Drupal variables.
   // The file properties add more entropy not easily accessible to others.
   $filepath = DRUPAL_ROOT . '/includes/bootstrap.inc';
-  $key = serialize($databases) . filectime($filepath) . fileinode($filepath);
+  $key = $drupal_hash_salt . filectime($filepath) . fileinode($filepath);
   // The HMAC must match.
   return $hmac == drupal_hmac_base64($check_string, $key);
 }
@@ -2237,15 +2269,15 @@ function drupal_valid_test_ua($user_agent) {
  * Generate a user agent string with a HMAC and timestamp for simpletest.
  */
 function drupal_generate_test_ua($prefix) {
-  global $databases;
+  global $drupal_hash_salt;
   static $key;
 
   if (!isset($key)) {
-    // We use the database credentials to make the HMAC key, since we
-    // check the HMAC before the database is initialized. filectime()
-    // and fileinode() are not easily determined from remote.
+    // We use the salt from settings.php to make the HMAC key, since
+    // the database is not yet initialized and we can't access any Drupal variables.
+    // The file properties add more entropy not easily accessible to others.
     $filepath = DRUPAL_ROOT . '/includes/bootstrap.inc';
-    $key = serialize($databases) . filectime($filepath) . fileinode($filepath);
+    $key = $drupal_hash_salt . filectime($filepath) . fileinode($filepath);
   }
    // Generate a moderately secure HMAC based on the database credentials.
    $salt = uniqid('', TRUE);
@@ -2693,7 +2725,7 @@ function _registry_check_code($type, $name = NULL) {
   $cache_key = $type[0] . $name;
   if (isset($lookup_cache[$cache_key])) {
     if ($lookup_cache[$cache_key]) {
-      require DRUPAL_ROOT . '/' . $lookup_cache[$cache_key];
+      require_once DRUPAL_ROOT . '/' . $lookup_cache[$cache_key];
     }
     return (bool) $lookup_cache[$cache_key];
   }
@@ -2715,7 +2747,7 @@ function _registry_check_code($type, $name = NULL) {
   $lookup_cache[$cache_key] = $file;
 
   if ($file) {
-    require DRUPAL_ROOT . '/' . $file;
+    require_once DRUPAL_ROOT . '/' . $file;
     return TRUE;
   }
   else {

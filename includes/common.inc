@@ -1,5 +1,5 @@
 <?php
-// $Id: common.inc,v 1.1182 2010/06/24 18:51:33 dries Exp $
+// $Id: common.inc,v 1.1188 2010/07/01 00:46:57 dries Exp $
 
 /**
  * @file
@@ -766,8 +766,6 @@ function drupal_access_denied() {
  *       A string containing the response body that was received.
  */
 function drupal_http_request($url, array $options = array()) {
-  global $db_prefix;
-
   $result = new stdClass();
 
   // Parse the URL and make sure we can handle the schema.
@@ -867,8 +865,9 @@ function drupal_http_request($url, array $options = array()) {
   // user-agent is used to ensure that multiple testing sessions running at the
   // same time won't interfere with each other as they would if the database
   // prefix were stored statically in a file or database variable.
-  if (is_string($db_prefix) && preg_match("/simpletest\d+/", $db_prefix, $matches)) {
-    $options['headers']['User-Agent'] = drupal_generate_test_ua($matches[0]);
+  $test_info = &$GLOBALS['drupal_test_info'];
+  if (!empty($test_info['test_run_id'])) {
+    $options['headers']['User-Agent'] = drupal_generate_test_ua($test_info['test_run_id']);
   }
 
   $request = $options['method'] . ' ' . $path . " HTTP/1.0\r\n";
@@ -1975,6 +1974,10 @@ function format_username($account) {
  *     Drupal on a web server that cannot be configured to automatically find
  *     index.php, then hook_url_outbound_alter() can be implemented to force
  *     this value to 'index.php'.
+ *   - 'entity_type': The entity type of the object that called url(). Only set if
+ *     url() is invoked by entity_uri().
+ *   - 'entity': The entity object (such as a node) for which the URL is being
+ *     generated. Only set if url() is invoked by entity_uri().
  *
  * @return
  *   A string containing a URL to the given path.
@@ -2272,10 +2275,9 @@ function l($text, $path, array $options = array()) {
  * sends the content to the browser in the needed format. The default delivery
  * callback is drupal_deliver_html_page() which delivers the content as an HTML
  * page, complete with blocks in addition to the content. This default can be
- * overridden on a per menu item basis by setting 'delivery callback' in
- * hook_menu(), hook_menu_alter(), or hook_menu_active_handler_alter().
- * Additionally, modules may use hook_page_delivery_callback_alter() to specify
- * a different delivery callback to use for the page request.
+ * overridden on a per menu router item basis by setting 'delivery callback' in
+ * hook_menu() or hook_menu_alter(), and can also be overridden on a per request
+ * basis in hook_page_delivery_callback_alter().
  *
  * For example, the same page callback function can be used for an HTML
  * version of the page and an AJAX version of the page. The page callback
@@ -2297,25 +2299,20 @@ function l($text, $path, array $options = array()) {
  *   (Optional) If given, it is the name of a delivery function most likely
  *   to be appropriate for the page request as determined by the calling
  *   function (e.g., menu_execute_active_handler()). If not given, it is
- *   determined from the menu router information of the current page. In either
- *   case, modules have a final chance to alter which function is called.
+ *   determined from the menu router information of the current page.
  *
  * @see menu_execute_active_handler()
  * @see hook_menu()
  * @see hook_menu_alter()
- * @see hook_menu_active_handler_alter()
  * @see hook_page_delivery_callback_alter()
  */
 function drupal_deliver_page($page_callback_result, $default_delivery_callback = NULL) {
   if (!isset($default_delivery_callback) && ($router_item = menu_get_item())) {
-    drupal_alter('menu_active_handler', $router_item);
     $default_delivery_callback = $router_item['delivery_callback'];
   }
   $delivery_callback = !empty($default_delivery_callback) ? $default_delivery_callback : 'drupal_deliver_html_page';
-  // Give modules a final chance to alter the delivery callback used. This is
-  // for modules that need to decide which delivery callback to use based on
-  // information made available during page callback execution and for pages
-  // without router items.
+  // Give modules a chance to alter the delivery callback used, based on
+  // request-time context (e.g., HTTP request headers).
   drupal_alter('page_delivery_callback', $delivery_callback);
   if (function_exists($delivery_callback)) {
     $delivery_callback($page_callback_result);
@@ -2758,7 +2755,7 @@ function drupal_get_css($css = NULL) {
     $css = drupal_add_css();
   }
 
-  // Allow modules to alter the CSS items.
+  // Allow modules and themes to alter the CSS items.
   drupal_alter('css', $css);
 
   // Sort CSS items according to their weights.
@@ -4502,13 +4499,15 @@ function _drupal_bootstrap_full() {
   module_load_all();
   // Make sure all stream wrappers are registered.
   file_get_stream_wrappers();
-  if (isset($_SERVER['HTTP_USER_AGENT']) && strpos($_SERVER['HTTP_USER_AGENT'], 'simpletest') !== FALSE) {
-    // Valid SimpleTest user-agent, log fatal errors to test specific file
-    // directory. The user-agent is validated in DRUPAL_BOOTSTRAP_DATABASE
-    // phase so as long as it is a SimpleTest user-agent it is valid.
+
+  $test_info = &$GLOBALS['drupal_test_info'];
+  if (!empty($test_info['in_child_site'])) {
+    // Running inside the simpletest child site, log fatal errors to test
+    // specific file directory.
     ini_set('log_errors', 1);
     ini_set('error_log', file_directory_path() . '/error.log');
   }
+
   // Initialize $_GET['q'] prior to invoking hook_init().
   drupal_path_initialize();
   // Set a custom theme for the current page, if there is one. We need to run
@@ -6178,6 +6177,8 @@ function watchdog_severity_levels() {
 
 /**
  * Explode a string of given tags into an array.
+ *
+ * @see drupal_implode_tags()
  */
 function drupal_explode_tags($tags) {
   // This regexp allows the following types of user input:
@@ -6202,6 +6203,8 @@ function drupal_explode_tags($tags) {
 
 /**
  * Implode an array of tags into a string.
+ *
+ * @see drupal_explode_tags()
  */
 function drupal_implode_tags($tags) {
   $encoded_tags = array();
@@ -6626,6 +6629,10 @@ function entity_uri($entity_type, $entity) {
       if (!isset($entity->uri['options'])) {
         $entity->uri['options'] = array();
       }
+      // Pass the entity data to url() so that alter functions do not need to
+      // lookup this entity again.
+      $entity->uri['options']['entity_type'] = $entity_type;
+      $entity->uri['options']['entity'] = $entity;
     }
     else {
       $entity->uri = FALSE;

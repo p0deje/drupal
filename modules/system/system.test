@@ -1,5 +1,5 @@
 <?php
-// $Id: system.test,v 1.127 2010/06/21 02:27:47 webchick Exp $
+// $Id: system.test,v 1.130 2010/06/30 15:51:51 dries Exp $
 
 /**
  * Helper class for module test cases.
@@ -416,7 +416,7 @@ class IPAddressBlockingTestCase extends DrupalWebTestCase {
     // Block a valid IP address.
     $edit = array();
     $edit['ip'] = '192.168.1.1';
-    $this->drupalPost('admin/config/people/ip-blocking', $edit, t('Save'));
+    $this->drupalPost('admin/config/people/ip-blocking', $edit, t('Add'));
     $ip = db_query("SELECT iid from {blocked_ips} WHERE ip = :ip", array(':ip' => $edit['ip']))->fetchField();
     $this->assertTrue($ip, t('IP address found in database.'));
     $this->assertRaw(t('The IP address %ip has been blocked.', array('%ip' => $edit['ip'])), t('IP address was blocked.'));
@@ -424,30 +424,30 @@ class IPAddressBlockingTestCase extends DrupalWebTestCase {
     // Try to block an IP address that's already blocked.
     $edit = array();
     $edit['ip'] = '192.168.1.1';
-    $this->drupalPost('admin/config/people/ip-blocking', $edit, t('Save'));
+    $this->drupalPost('admin/config/people/ip-blocking', $edit, t('Add'));
     $this->assertText(t('This IP address is already blocked.'));
 
     // Try to block a reserved IP address.
     $edit = array();
     $edit['ip'] = '255.255.255.255';
-    $this->drupalPost('admin/config/people/ip-blocking', $edit, t('Save'));
+    $this->drupalPost('admin/config/people/ip-blocking', $edit, t('Add'));
     $this->assertText(t('Enter a valid IP address.'));
 
     // Try to block a reserved IP address.
     $edit = array();
     $edit['ip'] = 'test.example.com';
-    $this->drupalPost('admin/config/people/ip-blocking', $edit, t('Save'));
+    $this->drupalPost('admin/config/people/ip-blocking', $edit, t('Add'));
     $this->assertText(t('Enter a valid IP address.'));
 
     // Submit an empty form.
     $edit = array();
     $edit['ip'] = '';
-    $this->drupalPost('admin/config/people/ip-blocking', $edit, t('Save'));
+    $this->drupalPost('admin/config/people/ip-blocking', $edit, t('Add'));
     $this->assertText(t('Enter a valid IP address.'));
 
     // Pass an IP address as a URL parameter and submit it.
     $submit_ip = '1.2.3.4';
-    $this->drupalPost('admin/config/people/ip-blocking/' . $submit_ip, NULL, t('Save'));
+    $this->drupalPost('admin/config/people/ip-blocking/' . $submit_ip, NULL, t('Add'));
     $ip = db_query("SELECT iid from {blocked_ips} WHERE ip = :ip", array(':ip' => $submit_ip))->fetchField();
     $this->assertTrue($ip, t('IP address found in database'));
     $this->assertRaw(t('The IP address %ip has been blocked.', array('%ip' => $submit_ip)), t('IP address was blocked.'));
@@ -1226,83 +1226,6 @@ class SystemMainContentFallback extends DrupalWebTestCase {
   }
 }
 
-class SystemSettingsForm extends DrupalWebTestCase {
-  /**
-   * Implement getInfo().
-   */
-  public static function getInfo() {
-    return array(
-      'name' => 'System setting forms',
-      'description' => 'Tests correctness of system_settings_form() processing.',
-      'group' => 'System'
-    );
-  }
-
-  /**
-   * Implement setUp().
-   */
-  function setUp() {
-    parent::setUp();
-
-    variable_set('system_settings_form_test', TRUE);
-    variable_set('system_settings_form_test_4', TRUE);
-  }
-
-  /**
-   * Reset page title.
-   */
-  function tearDown() {
-    variable_del('system_settings_form_test');
-    variable_del('system_settings_form_test_4');
-
-    parent::tearDown();
-  }
-
-  /**
-   * Tests the handling of automatic defaults in systems_settings_form().
-   */
-  function testAutomaticDefaults() {
-    $form['system_settings_form_test'] = array(
-      '#type' => 'checkbox',
-      '#default_value' => FALSE,
-    );
-
-    $form['system_settings_form_test_2'] = array(
-      '#type' => 'checkbox',
-      '#default_value' => FALSE,
-    );
-
-    $form['system_settings_form_test_3'] = array(
-      '#type' => 'checkbox',
-      '#default_value' => TRUE,
-    );
-
-    $form['has_children']['system_settings_form_test_4'] = array(
-      '#type' => 'checkbox',
-      '#default_value' => FALSE,
-    );
-
-    $form['has_children']['system_settings_form_test_5'] = array(
-      '#type' => 'checkbox',
-      '#default_value' => TRUE,
-    );
-
-    $automatic = system_settings_form($form, FALSE);
-    $this->assertFalse($automatic['system_settings_form_test']['#default_value']);
-    $this->assertFalse($automatic['system_settings_form_test_2']['#default_value']);
-    $this->assertTrue($automatic['system_settings_form_test_3']['#default_value']);
-    $this->assertFalse($automatic['has_children']['system_settings_form_test_4']['#default_value']);
-    $this->assertTrue($automatic['has_children']['system_settings_form_test_5']['#default_value']);
-
-    $no_automatic = system_settings_form($form);
-    $this->assertTrue($no_automatic['system_settings_form_test']['#default_value']);
-    $this->assertFalse($no_automatic['system_settings_form_test_2']['#default_value']);
-    $this->assertTrue($no_automatic['system_settings_form_test_3']['#default_value']);
-    $this->assertTrue($no_automatic['has_children']['system_settings_form_test_4']['#default_value']);
-    $this->assertTrue($no_automatic['has_children']['system_settings_form_test_5']['#default_value']);
-  }
-}
-
 /**
  * Tests for the theme interface functionality.
  */
@@ -1895,6 +1818,10 @@ class ShutdownFunctionsTest extends DrupalWebTestCase {
     $this->drupalGet('system-test/shutdown-functions/' . $arg1 . '/' . $arg2);
     $this->assertText(t('First shutdown function, arg1 : @arg1, arg2: @arg2', array('@arg1' => $arg1, '@arg2' => $arg2)));
     $this->assertText(t('Second shutdown function, arg1 : @arg1, arg2: @arg2', array('@arg1' => $arg1, '@arg2' => $arg2)));
+
+    // Make sure exceptions displayed through _drupal_render_exception_safe()
+    // are correctly escaped.
+    $this->assertText('Drupal is &lt;blink&gt;awesome&lt;/blink&gt;.');
   }
 }
 

@@ -1,5 +1,5 @@
 <?php
-// $Id: user.module,v 1.1176 2010/06/23 02:45:35 dries Exp $
+// $Id: user.module,v 1.1179 2010/06/29 18:24:10 dries Exp $
 
 /**
  * @file
@@ -2416,141 +2416,141 @@ function _user_mail_text($key, $language = NULL, $variables = array(), $replace 
     // No override, return default string.
     switch ($key) {
       case 'register_no_approval_required_subject':
-        $text = t('Account details for !user-name-token at !site-name-token', array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]'), array('langcode' => $langcode));
+        $text = t('Account details for [user:name] at [site:name]', array(), array('langcode' => $langcode));
         break;
       case 'register_no_approval_required_body':
-        $text = t("!user-name-token,
+        $text = t("[user:name],
 
-Thank you for registering at !site-name-token. You may now log in by clicking this link or copying and pasting it to your browser:
+Thank you for registering at [site:name]. You may now log in by clicking this link or copying and pasting it to your browser:
 
-!one-time-login-token
+[user:one-time-login-url]
 
 This link can only be used once to log in and will lead you to a page where you can set your password.
 
-After setting your password, you will be able to log in at !site-login-url-token in the future using:
+After setting your password, you will be able to log in at [site:login-url] in the future using:
 
-username: !user-name-token
+username: [user:name]
 password: Your password
 
---  !site-name-token team", array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]',  '!one-time-login-token' => '[user:one-time-login-url]', '!site-login-url-token' => '[site:login-url]'), array('langcode' => $langcode));
+--  [site:name] team", array(), array('langcode' => $langcode));
         break;
 
       case 'register_admin_created_subject':
-        $text = t('An administrator created an account for you at !site-name-token', array('!site-name-token' => '[site:name]'), array('langcode' => $langcode));
+        $text = t('An administrator created an account for you at [site:name]', array(), array('langcode' => $langcode));
         break;
       case 'register_admin_created_body':
-        $text = t("!user-name-token,
+        $text = t("[user:name],
 
-A site administrator at !site-name-token has created an account for you. You may now log in by clicking this link or copying and pasting it to your browser:
+A site administrator at [site:name] has created an account for you. You may now log in by clicking this link or copying and pasting it to your browser:
 
-!one-time-login-token
+[user:one-time-login-url]
 
 This link can only be used once to log in and will lead you to a page where you can set your password.
 
-After setting your password, you will be able to log in at !site-login-url-token in the future using:
+After setting your password, you will be able to log in at [site:login-url] in the future using:
 
-username: !user-name-token
+username: [user:name]
 password: Your password
 
---  !site-name-token team", array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]',  '!one-time-login-token' => '[user:one-time-login-url]', '!site-login-url-token' => '[site:login-url]'), array('langcode' => $langcode));
+--  [site:name] team", array(), array('langcode' => $langcode));
         break;
 
       case 'register_pending_approval_subject':
       case 'register_pending_approval_admin_subject':
-        $text = t('Account details for !user-name-token at !site-name-token (pending admin approval)', array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]'), array('langcode' => $langcode));
+        $text = t('Account details for [user:name] at [site:name] (pending admin approval)', array(), array('langcode' => $langcode));
         break;
       case 'register_pending_approval_body':
-        $text = t("!user-name-token,
+        $text = t("[user:name],
 
-Thank you for registering at !site-name-token. Your application for an account is currently pending approval. Once it has been approved, you will receive another e-mail containing information about how to log in, set your password, and other details.
+Thank you for registering at [site:name]. Your application for an account is currently pending approval. Once it has been approved, you will receive another e-mail containing information about how to log in, set your password, and other details.
 
 
---  !site-name-token team", array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]'), array('langcode' => $langcode));
+--  [site:name] team", array(), array('langcode' => $langcode));
         break;
       case 'register_pending_approval_admin_body':
-        $text = t("!user-name-token has applied for an account.
+        $text = t("[user:name] has applied for an account.
 
-!user-edit-url-token", array('!user-name-token' => '[user:name]', '!user-edit-url-token' => '[user:edit-url]'), array('langcode' => $langcode));
+[user:edit-url]", array(), array('langcode' => $langcode));
         break;
 
       case 'password_reset_subject':
-        $text = t('Replacement login information for !user-name-token at !site-name-token', array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]'), array('langcode' => $langcode));
+        $text = t('Replacement login information for [user:name] at [site:name]', array(), array('langcode' => $langcode));
         break;
       case 'password_reset_body':
-        $text = t("!user-name-token,
+        $text = t("[user:name],
 
-A request to reset the password for your account has been made at !site-name-token.
+A request to reset the password for your account has been made at [site:name].
 
 You may now log in by clicking this link or copying and pasting it to your browser:
 
-!one-time-login-token
+[user:one-time-login-url]
 
 This link can only be used once to log in and will lead you to a page where you can set your password. It expires after one day and nothing will happen if it's not used.
 
---  !site-name-token team", array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]',  '!one-time-login-token' => '[user:one-time-login-url]'), array('langcode' => $langcode));
+--  [site:name] team", array(), array('langcode' => $langcode));
         break;
 
       case 'status_activated_subject':
-        $text = t('Account details for !user-name-token at !site-name-token (approved)', array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]'), array('langcode' => $langcode));
+        $text = t('Account details for [user:name] at [site:name] (approved)', array(), array('langcode' => $langcode));
         break;
       case 'status_activated_body':
-        $text = t("!user-name-token,
+        $text = t("[user:name],
 
-Your account at !site-name-token has been activated.
+Your account at [site:name] has been activated.
 
 You may now log in by clicking this link or copying and pasting it into your browser:
 
-!one-time-login-token
+[site:login-url]
 
 This link can only be used once to log in and will lead you to a page where you can set your password.
 
-After setting your password, you will be able to log in at !site-login-url-token in the future using:
+After setting your password, you will be able to log in at [site:login-url] in the future using:
 
-username: !user-name-token
+username: [user:name]
 password: Your password
 
---  !site-name-token team", array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]',  '!site-login-url-token' => '[site:login-url]', '!one-time-login-token' => '[user:one-time-login-url]'), array('langcode' => $langcode));
+--  [site:name] team", array(), array('langcode' => $langcode));
         break;
 
       case 'status_blocked_subject':
-        $text = t('Account details for !user-name-token at !site-name-token (blocked)', array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]'), array('langcode' => $langcode));
+        $text = t('Account details for [user:name] at [site:name] (blocked)', array(), array('langcode' => $langcode));
         break;
       case 'status_blocked_body':
-        $text = t("!user-name-token,
+        $text = t("[user:name],
 
-Your account on !site-name-token has been blocked.
+Your account on [site:name] has been blocked.
 
---  !site-name-token team", array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]'), array('langcode' => $langcode));
+--  [site:name] team", array(), array('langcode' => $langcode));
         break;
 
       case 'cancel_confirm_subject':
-        $text = t('Account cancellation request for !user-name-token at !site-name-token', array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]'), array('langcode' => $langcode));
+        $text = t('Account cancellation request for [user:name] at [site:name]', array(), array('langcode' => $langcode));
         break;
       case 'cancel_confirm_body':
-        $text = t("!user-name-token,
+        $text = t("[user:name],
 
-A request to cancel your account has been made at !site-name-token.
+A request to cancel your account has been made at [site:name].
 
-You may now cancel your account on !site-url-brief-token by clicking this link or copying and pasting it into your browser:
+You may now cancel your account on [site:url-brief] by clicking this link or copying and pasting it into your browser:
 
-!user-cancel-url-token
+[user:cancel-url]
 
 NOTE: The cancellation of your account is not reversible.
 
 This link expires in one day and nothing will happen if it is not used.
 
---  !site-name-token team", array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]', '!site-url-brief-token' => '[site:url-brief]', '!user-cancel-url-token' => '[user:cancel-url]'), array('langcode' => $langcode));
+--  [site:name] team", array(), array('langcode' => $langcode));
         break;
 
       case 'status_canceled_subject':
-        $text = t('Account details for !user-name-token at !site-name-token (canceled)', array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]'), array('langcode' => $langcode));
+        $text = t('Account details for [user:name] at [site:name] (canceled)', array(), array('langcode' => $langcode));
         break;
       case 'status_canceled_body':
-        $text = t("!user-name-token,
+        $text = t("[user:name],
 
-Your account on !site-name-token has been canceled.
+Your account on [site:name] has been canceled.
 
---  !site-name-token team", array('!user-name-token' => '[user:name]', '!site-name-token' => '[site:name]'), array('langcode' => $langcode));
+--  [site:name] team", array(), array('langcode' => $langcode));
         break;
     }
   }
@@ -3144,8 +3144,6 @@ function user_filters() {
  */
 function user_build_filter_query(SelectQuery $query) {
   $filters = user_filters();
-  $role_count = 0;
-  $permission_count = 0;
   // Extend Query with filter conditions.
   foreach (isset($_SESSION['user_overview_filter']) ? $_SESSION['user_overview_filter'] : array() as $filter) {
     list($key, $value) = $filter;
@@ -3159,19 +3157,13 @@ function user_build_filter_query(SelectQuery $query) {
       if (user_access($value, $account)) {
         continue;
       }
-      $user_role_alias = 'ur' . $role_count;
-      $permission_alias = 'p' . $permission_count;
-      $query->innerJoin('users_roles', $user_role_alias, $user_role_alias . '.uid = u.uid');
-      $query->innerJoin('role_permission', $permission_alias , $user_role_alias . '.rid = ' . $permission_alias . '.rid');
+      $user_role_alias = $query->join('users_roles', 'ur', '%alias.uid = u.uid');
+      $permission_alias = $query->join('role_permission', 'p', $user_role_alias . '.rid = %alias.rid');
       $query->condition($permission_alias . '.permission', $value);
-      $role_count++;
-      $permission_count++;
     }
     else if ($key == 'role') {
-      $user_role_alias = 'ur' . $role_count;
-      $query->innerJoin('users_roles', $user_role_alias, $user_role_alias . '.uid = u.uid');
+      $user_roles_alias = $query->join('users_roles', 'ur', '%alias.uid = u.uid');
       $query->condition($user_role_alias . '.rid' , $value);
-      $role_count++;
     }
     else {
       $query->condition($filters[$key]['field'], $value);
@@ -3381,7 +3373,7 @@ function user_action_info() {
       'label' => t('Block current user'),
       'type' => 'user',
       'configurable' => FALSE,
-      'triggers' => array(),
+      'triggers' => array('any'),
     ),
   );
 }
@@ -3392,22 +3384,25 @@ function user_action_info() {
  * @ingroup actions
  */
 function user_block_user_action(&$entity, $context = array()) {
+  // First priority: If there is a $entity->uid, block that user.
+  // This is most likely a user object or the author if a node or comment.
   if (isset($entity->uid)) {
     $uid = $entity->uid;
   }
   elseif (isset($context['uid'])) {
     $uid = $context['uid'];
   }
+  // If neither of those are valid, then block the current user.
   else {
-    global $user;
-    $uid = $user->uid;
+    $uid = $GLOBALS['user']->uid;
   }
   db_update('users')
     ->fields(array('status' => 0))
     ->condition('uid', $uid)
     ->execute();
   drupal_session_destroy_uid($uid);
-  watchdog('action', 'Blocked user %name.', array('%name' => $user->name));
+  $account = user_load($uid);
+  watchdog('action', 'Blocked user %name.', array('%name' => $account->name));
 }
 
 /**
