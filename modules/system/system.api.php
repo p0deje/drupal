@@ -1,5 +1,5 @@
 <?php
-// $Id: system.api.php,v 1.176 2010/07/01 00:46:57 dries Exp $
+// $Id: system.api.php,v 1.178 2010/07/07 08:05:01 webchick Exp $
 
 /**
  * @file
@@ -2812,12 +2812,14 @@ function hook_update_N(&$sandbox) {
     // We'll -1 to disregard the uid 0...
     $sandbox['max'] = db_query('SELECT COUNT(DISTINCT uid) FROM {users}')->fetchField() - 1;
   }
-  db_select('users', 'u')
+
+  $users = db_select('users', 'u')
     ->fields('u', array('uid', 'name'))
     ->condition('uid', $sandbox['current_uid'], '>')
     ->range(0, 3)
     ->orderBy('uid', 'ASC')
     ->execute();
+
   foreach ($users as $user) {
     $user->name .= '!';
     db_update('users')
@@ -3956,6 +3958,31 @@ function hook_filetransfer_backends() {
     );
   }
   return $backends;
+}
+
+/**
+ * Control site status before menu dispatching.
+ *
+ * The hook is called after checking whether the site is offline but before 
+ * the current router item is retrieved and executed by
+ * menu_execute_active_handler(). If the site is in offline mode,
+ * $menu_site_status is set to MENU_SITE_OFFLINE.
+ *
+ * @param $menu_site_status
+ *   Supported values are MENU_SITE_OFFLINE, MENU_ACCESS_DENIED,
+ *   MENU_NOT_FOUND and MENU_SITE_ONLINE. Any other value than
+ *   MENU_SITE_ONLINE will skip the default menu handling system and be passed
+ *   for delivery to drupal_deliver_page() with a NULL
+ *   $default_delivery_callback.
+ * @param $path
+ *   Contains the system path that is going to be loaded. This is read only,
+ *   use hook_url_inbound_alter() to change the path.
+ */
+function hook_menu_site_status_alter(&$menu_site_status, $path) {
+  // Allow access to my_module/authentication even if site is in offline mode.
+  if ($menu_site_status == MENU_SITE_OFFLINE && user_is_anonymous() && $path == 'my_module/authentication') {
+    $menu_site_status = MENU_SITE_ONLINE;
+  }
 }
 
 /**
