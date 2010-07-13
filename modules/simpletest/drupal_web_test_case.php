@@ -1,5 +1,5 @@
 <?php
-// $Id: drupal_web_test_case.php,v 1.223 2010/06/29 18:24:10 dries Exp $
+// $Id: drupal_web_test_case.php,v 1.224 2010/07/08 12:22:59 dries Exp $
 
 /**
  * Global variable that holds information about the tests being run.
