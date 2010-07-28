@@ -1,5 +1,5 @@
 <?php
-// $Id: module.inc,v 1.195 2010/06/26 12:34:44 dries Exp $
+// $Id: module.inc,v 1.197 2010/07/28 01:46:59 dries Exp $
 
 /**
  * @file
@@ -12,6 +12,7 @@
  * @param $bootstrap
  *   Whether to load only the reduced set of modules loaded in "bootstrap mode"
  *   for cached pages. See bootstrap.inc.
+ *
  * @return
  *   If $bootstrap is NULL, return a boolean indicating whether all modules
  *   have been loaded.
@@ -46,6 +47,7 @@ function module_load_all($bootstrap = FALSE) {
  * @param $fixed_list
  *   (Optional) Override the module list with the given modules. Stays until the
  *   next call with $refresh = TRUE.
+ *
  * @return
  *   An associative array whose keys and values are the names of all loaded
  *   modules.
@@ -183,6 +185,7 @@ function system_list_reset() {
  *
  * @param $files
  *   The array of filesystem objects used to rebuild the cache.
+ *
  * @return
  *   The same array with the new keys for each module:
  *   - requires: An array with the keys being the modules that this module
@@ -192,18 +195,16 @@ function system_list_reset() {
  */
 function _module_build_dependencies($files) {
   require_once DRUPAL_ROOT . '/includes/graph.inc';
-  $roots = $files;
   foreach ($files as $filename => $file) {
     $graph[$file->name]['edges'] = array();
     if (isset($file->info['dependencies']) && is_array($file->info['dependencies'])) {
       foreach ($file->info['dependencies'] as $dependency) {
         $dependency_data = drupal_parse_dependency($dependency);
         $graph[$file->name]['edges'][$dependency_data['name']] = $dependency_data;
-        unset($roots[$dependency_data['name']]);
       }
     }
   }
-  drupal_depth_first_search($graph, array_keys($roots));
+  drupal_depth_first_search($graph);
   foreach ($graph as $module => $data) {
     $files[$module]->required_by = isset($data['reverse_paths']) ? $data['reverse_paths'] : array();
     $files[$module]->requires = isset($data['paths']) ? $data['paths'] : array();
@@ -217,6 +218,7 @@ function _module_build_dependencies($files) {
  *
  * @param $module
  *   The name of the module (without the .module extension).
+ *
  * @return
  *   TRUE if the module is both installed and enabled.
  */
@@ -305,6 +307,7 @@ function module_load_all_includes($type, $name = NULL) {
  *   - Invoke hook_enable().
  * - Invoke hook_modules_installed().
  * - Invoke hook_modules_enabled().
+ *
  * @param $module_list
  *   An array of module names.
  * @param $enable_dependencies
@@ -543,6 +546,7 @@ function module_disable($module_list, $disable_dependents = TRUE) {
  *   The name of the module (without the .module extension).
  * @param $hook
  *   The name of the hook (e.g. "help" or "menu").
+ *
  * @return
  *   TRUE if the module is both installed and enabled, and the hook is
  *   implemented in that module.
@@ -711,6 +715,7 @@ function module_implements_write_cache() {
  *   The name of the hook to invoke.
  * @param ...
  *   Arguments to pass to the hook implementation.
+ *
  * @return
  *   The return value of the hook implementation.
  */
@@ -730,6 +735,7 @@ function module_invoke() {
  *   The name of the hook to invoke.
  * @param ...
  *   Arguments to pass to the hook.
+ *
  * @return
  *   An array of return values of the hook implementations. If modules return
  *   arrays from their implementations, those are merged into one array.

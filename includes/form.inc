@@ -1,5 +1,5 @@
 <?php
-// $Id: form.inc,v 1.477 2010/07/10 00:03:37 webchick Exp $
+// $Id: form.inc,v 1.479 2010/07/26 13:07:59 dries Exp $
 
 /**
  * @defgroup forms Form builder functions
@@ -207,7 +207,10 @@ function drupal_get_form($form_id) {
  *     rebuild the form from cache when the original context may no longer be
  *     available:
  *     - args: An array of arguments to pass to the form builder.
- *     - file: An optional include file that contains the form and is
+ *     - files: An optional array defining include files that need to be loaded
+ *       for building the form. Each array entry may be the path to a file or
+ *       another array containing values for the parameters 'type', 'module' and
+ *       'name' as needed by module_load_include(). The files listed here are
  *       automatically loaded by form_get_cache(). Defaults to the current menu
  *       router item's 'file' definition, if existent.
  *   - rebuild: Normally, after the entire form processing is completed and
@@ -298,10 +301,10 @@ function drupal_build_form($form_id, &$form_state) {
       // rebuilt from cache on a different path (such as 'system/ajax'). See
       // form_get_cache().
       // $menu_get_item() is not available at installation time.
-      if (!isset($form_state['build_info']['file']) && !defined('MAINTENANCE_MODE')) {
+      if (!isset($form_state['build_info']['files']['menu']) && !defined('MAINTENANCE_MODE')) {
         $item = menu_get_item();
         if (!empty($item['include_file'])) {
-          $form_state['build_info']['file'] = $item['include_file'];
+          $form_state['build_info']['files']['menu'] = $item['include_file'];
         }
       }
 
@@ -474,10 +477,17 @@ function form_get_cache($form_build_id, &$form_state) {
         // Re-populate $form_state for subsequent rebuilds.
         $form_state = $cached->data + $form_state;
 
-        // If the original form is contained in an include file, load the file.
+        // If the original form is contained in include files, load the files.
         // See drupal_build_form().
-        if (!empty($form_state['build_info']['file']) && file_exists($form_state['build_info']['file'])) {
-          require_once DRUPAL_ROOT . '/' . $form_state['build_info']['file'];
+        $form_state['build_info'] += array('files' => array());
+        foreach ($form_state['build_info']['files'] as $file) {
+          if (is_array($file)) {
+            $file += array('type' => 'inc', 'name' => $file['module']);
+            module_load_include($file['type'], $file['module'], $file['name']);
+          }
+          elseif (file_exists($file)) {
+            require_once DRUPAL_ROOT . '/' . $file;
+          }
         }
       }
       return $form;
@@ -1968,8 +1978,22 @@ function form_type_checkboxes_value($element, $input = FALSE) {
     }
     return $value;
   }
+  elseif (is_array($input)) {
+    // Programmatic form submissions use NULL to indicate that a checkbox
+    // should be unchecked; see drupal_form_submit(). We therefore remove all
+    // NULL elements from the array before constructing the return value, to
+    // simulate the behavior of web browsers (which do not send unchecked
+    // checkboxes to the server at all). This will not affect non-programmatic
+    // form submissions, since a checkbox can never legitimately be NULL.
+    foreach ($input as $key => $value) {
+      if (is_null($value)) {
+        unset($input[$key]);
+      }
+    }
+    return drupal_map_assoc($input);
+  }
   else {
-    return is_array($input) ? drupal_map_assoc($input) : array();
+    return array();
   }
 }
 

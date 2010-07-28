@@ -1,5 +1,5 @@
 <?php
-// $Id: standard.install,v 1.18 2010/07/08 03:41:27 webchick Exp $
+// $Id: standard.install,v 1.21 2010/07/23 04:39:32 dries Exp $
 
 /**
  * Implements hook_install().
@@ -247,7 +247,7 @@ function standard_install() {
       'mapping' => array(
         'rdftype' => array('sioc:Item', 'foaf:Document'),
         'field_image' => array(
-          'predicates' => array('rdfs:seeAlso'),
+          'predicates' => array('og:image', 'rdfs:seeAlso'),
           'type' => 'rel',
         ),
         'field_tags' => array(
@@ -398,7 +398,7 @@ function standard_install() {
 
   // Enable default permissions for system roles.
   $filtered_html_permission = filter_permission_name($filtered_html_format);
-  user_role_grant_permissions(DRUPAL_ANONYMOUS_RID, array('access content', $filtered_html_permission));
+  user_role_grant_permissions(DRUPAL_ANONYMOUS_RID, array('access content', 'access comments', $filtered_html_permission));
   user_role_grant_permissions(DRUPAL_AUTHENTICATED_RID, array('access content', 'access comments', 'post comments', 'post comments without approval', $filtered_html_permission));
 
   // Create a default role for site administrators, with all available permissions assigned.
@@ -414,6 +414,14 @@ function standard_install() {
   db_insert('users_roles')
     ->fields(array('uid' => 1, 'rid' => $admin_role->rid))
     ->execute();
+
+  // Create a Home link in the main menu.
+  $item = array(
+    'link_title' => 'Home',
+    'link_path' => '<front>',
+    'menu_name' => 'main-menu',
+  );
+  menu_link_save($item);
 
   // Update the menu router information.
   menu_rebuild();

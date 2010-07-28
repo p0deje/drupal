@@ -1,5 +1,5 @@
 <?php
-// $Id: select.inc,v 1.42 2010/06/01 09:24:09 dries Exp $
+// $Id: select.inc,v 1.44 2010/07/28 01:51:06 dries Exp $
 
 /**
  * @ingroup database
@@ -601,11 +601,8 @@ class SelectQueryExtender implements SelectQueryInterface {
   /* Implementations of QueryExtendableInterface. */
 
   public function extend($extender_name) {
-    $override_class = $this->connection->driver();
-    if (class_exists($override_class)) {
-      $extender_name = $override_class;
-    }
-    return new $extender_name($this, $this->connection);
+    $class = $this->connection->getDriverClass($extender_name);
+    return new $class($this, $this->connection);
   }
 
   /* Alter accessors to expose the query data to alter hooks. */
@@ -1128,14 +1125,14 @@ class SelectQuery extends Query implements SelectQueryInterface {
     }
 
     // If that's already in use, try the table name and field name.
-    if (!empty($this->tables[$alias])) {
+    if (!empty($this->fields[$alias])) {
       $alias = $table_alias . '_' . $field;
     }
 
     // If that is already used, just add a counter until we find an unused alias.
     $alias_candidate = $alias;
     $count = 2;
-    while (!empty($this->tables[$alias_candidate])) {
+    while (!empty($this->fields[$alias_candidate])) {
       $alias_candidate = $alias . '_' . $count++;
     }
     $alias = $alias_candidate;

@@ -1,5 +1,5 @@
 <?php
-// $Id: field.info.inc,v 1.47 2010/06/29 18:46:12 dries Exp $
+// $Id: field.info.inc,v 1.49 2010/07/26 16:59:24 dries Exp $
 
 /**
  * @file
@@ -523,6 +523,7 @@ function field_info_bundles($entity_type = NULL) {
  *   which this field belongs keyed by entity type.
  */
 function field_info_fields() {
+  $fields = array();
   $info = _field_info_collate_fields();
   foreach ($info['fields'] as $key => $field) {
     if (!$field['deleted']) {

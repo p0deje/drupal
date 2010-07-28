@@ -1,5 +1,5 @@
 <?php
-// $Id: system.module,v 1.946 2010/07/07 17:56:42 webchick Exp $
+// $Id: system.module,v 1.949 2010/07/28 01:40:39 dries Exp $
 
 /**
  * @file
@@ -2350,7 +2350,7 @@ function _system_rebuild_theme_data() {
       'content' => 'Content',
       'header' => 'Header',
       'footer' => 'Footer',
-      'highlight' => 'Highlighted content',
+      'highlighted' => 'Highlighted',
       'help' => 'Help',
       'page_top' => 'Page top',
       'page_bottom' => 'Page bottom',
@@ -2653,7 +2653,9 @@ function _system_sort_requirements($a, $b) {
  * a function like check_plain() or filter_xss().
  *
  * @param $form
- *   Additional elements to add to the form; for example, hidden elements.
+ *   Additional elements to add to the form. These can be regular form elements,
+ *   #value elements, etc., and their values will be available to the submit
+ *   handler.
  * @param $question
  *   The question to ask the user (e.g. "Are you sure you want to delete the
  *   block <em>foo</em>?"). The page title will be set to this value.
@@ -2792,9 +2794,8 @@ function system_cron() {
   // Remove temporary files that are older than DRUPAL_MAXIMUM_TEMP_FILE_AGE.
   // Use separate placeholders for the status to avoid a bug in some versions
   // of PHP. See http://drupal.org/node/352956.
-  $result = db_query('SELECT fid FROM {file_managed} WHERE status & :permanent1 <> :permanent2 AND timestamp < :timestamp', array(
-    ':permanent1' => FILE_STATUS_PERMANENT,
-    ':permanent2' => FILE_STATUS_PERMANENT,
+  $result = db_query('SELECT fid FROM {file_managed} WHERE status <> :permanent AND timestamp < :timestamp', array(
+    ':permanent' => FILE_STATUS_PERMANENT,
     ':timestamp' => REQUEST_TIME - DRUPAL_MAXIMUM_TEMP_FILE_AGE
   ));
   foreach ($result as $row) {

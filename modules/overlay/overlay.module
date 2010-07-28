@@ -1,5 +1,5 @@
 <?php
-// $Id: overlay.module,v 1.23 2010/07/08 12:20:23 dries Exp $
+// $Id: overlay.module,v 1.27 2010/07/28 02:50:00 dries Exp $
 
 /**
  * @file
@@ -58,6 +58,39 @@ function overlay_theme() {
 }
 
 /**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function overlay_form_user_profile_form_alter(&$form, &$form_state) {
+  if ($form['#user_category'] == 'account') {
+    $account = $form['#user'];
+    if (user_access('access overlay', $account)) {
+      $form['overlay_control'] = array(
+        '#type' => 'fieldset',
+        '#title' => t('Administrative overlay'),
+        '#weight' => 4,
+        '#collapsible' => TRUE,
+      );
+
+      $form['overlay_control']['overlay'] = array(
+        '#type' => 'checkbox',
+        '#title' => t('Use the overlay for administrative pages.'),
+        '#description' => t('Show administrative pages on top of the page you started from.'),
+        '#default_value' => isset($account->data['overlay']) ? $account->data['overlay'] : 1,
+      );
+    }
+  }
+}
+
+/**
+ * Implements hook_user_presave().
+ */
+function overlay_user_presave(&$edit, $account, $category) {
+  if (isset($edit['overlay'])) {
+    $edit['data']['overlay'] = $edit['overlay'];
+  }
+}
+
+/**
  * Implements hook_init().
  *
  * Determine whether the current page request is destined to appear in the
@@ -66,14 +99,14 @@ function overlay_theme() {
  * @see overlay_set_mode()
  */
 function overlay_init() {
-  // @todo: custom_theme does not exist anymore.
-  global $custom_theme;
+  global $user;
 
   $mode = overlay_get_mode();
 
   // Only act if the user has access to the overlay and a mode was not already
   // set. Other modules can also enable the overlay directly for other uses.
-  if (empty($mode) && user_access('access overlay')) {
+  $use_overlay = !isset($user->data['overlay']) || $user->data['overlay'];
+  if (empty($mode) && user_access('access overlay') && $use_overlay) {
     $current_path = current_path();
     // After overlay is enabled on the modules page, redirect to
     // <front>#overlay=admin/modules to actually enable the overlay.
@@ -87,13 +120,7 @@ function overlay_init() {
       if (!path_is_admin($current_path)) {
         overlay_close_dialog($current_path);
       }
-      // If system module did not switch the theme yet (i.e. this is not an
-      // admin page, per se), we should switch the theme here.
-      $admin_theme = variable_get('admin_theme', 0);
-      if ($custom_theme != $admin_theme) {
-        $custom_theme = $admin_theme;
-        drupal_add_css(drupal_get_path('module', 'system') . '/admin.css');
-      }
+
       // Indicate that we are viewing an overlay child page.
       overlay_set_mode('child');
 
@@ -101,7 +128,7 @@ function overlay_init() {
       unset($_GET['render']);
     }
     // Do not enable the overlay if we already are on an admin page.
-    else if (!path_is_admin($current_path)) {
+    elseif (!path_is_admin($current_path)) {
       // Otherwise add overlay parent code and our behavior.
       overlay_set_mode('parent');
     }
@@ -716,7 +743,9 @@ function overlay_set_regions_to_render($regions = NULL) {
  * supplemental overlay regions (e.g., a region containing a toolbar). Passing
  * in a region that is intended to display the main page content is not
  * supported; the region will be rendered by this function, but the main page
- * content will not appear in it.
+ * content will not appear in it. In addition, although this function returns
+ * the rendered HTML for the provided region, it does not place it on the final
+ * page, nor add any of its associated JavaScript or CSS to the page.
  *
  * @param $region
  *   The name of the page region that should be rendered.
@@ -740,7 +769,17 @@ function overlay_render_region($region) {
     '#theme' => NULL,
     '#theme_wrappers' => array(),
   );
+  // Render the region, but do not cache any JavaScript or CSS associated with
+  // it. This region might not be included the next time drupal_render_page()
+  // is called, and we do not want its JavaScript or CSS to erroneously appear
+  // on the final rendered page.
+  $original_js = drupal_add_js();
+  $original_css = drupal_add_css();
+  $js = &drupal_static('drupal_add_js');
+  $css = &drupal_static('drupal_add_css');
   $markup = drupal_render_page($page);
+  $js = $original_js;
+  $css = $original_css;
   // Indicate that the main page content has not, in fact, been displayed, so
   // that future calls to drupal_render_page() will be able to render it
   // correctly.

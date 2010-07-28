@@ -1,5 +1,5 @@
 <?php
-// $Id: system.install,v 1.490 2010/07/14 20:30:09 dries Exp $
+// $Id: system.install,v 1.493 2010/07/26 03:04:29 dries Exp $
 
 /**
  * @file
@@ -805,10 +805,11 @@ function system_schema() {
         'default' => 0,
       ),
       'status' => array(
-        'description' => 'A bitmapped field indicating the status of the file. The least significant bit indicates temporary (0) or permanent (1). Temporary files older than DRUPAL_MAXIMUM_TEMP_FILE_AGE will be removed during a cron run.',
+        'description' => 'A field indicating the status of the file. Two status are defined in core: temporary (0) and permanent (1). Temporary files older than DRUPAL_MAXIMUM_TEMP_FILE_AGE will be removed during a cron run.',
         'type' => 'int',
         'not null' => TRUE,
         'default' => 0,
+        'size' => 'tiny',
       ),
       'timestamp' => array(
         'description' => 'UNIX timestamp for when the file was added.',
@@ -1380,7 +1381,10 @@ function system_schema() {
         'not null' => TRUE
       ),
     ),
-    'indexes' => array('value' => array('value')),
+    'indexes' => array(
+      'value' => array('value'),
+      'expire' => array('expire'),
+    ),
     'primary key' => array('name'),
   );
 
@@ -1561,12 +1565,10 @@ function system_schema() {
         'default' => '',
       ),
     ),
-    'unique keys' => array(
-      'alias_language' => array('alias', 'language'),
-    ),
     'primary key' => array('pid'),
     'indexes' => array(
-      'source_language' => array('source', 'language'),
+      'alias_language_pid' => array('alias', 'language', 'pid'),
+      'source_language_pid' => array('source', 'language', 'pid'),
     ),
   );
 
@@ -2192,10 +2194,11 @@ function system_update_7034() {
         'default' => 0,
       ),
       'status' => array(
-        'description' => 'A bitmapped field indicating the status of the file the least sigifigant bit indicates temporary (1) or permanent (0). Temporary files older than DRUPAL_MAXIMUM_TEMP_FILE_AGE will be removed during a cron run.',
+        'description' => 'A field indicating the status of the file. Two status are defined in core: temporary (0) and permanent (1). Temporary files older than DRUPAL_MAXIMUM_TEMP_FILE_AGE will be removed during a cron run.',
         'type' => 'int',
         'not null' => TRUE,
         'default' => 0,
+        'size' => 'tiny',
       ),
       'timestamp' => array(
         'description' => 'UNIX timestamp for when the file was added.',
@@ -2296,9 +2299,10 @@ function system_update_7042() {
   // Rename the fields, and increase their length to 255 characters.
   db_change_field('url_alias', 'src', 'source', array('type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => ''));
   db_change_field('url_alias', 'dst', 'alias', array('type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => ''));
-  // Add indexes back.
+  // Add indexes back. We replace the unique key with an index since it never
+  // provided any meaningful unique constraint ('pid' is a primary key).
   db_add_index('url_alias', 'source_language_pid', array('source', 'language', 'pid'));
-  db_add_unique_key('url_alias', 'alias_language_pid', array('alias', 'language', 'pid'));
+  db_add_index('url_alias', 'alias_language_pid', array('alias', 'language', 'pid'));
 }
 
 /**
@@ -2551,18 +2555,6 @@ function system_update_7055() {
     'not null' => FALSE,
   );
   db_change_field('system', 'info', 'info', $spec);
-}
-
-/**
- * Remove pid from indexes and unique keys of {url_alias}.
- */
-function system_update_7056() {
-  // Drop indexes.
-  db_drop_index('url_alias', 'source_language_pid');
-  db_drop_unique_key('url_alias', 'alias_language_pid');
-  // Add indexes back.
-  db_add_index('url_alias', 'source_language', array('source', 'language'));
-  db_add_unique_key('url_alias', 'alias_language', array('alias', 'language'));
 }
 
 /**

@@ -1,5 +1,5 @@
 <?php
-// $Id: user.module,v 1.1180 2010/07/07 08:05:01 webchick Exp $
+// $Id: user.module,v 1.1186 2010/07/26 03:04:29 dries Exp $
 
 /**
  * @file
@@ -59,7 +59,7 @@ function user_help($path, $arg) {
       return '<p>' . t('Permissions let you control what users can do and see on your site. You can define a specific set of permissions for each role. (See the <a href="@role">Roles</a> page to create a role). Two important roles to consider are Authenticated Users and Administrators. Any permissions granted to the Authenticated Users role will be given to any user who can log into your site. You can make any role the Administrator role for the site, meaning this will be granted all new permissions automatically. You can do this on the <a href="@settings">User Settings</a> page. You should be careful to ensure that only trusted users are given this access and level of control of your site.', array('@role' => url('admin/people/permissions/roles'), '@settings' => url('admin/config/people/accounts'))) . '</p>';
     case 'admin/people/permissions/roles':
       $output = '<p>' . t('Roles allow you to fine tune the security and administration of Drupal. A role defines a group of users that have certain privileges as defined on the <a href="@permissions">permissions page</a>. Examples of roles include: anonymous user, authenticated user, moderator, administrator and so on. In this area you will define the names and order of the roles on your site. It is recommended to order your roles from least permissive (anonymous user) to most permissive (administrator). To delete a role choose "edit role".', array('@permissions' => url('admin/people/permissions'))) . '</p>';
-      $output .= '<p>'. t('By default, Drupal comes with two user roles:') . '</p>';
+      $output .= '<p>' . t('By default, Drupal comes with two user roles:') . '</p>';
       $output .= '<ul>';
       $output .= '<li>' . t("Anonymous user: this role is used for users that don't have a user account or that are not authenticated.") . '</li>';
       $output .= '<li>' . t('Authenticated user: this role is automatically granted to all logged in users.') . '</li>';
@@ -431,16 +431,16 @@ function user_save($account, $edit = array(), $category = 'account') {
         $picture = $edit['picture'];
         // If the picture is a temporary file move it to its final location and
         // make it permanent.
-        if (($picture->status & FILE_STATUS_PERMANENT) == 0) {
+        if (!$picture->status) {
           $info = image_get_info($picture->uri);
           $picture_directory =  variable_get('file_default_scheme', 'public') . '://' . variable_get('user_picture_path', 'pictures');
 
           // Prepare the pictures directory.
           file_prepare_directory($picture_directory, FILE_CREATE_DIRECTORY);
-          $destination = file_stream_wrapper_uri_normalize($picture_directory . '/picture-' . $account->uid . '.' . $info['extension']);
+          $destination = file_stream_wrapper_uri_normalize($picture_directory . '/picture-' . $account->uid . '-' . REQUEST_TIME . '.' . $info['extension']);
 
-          if ($picture = file_move($picture, $destination, FILE_EXISTS_REPLACE)) {
-            $picture->status |= FILE_STATUS_PERMANENT;
+          if ($picture = file_move($picture, $destination, FILE_EXISTS_RENAME)) {
+            $picture->status = FILE_STATUS_PERMANENT;
             $edit['picture'] = file_save($picture);
           }
         }
@@ -960,8 +960,6 @@ function user_account_form(&$form, &$form_state) {
 
   // Account information.
   $form['account'] = array(
-    '#type' => 'fieldset',
-    '#title' => t('Account information'),
     '#weight' => -10,
   );
   // Only show name field on registration form or user can change own username.
@@ -3203,7 +3201,7 @@ function user_build_filter_query(SelectQuery $query) {
       $permission_alias = $query->join('role_permission', 'p', $user_role_alias . '.rid = %alias.rid');
       $query->condition($permission_alias . '.permission', $value);
     }
-    else if ($key == 'role') {
+    elseif ($key == 'role') {
       $user_roles_alias = $query->join('users_roles', 'ur', '%alias.uid = u.uid');
       $query->condition($user_role_alias . '.rid' , $value);
     }
@@ -3361,7 +3359,12 @@ function user_form_process_password_confirm($element) {
   );
 
   $element['#attached']['js'][] = drupal_get_path('module', 'user') . '/user.js';
-  $element['#attached']['js'][] = array('data' => $js_settings, 'type' => 'setting');
+  // Ensure settings are only added once per page.
+  static $already_added = FALSE;
+  if (!$already_added) {
+    $already_added = TRUE;
+    $element['#attached']['js'][] = array('data' => $js_settings, 'type' => 'setting');
+  }
 
   return $element;
 }
@@ -3471,8 +3474,6 @@ function user_register_form($form, &$form_state) {
   $form['#attached']['library'][] = array('system', 'cookie');
   $form['#attributes']['class'][] = 'user-info-from-cookie';
 
-  $form['#pre_render'] = array('user_register_form_pre_render');
-
   // Start with the default user account fields.
   user_account_form($form, $form_state);
 
@@ -3491,20 +3492,6 @@ function user_register_form($form, &$form_state) {
   // Add the final user registration form submit handler.
   $form['#submit'][] = 'user_register_submit';
 
-  return $form;
-}
-
-/**
- * Form pre-render callback to clean up the user_register_form.
- *
- * If the "account" fieldset is the only element at the top level (apart from
- * the submit button), its borders are hidden for aesthetic reasons.
- */
-function user_register_form_pre_render($form) {
-  $visible_children = element_get_visible_children($form);
-  if (!count(array_diff($visible_children, array('account', 'submit')))) {
-    $form['account']['#theme_wrappers'] = array();
-  }
   return $form;
 }
 

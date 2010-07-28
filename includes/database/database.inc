@@ -1,5 +1,5 @@
 <?php
-// $Id: database.inc,v 1.127 2010/07/12 15:14:16 webchick Exp $
+// $Id: database.inc,v 1.129 2010/07/24 17:28:25 dries Exp $
 
 /**
  * @file
@@ -646,7 +646,7 @@ abstract class DatabaseConnection extends PDO {
    * @return string
    *   The name of the class that should be used for this driver.
    */
-  protected function getDriverClass($class) {
+  public function getDriverClass($class) {
     if (empty($this->driverClasses[$class])) {
       $this->driverClasses[$class] = $class . '_' . $this->driver();
       if (!class_exists($this->driverClasses[$class])) {
@@ -1341,7 +1341,7 @@ abstract class Database {
             'default' => '',
           );
         }
-        else if (!is_array($database_info[$index][$target]['prefix'])) {
+        elseif (!is_array($database_info[$index][$target]['prefix'])) {
           // Transform the flat form into an array form.
           $database_info[$index][$target]['prefix'] = array(
             'default' => $database_info[$index][$target]['prefix'],

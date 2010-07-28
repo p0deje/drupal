@@ -1,5 +1,5 @@
 <?php
-// $Id: install.inc,v 1.136 2010/06/21 02:27:47 webchick Exp $
+// $Id: install.inc,v 1.139 2010/07/26 13:20:01 dries Exp $
 
 /**
  * Indicates that a module has not been installed yet.
@@ -394,7 +394,7 @@ abstract class DatabaseTasks {
       $this->pass('Drupal can CONNECT to the database ok.');
     }
     catch (Exception $e) {
-      $this->fail(st('Failed to connect to your %name database server. %name reports the following message: %error.<ul><li>Are you sure you have the correct username and password?</li><li>Are you sure that you have typed the correct database hostname?</li><li>Are you sure that the database server is running?</li></ul>For more help, see the <a href="http://drupal.org/getting-started/install">installation handbook</a>. If you are unsure what these terms mean you should probably contact your hosting provider.', array('%error' => $e->getMessage(), '%name' => $this->name())));
+      $this->fail(st('Failed to connect to your %name database server. %name reports the following message: %error.<ul><li>Is the database server running?</li><li>Does the database exist, and have you entered the correct database name?</li><li>Have you entered the correct username and password?</li><li>Have you entered the correct database hostname?</li></ul>', array('%error' => $e->getMessage(), '%name' => $this->name())));
       return FALSE;
     }
     return TRUE;
@@ -731,19 +731,19 @@ function drupal_install_mkdir($file, $mask, $message = TRUE) {
     if ($mask & $m) {
       switch ($m) {
         case FILE_READABLE:
-          $mod += 444;
+          $mod |= 0444;
           break;
         case FILE_WRITABLE:
-          $mod += 222;
+          $mod |= 0222;
           break;
         case FILE_EXECUTABLE:
-          $mod += 111;
+          $mod |= 0111;
           break;
       }
     }
   }
 
-  if (@drupal_mkdir($file, intval("0$mod", 8))) {
+  if (@drupal_mkdir($file, $mod)) {
     return TRUE;
   }
   else {
@@ -1050,5 +1050,5 @@ function db_run_tasks($driver) {
   $task_class = 'DatabaseTasks_' . $driver;
   $DatabaseTasks = new $task_class();
   $DatabaseTasks->runTasks();
-  return true;
+  return TRUE;
 }

@@ -1,5 +1,5 @@
 <?php
-// $Id: path.inc,v 1.64 2010/06/17 13:48:53 dries Exp $
+// $Id: path.inc,v 1.68 2010/07/26 02:59:57 dries Exp $
 
 /**
  * @file
@@ -112,7 +112,7 @@ function drupal_lookup_path($action, $path = '', $path_language = NULL) {
         return FALSE;
       }
       // For system paths which were not cached, query aliases individually.
-      else if (!isset($cache['no_aliases'][$path_language][$path])) {
+      elseif (!isset($cache['no_aliases'][$path_language][$path])) {
         // Get the most fitting result falling back with alias without language
         $alias = db_query("SELECT alias FROM {url_alias} WHERE source = :source AND language IN (:language, :language_none) ORDER BY language DESC, pid DESC", array(
           ':source' => $path,
@@ -335,7 +335,7 @@ function drupal_path_alias_whitelist_rebuild($source = NULL) {
   // path it corresponds to. This is the portion of the path before the first
   // '/', if present, otherwise the whole path itself.
   $whitelist = array();
-  $result = db_query("SELECT SUBSTRING_INDEX(source, '/', 1) AS path FROM {url_alias} GROUP BY path");
+  $result = db_query("SELECT DISTINCT SUBSTRING_INDEX(source, '/', 1) AS path FROM {url_alias}");
   foreach ($result as $row) {
     $whitelist[$row->path] = TRUE;
   }
@@ -395,7 +395,7 @@ function path_save(&$path) {
   $status = drupal_write_record('url_alias', $path, (!empty($path['pid']) ? 'pid' : NULL));
 
   // Verify that a record was written.
-  if (isset($status) && $status) {
+  if ($status) {
     if ($status === SAVED_NEW) {
       module_invoke_all('path_insert', $path);
     }
@@ -436,6 +436,7 @@ function path_delete($criteria) {
  *
  * @param $path
  *   A Drupal path.
+ *
  * @return
  *   TRUE if the path is administrative, FALSE otherwise.
  *

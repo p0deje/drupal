@@ -1,5 +1,5 @@
 <?php
-// $Id: bootstrap.inc,v 1.409 2010/07/10 17:27:50 webchick Exp $
+// $Id: bootstrap.inc,v 1.414 2010/07/26 03:05:36 dries Exp $
 
 /**
  * @file
@@ -1645,7 +1645,7 @@ function watchdog($type, $message, $variables = array(), $severity = WATCHDOG_NO
       'link'        => $link,
       'user'        => $user,
       'request_uri' => $base_root . request_uri(),
-      'referer'     => $_SERVER['HTTP_REFERER'],
+      'referer'     => isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : '',
       'ip'          => ip_address(),
       'timestamp'   => REQUEST_TIME,
     );
@@ -1689,7 +1689,7 @@ function drupal_set_message($message = NULL, $type = 'status', $repeat = TRUE) {
       $_SESSION['messages'][$type][] = $message;
     }
 
-    // Mark this page has being not cacheable.
+    // Mark this page as being uncacheable.
     drupal_page_is_cacheable(FALSE);
   }
 
@@ -2115,7 +2115,7 @@ function _drupal_bootstrap_page_cache() {
   // If there is no session cookie and cache is enabled (or forced), try
   // to serve a cached page.
   if (!isset($_COOKIE[session_name()]) && $cache_enabled) {
-    // Make sure there is a user object because it's timestamp will be
+    // Make sure there is a user object because its timestamp will be
     // checked, hook_boot might check for anonymous user etc.
     $user = drupal_anonymous_user();
     // Get the page from the cache.
@@ -2181,7 +2181,7 @@ function _drupal_bootstrap_database() {
       if (!isset($value['prefix'])) {
         $current_prefix = '';
       }
-      else if (is_array($value['prefix'])) {
+      elseif (is_array($value['prefix'])) {
         $current_prefix = $value['prefix']['default'];
       }
       else {
@@ -2906,34 +2906,35 @@ function registry_update() {
  */
 function &drupal_static($name, $default_value = NULL, $reset = FALSE) {
   static $data = array(), $default = array();
-  if (!isset($name)) {
-    // All variables are reset. This needs to be done one at a time so that
-    // references returned by earlier invocations of drupal_static() also get
-    // reset.
-    foreach ($default as $name => $value) {
-      $data[$name] = $value;
-    }
-    // As the function returns a reference, the return should always be a
-    // variable.
-    return $data;
-  }
-  if ($reset) {
-    // The reset means the default is loaded.
-    if (array_key_exists($name, $default)) {
+  // First check if dealing with a previously defined static variable.
+  if (isset($data[$name]) || array_key_exists($name, $data)) {
+    // Non-NULL $name and both $data[$name] and $default[$name] statics exist.
+    if ($reset) {
+      // Reset pre-existing static variable to its default value.
       $data[$name] = $default[$name];
     }
-    else {
+    return $data[$name];
+  }
+  // Neither $data[$name] nor $default[$name] static variables exist.
+  if (isset($name)) {
+    if ($reset) {
       // Reset was called before a default is set and yet a variable must be
       // returned.
       return $data;
     }
-  }
-  elseif (!array_key_exists($name, $data)) {
-    // Store the default value internally and also copy it to the reference to
-    // be returned.
+    // First call with new non-NULL $name. Initialize a new static variable.
     $default[$name] = $data[$name] = $default_value;
+    return $data[$name];
   }
-  return $data[$name];
+  // Reset all: ($name == NULL). This needs to be done one at a time so that
+  // references returned by earlier invocations of drupal_static() also get
+  // reset.
+  foreach ($default as $name => $value) {
+    $data[$name] = $value;
+  }
+  // As the function returns a reference, the return should always be a
+  // variable.
+  return $data;
 }
 
 /**
