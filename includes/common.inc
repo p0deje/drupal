@@ -1,5 +1,5 @@
 <?php
-// $Id: common.inc,v 1.1193 2010/07/24 17:28:25 dries Exp $
+// $Id: common.inc,v 1.1199 2010/08/03 02:14:50 dries Exp $
 
 /**
  * @file
@@ -1997,8 +1997,8 @@ function format_username($account) {
  *   - 'external': Whether the given path is an external URL.
  *   - 'language': An optional language object. If the path being linked to is
  *     internal to the site, $options['language'] is used to look up the alias
- *     for the URL. If $options['language'] is omitted, the global
- *     $language_content will be used.
+ *     for the URL. If $options['language'] is omitted, the global $language_url
+ *     will be used.
  *   - 'https': Whether this URL should point to a secure location. If not
  *     defined, the current scheme is used, so the user stays on http or https
  *     respectively. TRUE enforces HTTPS and FALSE enforces HTTP, but HTTPS can
@@ -2149,7 +2149,7 @@ function url($path = NULL, array $options = array()) {
  * @param $path
  *   The internal path or external URL being linked to, such as "node/34" or
  *   "http://example.com/foo".
- * @return 
+ * @return
  *   Boolean TRUE or FALSE, where TRUE indicates an external path.
  */
 function url_is_external($path) {
@@ -2642,27 +2642,26 @@ function drupal_add_html_head_link($attributes, $header = FALSE) {
  * Calling drupal_static_reset('drupal_add_css') will clear all cascading
  * stylesheets added so far.
  *
- * If preprocessing is turned on, the cascading style sheets added using this
- * function will be preprocessed before they are added to the HTML header of the
- * page. Preprocessing merges all the CSS files into one file, which is then
- * compressed by removing all extraneous white space. Note that preprocessed
- * inline stylesheets will not be aggregated into this single file; instead,
- * they will just be compressed when being output on the page. External
- * stylesheets will also not be aggregated.
+ * If CSS aggregation/compression is enabled, all cascading style sheets added
+ * with $options['preprocess'] set to TRUE will be merged into one aggregate
+ * file and compressed by removing all extraneous white space.
+ * Preprocessed inline stylesheets will not be aggregated into this single file;
+ * instead, they are just compressed upon output on the page. Externally hosted
+ * stylesheets are never aggregated or compressed.
  *
- * The reason for merging the CSS files is outlined quite thoroughly here:
+ * The reason for aggregating the files is outlined quite thoroughly here:
  * http://www.die.net/musings/page_load_time/ "Load fewer external objects. Due
  * to request overhead, one bigger file just loads faster than two smaller ones
  * half its size."
  *
- * However, you should *not* preprocess every file as this can lead to redundant
- * caches. You should set $options['preprocess'] to FALSE when your styles are
- * only used on a few pages of the site. This could be a special admin page, the
- * homepage, or a handful of pages that does not represent the majority of the
- * pages on your site.
+ * $options['preprocess'] should be only set to TRUE when a file is required for
+ * all typical visitors and most pages of a site. It is critical that all
+ * preprocessed files are added unconditionally on every page, even if the
+ * files do not happen to be needed on a page. This is normally done by calling
+ * drupal_add_css() in a hook_init() implementation.
  *
- * Typical candidates for preprocessing are for example styles for nodes across
- * the site, or styles used in the theme.
+ * Non-preprocessed files should only be added to the page when they are
+ * actually needed.
  *
  * @param $data
  *   (optional) The stylesheet data to be added, depending on what is passed
@@ -2710,9 +2709,8 @@ function drupal_add_html_head_link($attributes, $header = FALSE) {
  *     always come last.
  *   - 'media': The media type for the stylesheet, e.g., all, print, screen.
  *     Defaults to 'all'.
- *   - 'preprocess': If TRUE, Allows the CSS to be aggregated and compressed if
- *     the Optimize CSS feature has been turned on under the performance
- *     section.  Defaults to TRUE.
+ *   - 'preprocess': If TRUE and CSS aggregation/compression is enabled, the
+ *     styles will be aggregated and compressed. Defaults to FALSE.
  *   - 'browsers': An array containing information specifying which browsers
  *     should load the CSS item. See drupal_pre_render_conditional_comments()
  *     for details.
@@ -2740,7 +2738,7 @@ function drupal_add_css($data = NULL, $options = NULL) {
       'type' => 'file',
       'weight' => CSS_DEFAULT,
       'media' => 'all',
-      'preprocess' => TRUE,
+      'preprocess' => FALSE,
       'data' => $data,
       'browsers' => array(),
     );
@@ -3197,7 +3195,7 @@ function drupal_build_css_cache($css) {
         $base = base_path() . dirname($stylesheet['data']) . '/';
         _drupal_build_css_path(NULL, $base);
         // Prefix all paths within this CSS file, ignoring external and absolute paths.
-        $data .= preg_replace_callback('/url\([\'"]?(?![a-z]+:|\/+)([^\'")]+)[\'"]?\)/i', '_drupal_build_css_path', $contents);
+        $data .= preg_replace_callback('/url\(\s*[\'"]?(?![a-z]+:|\/+)([^\'")]+)[\'"]?\s*\)/i', '_drupal_build_css_path', $contents);
       }
     }
 
@@ -3329,7 +3327,7 @@ function drupal_load_stylesheet_content($contents, $optimize = FALSE) {
 
   // Replaces @import commands with the actual stylesheet content.
   // This happens recursively but omits external files.
-  $contents = preg_replace_callback('/@import\s*(?:url\()?[\'"]?(?![a-z]+:)([^\'"\()]+)[\'"]?\)?;/', '_drupal_load_stylesheet', $contents);
+  $contents = preg_replace_callback('/@import\s*(?:url\(\s*)?[\'"]?(?![a-z]+:)([^\'"\()]+)[\'"]?\s*\)?\s*;/', '_drupal_load_stylesheet', $contents);
   return $contents;
 }
 
@@ -3353,7 +3351,7 @@ function _drupal_load_stylesheet($matches) {
   // Alter all internal url() paths. Leave external paths alone. We don't need
   // to normalize absolute paths here (i.e. remove folder/... segments) because
   // that will be done later.
-  return preg_replace('/url\s*\(([\'"]?)(?![a-z]+:|\/+)/i', 'url(\1'. $directory, $file);
+  return preg_replace('/url\(\s*([\'"]?)(?![a-z]+:|\/+)/i', 'url(\1'. $directory, $file);
 }
 
 /**
@@ -3576,6 +3574,25 @@ function drupal_region_class($region) {
  * Calling drupal_static_reset('drupal_add_js') will clear all JavaScript added
  * so far.
  *
+ * If JavaScript aggregation is enabled, all JavaScript files added with
+ * $options['preprocess'] set to TRUE will be merged into one aggregate file.
+ * Preprocessed inline JavaScript will not be aggregated into this single file.
+ * Externally hosted JavaScripts are never aggregated.
+ *
+ * The reason for aggregating the files is outlined quite thoroughly here:
+ * http://www.die.net/musings/page_load_time/ "Load fewer external objects. Due
+ * to request overhead, one bigger file just loads faster than two smaller ones
+ * half its size."
+ *
+ * $options['preprocess'] should be only set to TRUE when a file is required for
+ * all typical visitors and most pages of a site. It is critical that all
+ * preprocessed files are added unconditionally on every page, even if the
+ * files are not needed on a page. This is normally done by calling
+ * drupal_add_css() in a hook_init() implementation.
+ *
+ * Non-preprocessed files should only be added to the page when they are
+ * actually needed.
+ *
  * @param $data
  *   (optional) If given, the value depends on the $options parameter:
  *   - 'file': Path to the file relative to base_path().
@@ -3617,9 +3634,8 @@ function drupal_region_class($region) {
  *   - cache: If set to FALSE, the JavaScript file is loaded anew on every page
  *     call; in other words, it is not cached. Used only when 'type' references
  *     a JavaScript file. Defaults to TRUE.
- *   - preprocess: Aggregate the JavaScript if the JavaScript optimization
- *     setting has been toggled in admin/config/development/performance. Note
- *     that JavaScript of type 'external' is not aggregated. Defaults to TRUE.
+ *   - preprocess: If TRUE and JavaScript aggregation is enabled, the script
+ *     file will be aggregated. Defaults to FALSE.
  *
  * @return
  *   The current array of JavaScript files, settings, and in-line code,
@@ -3712,7 +3728,7 @@ function drupal_js_defaults($data = NULL) {
     'scope' => 'header',
     'cache' => TRUE,
     'defer' => FALSE,
-    'preprocess' => TRUE,
+    'preprocess' => FALSE,
     'version' => NULL,
     'data' => $data,
   );
@@ -6277,6 +6293,11 @@ function drupal_flush_all_caches() {
   foreach ($cache_tables as $table) {
     cache_clear_all('*', $table, TRUE);
   }
+
+  // Rebuild the bootstrap module list. We do this here so that developers
+  // can get new hook_boot() implementations registered without having to
+  // write a hook_update_N() function.
+  _system_update_bootstrap_status();
 }
 
 /**
@@ -6698,7 +6719,7 @@ function entity_form_field_validate($entity_type, $form, &$form_state) {
  * For some entity forms (e.g., forms with complex non-field data and forms that
  * simultaneously edit multiple entities), this behavior may be inappropriate,
  * so the #builder_function for such forms needs to implement the required
- * functionality instead of calling this function. 
+ * functionality instead of calling this function.
  */
 function entity_form_submit_build_entity($entity_type, $entity, $form, &$form_state) {
   $info = entity_get_info($entity_type);
@@ -6770,6 +6791,27 @@ function archiver_get_info() {
   }
 
   return $archiver_info;
+}
+
+/**
+ * Returns a string of supported archive extensions.
+ *
+ * @return
+ *   A space-separated string of extensions suitable for use by the file
+ *   validation system.
+ */
+function archiver_get_extensions() {
+  $valid_extensions = array();
+  foreach (archiver_get_info() as $archive) {
+    foreach ($archive['extensions'] as $extension) {
+      foreach (explode('.', $extension) as $part) {
+        if (!in_array($part, $valid_extensions)) {
+          $valid_extensions[] = $part;
+        }
+      }
+    }
+  }
+  return implode(' ', $valid_extensions);
 }
 
 /**

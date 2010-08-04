@@ -1,5 +1,5 @@
 <?php
-// $Id: field.api.php,v 1.86 2010/07/25 02:45:27 dries Exp $
+// $Id: field.api.php,v 1.88 2010/08/03 01:54:24 dries Exp $
 
 /**
  * @ingroup field_fieldable_type
@@ -73,14 +73,12 @@ function hook_field_extra_fields() {
  * @see hook_field_extra_fields()
  */
 function hook_field_extra_fields_alter(&$info) {
-  // Force node title to always be at the top of the list
-  // by default.
+  // Force node title to always be at the top of the list by default.
   foreach (node_type_get_types() as $bundle) {
     if (isset($info['node'][$bundle]['title'])) {
       $info['node'][$bundle]['title']['weight'] = -20;
     }
   }
-
 }
 
 /**
@@ -1522,11 +1520,12 @@ function hook_field_storage_details_alter(&$details, $field) {
  *     loaded.
  */
 function hook_field_storage_load($entity_type, &$entities, $age, $fields, $options) {
+  $field_info = field_info_field_by_ids();
   $etid = _field_sql_storage_etid($entity_type);
   $load_current = $age == FIELD_LOAD_CURRENT;
 
   foreach ($fields as $field_id => $ids) {
-    $field = field_info_field_by_id($field_id);
+    $field = $field_info[$field_id];
     $field_name = $field['field_name'];
     $table = $load_current ? _field_sql_storage_tablename($field) : _field_sql_storage_revision_tablename($field);
 

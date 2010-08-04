@@ -1,5 +1,5 @@
 <?php
-// $Id: locale.module,v 1.294 2010/07/16 02:37:06 dries Exp $
+// $Id: locale.module,v 1.296 2010/08/02 11:26:20 dries Exp $
 
 /**
  * @file
@@ -480,7 +480,7 @@ function locale_field_language_alter(&$display_language, $context) {
  * @param $entity
  *   The entity to be displayed.
  * @param $langcode
- *   The language code $entity has to be displayed in. 
+ *   The language code $entity has to be displayed in.
  */
 function locale_field_language_fallback(&$display_language, $entity, $langcode) {
   // Lazily init fallback candidates to avoid unnecessary calls.
@@ -650,7 +650,7 @@ function locale($string = NULL, $context = NULL, $langcode = NULL) {
         // Refresh database stored cache of translations for given language.
         // We only store short strings used in current version, to improve
         // performance and consume less memory.
-        $result = db_query("SELECT s.source, s.context, t.translation, t.language FROM {locales_source} s LEFT JOIN {locales_target} t ON s.lid = t.lid AND t.language = :language WHERE s.textgroup = 'default' AND s.version = :version AND LENGTH(s.source) < 75", array(':language' => $langcode, ':version' => VERSION));
+        $result = db_query("SELECT s.source, s.context, t.translation, t.language FROM {locales_source} s LEFT JOIN {locales_target} t ON s.lid = t.lid AND t.language = :language WHERE s.textgroup = 'default' AND s.version = :version AND LENGTH(s.source) < :length", array(':language' => $langcode, ':version' => VERSION, ':length' => variable_get('locale_cache_length', 75)));
         foreach ($result as $data) {
           $locale_t[$langcode][$data->context][$data->source] = (empty($data->translation) ? TRUE : $data->translation);
         }
@@ -999,7 +999,7 @@ function locale_url_outbound_alter(&$path, &$options, $original_path) {
 function locale_form_comment_form_alter(&$form, &$form_state, $form_id) {
   // If a content type has multilingual support we set the content language as
   // comment language.
-  if (empty($form['language']['#value']) && locale_multilingual_node_type($form['#node']->type)) {
+  if ($form['language']['#value'] == LANGUAGE_NONE && locale_multilingual_node_type($form['#node']->type)) {
     global $language_content;
     $form['language']['#value'] = $language_content->language;
   }

@@ -1,5 +1,5 @@
 <?php
-// $Id: comment.module,v 1.884 2010/07/24 17:48:16 dries Exp $
+// $Id: comment.module,v 1.887 2010/07/30 02:50:37 dries Exp $
 
 /**
  * @file
@@ -287,6 +287,13 @@ function comment_menu() {
   );
 
   return $items;
+}
+
+/**
+ * Implements hook_init().
+ */
+function comment_init() {
+  drupal_add_css(drupal_get_path('module', 'comment') . '/comment.css', array('preprocess' => TRUE));
 }
 
 /**
@@ -716,7 +723,6 @@ function comment_node_page_additions($node) {
       $comments = comment_load_multiple($cids);
       comment_prepare_thread($comments);
       $build = comment_view_multiple($comments, $node);
-      $build['#attached']['css'][] = drupal_get_path('module', 'comment') . '/comment.css';
       $build['pager']['#theme'] = 'pager';
       $additions['comments'] = $build;
     }
@@ -913,26 +919,28 @@ function comment_view($comment, $node, $view_mode = 'full') {
     '#view_mode' => $view_mode,
   );
 
-  $prefix = '';
-  $is_threaded = isset($comment->divs) && variable_get('comment_default_mode_' . $node->type, COMMENT_MODE_THREADED) == COMMENT_MODE_THREADED;
+  if (empty($comment->in_preview)) {
+    $prefix = '';
+    $is_threaded = isset($comment->divs) && variable_get('comment_default_mode_' . $node->type, COMMENT_MODE_THREADED) == COMMENT_MODE_THREADED;
 
-  // Add 'new' anchor if needed.
-  if (!empty($comment->first_new)) {
-    $prefix .= "<a id=\"new\"></a>\n";
-  }
+    // Add 'new' anchor if needed.
+    if (!empty($comment->first_new)) {
+      $prefix .= "<a id=\"new\"></a>\n";
+    }
 
-  // Add indentation div or close open divs as needed.
-  if ($is_threaded) {
-    $prefix .= $comment->divs <= 0 ? str_repeat('</div>', abs($comment->divs)) : "\n" . '<div class="indented">';
-  }
+    // Add indentation div or close open divs as needed.
+    if ($is_threaded) {
+      $prefix .= $comment->divs <= 0 ? str_repeat('</div>', abs($comment->divs)) : "\n" . '<div class="indented">';
+    }
 
-  // Add anchor for each comment.
-  $prefix .= "<a id=\"comment-$comment->cid\"></a>\n";
-  $build['#prefix'] = $prefix;
+    // Add anchor for each comment.
+    $prefix .= "<a id=\"comment-$comment->cid\"></a>\n";
+    $build['#prefix'] = $prefix;
 
-  // Close all open divs.
-  if ($is_threaded && !empty($comment->divs_final)) {
-    $build['#suffix'] = str_repeat('</div>', $comment->divs_final);
+    // Close all open divs.
+    if ($is_threaded && !empty($comment->divs_final)) {
+      $build['#suffix'] = str_repeat('</div>', $comment->divs_final);
+    }
   }
 
   // Allow modules to modify the structured comment.
@@ -1081,6 +1089,12 @@ function comment_form_node_type_form_alter(&$form, $form_state) {
         'js' => array(drupal_get_path('module', 'comment') . '/comment-node-form.js'),
       ),
     );
+    $form['comment']['comment'] = array(
+      '#type' => 'select',
+      '#title' => t('Default comment setting for new content'),
+      '#default_value' => variable_get('comment_' . $form['#node_type']->type, COMMENT_NODE_OPEN),
+      '#options' => array(t('Hidden'), t('Closed'), t('Open')),
+    );
     $form['comment']['comment_default_mode'] = array(
       '#type' => 'checkbox',
       '#title' => t('Threading'),
@@ -1092,13 +1106,6 @@ function comment_form_node_type_form_alter(&$form, $form_state) {
       '#title' => t('Comments per page'),
       '#default_value' => variable_get('comment_default_per_page_' . $form['#node_type']->type, 50),
       '#options' => _comment_per_page(),
-    );
-
-    $form['comment']['comment'] = array(
-      '#type' => 'select',
-      '#title' => t('Default comment setting for new content'),
-      '#default_value' => variable_get('comment_' . $form['#node_type']->type, COMMENT_NODE_OPEN),
-      '#options' => array(t('Hidden'), t('Closed'), t('Open')),
     );
     $form['comment']['comment_anonymous'] = array(
       '#type' => 'select',
@@ -2009,11 +2016,7 @@ function comment_preview($comment) {
     $comment->changed = REQUEST_TIME;
     $comment->in_preview = TRUE;
     $comment_build = comment_view($comment, $node);
-    $comment_build += array(
-      '#weight' => -100,
-      '#prefix' => '<div class="preview">',
-      '#suffix' => '</div>',
-    );
+    $comment_build['#weight'] = -100;
 
     $form['comment_preview'] = $comment_build;
   }
