@@ -1,5 +1,5 @@
 <?php
-// $Id: comment.test,v 1.85 2010/07/20 02:05:13 dries Exp $
+// $Id: comment.test,v 1.87 2010/08/05 23:53:37 webchick Exp $
 
 class CommentHelperCase extends DrupalWebTestCase {
   protected $admin_user;

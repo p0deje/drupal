@@ -1,5 +1,5 @@
 <?php
-// $Id: openid.test,v 1.28 2010/07/07 08:05:01 webchick Exp $
+// $Id: openid.test,v 1.30 2010/08/05 23:53:38 webchick Exp $
 
 /**
  * Base class for OpenID tests.

@@ -1,5 +1,5 @@
 <?php
-// $Id: search.test,v 1.65 2010/07/22 16:16:42 dries Exp $
+// $Id: search.test,v 1.69 2010/08/10 01:11:36 dries Exp $
 
 // The search index can contain different types of content. Typically the type is 'node'.
 // Here we test with _test_ and _test2_ as the type.
@@ -992,6 +992,9 @@ class SearchSimplifyTestCase extends DrupalWebTestCase {
  * Test config page.
  */
 class SearchConfigSettingsForm extends DrupalWebTestCase {
+  public $search_user;
+  public $search_node;
+
   public static function getInfo() {
     return array(
       'name' => 'Config settings form',
@@ -1001,26 +1004,35 @@ class SearchConfigSettingsForm extends DrupalWebTestCase {
   }
 
   function setUp() {
-    parent::setUp('search');
+    parent::setUp('search', 'search_extra_type');
 
     // Login as a user that can create and search content.
-    $this->drupalLogin($this->drupalCreateUser(array('search content', 'administer search', 'administer nodes', 'bypass node access')));
+    $this->search_user = $this->drupalCreateUser(array('search content', 'administer search', 'administer nodes', 'bypass node access', 'access user profiles', 'administer users', 'administer blocks'));
+    $this->drupalLogin($this->search_user);
+
+    // Add a single piece of content and index it.
+    $node = $this->drupalCreateNode();
+    $this->search_node = $node;
+    // Link the node to itself to test that it's only indexed once. The content
+    // also needs the word "pizza" so we can use it as the search keyword.
+    $langcode = LANGUAGE_NONE;
+    $body_key = "body[$langcode][0][value]";
+    $edit[$body_key] = l($node->title, 'node/' . $node->nid) . ' pizza sandwich';
+    $this->drupalPost('node/' . $node->nid . '/edit', $edit, t('Save'));
+
+    node_update_index();
+    search_update_totals();
+
+    // Enable the search block.
+    $edit = array();
+    $edit['search_form[region]'] = 'content';
+    $this->drupalPost('admin/structure/block', $edit, t('Save blocks'));
   }
 
   /**
    * Verify the search settings form.
    */
   function testSearchSettingsPage() {
-    // Add a single piece of content and index it.
-    $node = $this->drupalCreateNode();
-    // Link the node to itself to test that it's only indexed once.
-    $langcode = LANGUAGE_NONE;
-    $body_key = "body[$langcode][0][value]";
-    $edit[$body_key] = l($node->title, 'node/' . $node->nid);
-    $this->drupalPost('node/' . $node->nid . '/edit', $edit, t('Save'));
-
-    node_update_index();
-    search_update_totals();
 
     // Test that the settings form displays the correct count of items left to index.
     $this->drupalGet('admin/config/search/settings');
@@ -1033,6 +1045,143 @@ class SearchConfigSettingsForm extends DrupalWebTestCase {
     $this->assertText(t('The index will be rebuilt'));
     $this->drupalGet('admin/config/search/settings');
     $this->assertText(t('There is 1 item left to index.'));
+  }
+
+  /**
+   * Verify that you can disable individual search modules.
+   */
+  function testSearchModuleDisabling() {
+    // Array of search types to test: 'path' is the search path, 'title' is
+    // the tab title, 'keys' are the keywords to search for, and 'text' is
+    // the text to assert is on the results page.
+    $module_info = array(
+      'node' => array(
+        'path' => 'node',
+        'title' => 'Content',
+        'keys' => 'pizza',
+        'text' => $this->search_node->title,
+      ),
+      'user' => array(
+        'path' => 'user',
+        'title' => 'User',
+        'keys' => $this->search_user->name,
+        'text' => $this->search_user->mail,
+      ),
+      'search_extra_type' => array(
+        'path' => 'dummy_path',
+        'title' => 'Dummy search type',
+        'keys' => 'foo',
+        'text' => 'Dummy search snippet to display',
+      ),
+    );
+    $modules = array_keys($module_info);
+
+    // Test each module if it's enabled as the only search module.
+    foreach ($modules as $module) {
+      // Enable the one module and disable other ones.
+      $info = $module_info[$module];
+      $edit = array();
+      foreach ($modules as $other) {
+        $edit['search_active_modules[' . $other . ']'] = (($other == $module) ? $module : FALSE);
+      }
+      $edit['search_default_module'] = $module;
+      $this->drupalPost('admin/config/search/settings', $edit, t('Save configuration'));
+
+      // Run a search from the correct search URL.
+      $this->drupalGet('search/' . $info['path'] . '/' . $info['keys']);
+      $this->assertNoText('no results', $info['title'] . ' search found results');
+      $this->assertText($info['text'], 'Correct search text found');
+
+      // Verify that other module search tab titles are not visible.
+      foreach ($modules as $other) {
+        if ($other != $module) {
+          $title = $module_info[$other]['title'];
+          $this->assertNoText($title, $title . ' search tab is not shown');
+        }
+      }
+
+      // Run a search from the search block on the node page. Verify you get
+      // to this module's search results page.
+      $terms = array('search_block_form' => $info['keys']);
+      $this->drupalPost('node', $terms, t('Search'));
+      $this->assertEqual(
+        $this->getURL(),
+        url('search/' . $info['path'] . '/' . $info['keys'], array('absolute' => TRUE)),
+        'Block redirected to right search page');
+
+      // Try an invalid search path. Should redirect to our active module.
+      $this->drupalGet('search/not_a_module_path');
+      $this->assertEqual(
+        $this->getURL(),
+        url('search/' . $info['path'], array('absolute' => TRUE)),
+        'Invalid search path redirected to default search page');
+    }
+
+    // Test with all search modules enabled. When you go to the search
+    // page or run search, all modules should be shown.
+    $edit = array();
+    foreach ($modules as $module) {
+      $edit['search_active_modules[' . $module . ']'] = $module;
+    }
+    $edit['search_default_module'] = 'node';
+
+    $this->drupalPost('admin/config/search/settings', $edit, t('Save configuration'));
+
+    foreach (array('search/node/pizza', 'search/node') as $path) {
+      $this->drupalGet($path);
+      foreach ($modules as $module) {
+        $title = $module_info[$module]['title'];
+        $this->assertText($title, $title . ' search tab is shown');
+      }
+    }
+  }
+}
+
+/**
+ * Tests the search_excerpt() function.
+ */
+class SearchExcerptTestCase extends DrupalUnitTestCase {
+  public static function getInfo() {
+    return array(
+      'name' => 'Search excerpt extraction',
+      'description' => 'Tests that the search_excerpt() function works.',
+      'group' => 'Search',
+    );
+  }
+
+  function setUp() {
+    parent::setUp('search');
+  }
+
+  /**
+   * Tests search_excerpt() with several simulated search keywords.
+   *
+   * Passes keywords and a sample marked up string, "The quick
+   * brown fox jumps over the lazy dog", and compares it to the
+   * correctly marked up string. The correctly marked up string
+   * contains either highlighted keywords or the original marked
+   * up string if no keywords matched the string.
+   */
+  function testSearchExcerpt() {
+    // Make some text with entities and tags.
+    $text = 'The <strong>quick</strong> <a href="#">brown</a> fox &amp; jumps <h2>over</h2> the lazy dog';
+    // Note: The search_excerpt() function adds some extra spaces -- not
+    // important for HTML formatting. Remove these for comparison.
+    $expected = 'The quick brown fox &amp; jumps over the lazy dog';
+    $result = preg_replace('| +|', ' ', search_excerpt('nothing', $text));
+    $this->assertEqual(preg_replace('| +|', ' ', $result), $expected, 'Entire string is returned when keyword is not found in short string');
+
+    $result = preg_replace('| +|', ' ', search_excerpt('fox', $text));
+    $this->assertEqual($result, 'The quick brown <strong>fox</strong> &amp; jumps over the lazy dog ...', 'Found keyword is highlighted');
+
+    $longtext = str_repeat($text . ' ', 10);
+    $result = preg_replace('| +|', ' ', search_excerpt('nothing', $text));
+    $this->assertTrue(strpos($result, $expected) === 0, 'When keyword is not found in long string, return value starts as expected');
+
+    $entities = str_repeat('k&eacute;sz&iacute;t&eacute;se ', 20);
+    $result = preg_replace('| +|', ' ', search_excerpt('nothing', $entities));
+    $this->assertFalse(strpos($result, '&'), 'Entities are not present in excerpt');
+    $this->assertTrue(strpos($result, 'í') > 0, 'Entities are converted in excerpt');
   }
 }
 

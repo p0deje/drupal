@@ -1,5 +1,5 @@
 <?php
-// $Id: system.api.php,v 1.181 2010/08/04 03:47:28 dries Exp $
+// $Id: system.api.php,v 1.184 2010/08/08 19:45:37 dries Exp $
 
 /**
  * @file
@@ -372,27 +372,20 @@ function hook_entity_prepare_view($entities, $type) {
  *
  * This hook will only be called if cron.php is run (e.g. by crontab).
  *
- * Modules that require to schedule some commands to be executed at regular
- * intervals can implement hook_cron(). The engine will then call the hook
- * at the appropriate intervals defined by the administrator. This interface
- * is particularly handy to implement timers or to automate certain tasks.
- * Database maintenance, recalculation of settings or parameters are good
- * candidates for cron tasks.
+ * Modules that require some commands to be executed periodically can
+ * implement hook_cron(). The engine will then call the hook whenever a cron
+ * run happens, as defined by the administrator. Typical tasks managed by
+ * hook_cron() are database maintenance, backups, recalculation of settings
+ * or parameters, automated mailing, and retrieving remote data.
  *
- * Short-running or not resource intensive tasks can be executed directly.
+ * Short-running or non-resource-intensive tasks can be executed directly in
+ * the hook_cron() implementation.
  *
- * Long-running tasks should use the queue API. To do this, one or more queues
- * need to be defined via hook_cron_queue_info(). Items that need to be
- * processed are appended to the defined queue, instead of processing them
- * directly in hook_cron().
- * Examples of jobs that are good candidates for
- * hook_cron_queue_info() include automated mailing, retrieving remote data, and
- * intensive file tasks.
- *
- * @return
- *   None.
- *
- * @see hook_cron_queue_info()
+ * Long-running tasks and tasks that could time out, such as retrieving remote
+ * data, sending email, and intensive file tasks, should use the queue API
+ * instead of executing the tasks directly. To do this, first define one or
+ * more queues via hook_cron_queue_info(). Then, add items that need to be
+ * processed to the defined queues.
  */
 function hook_cron() {
   // Short-running operation example, not using a queue:
@@ -888,7 +881,9 @@ function hook_page_build(&$page) {
  *   - "delivery callback": The function to call to package the result of the
  *     page callback function and send it to the browser. Defaults to
  *     drupal_deliver_html_page() unless a value is inherited from a parent menu
- *     item.
+ *     item. Note that this function is called even if the access checks fail,
+ *     so any custom delivery callback function should take that into account.
+ *     See drupal_deliver_html_page() for an example.
  *   - "access callback": A function returning a boolean value that determines
  *     whether the user has access rights to this menu item. Defaults to
  *     user_access() unless a value is inherited from a parent menu item.
@@ -1751,19 +1746,18 @@ function hook_theme($existing, $type, $theme, $path) {
  *
  * For example:
  * @code
- *  $theme_registry['user_profile'] = array(
- *    'variables' => array(
- *      'account' => NULL,
- *    ),
- *    'template' => 'modules/user/user-profile',
- *    'file' => 'modules/user/user.pages.inc',
- *    'type' => 'module',
- *    'theme path' => 'modules/user',
- *    'preprocess functions' => array(
- *      0 => 'template_preprocess',
- *      1 => 'template_preprocess_user_profile',
- *     ),
- *   )
+ * $theme_registry['user_profile'] = array(
+ *   'variables' => array(
+ *     'account' => NULL,
+ *   ),
+ *   'template' => 'modules/user/user-profile',
+ *   'file' => 'modules/user/user.pages.inc',
+ *   'type' => 'module',
+ *   'theme path' => 'modules/user',
+ *   'preprocess functions' => array(
+ *     0 => 'template_preprocess',
+ *     1 => 'template_preprocess_user_profile',
+ *   ),
  * );
  * @endcode
  *

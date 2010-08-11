@@ -1,5 +1,5 @@
 <?php
-// $Id: translation.test,v 1.27 2010/07/17 11:31:36 dries Exp $
+// $Id: translation.test,v 1.29 2010/08/05 23:53:39 webchick Exp $
 
 class TranslationTestCase extends DrupalWebTestCase {
   protected $book;

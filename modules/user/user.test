@@ -1,5 +1,5 @@
 <?php
-// $Id: user.test,v 1.98 2010/08/04 06:52:57 webchick Exp $
+// $Id: user.test,v 1.100 2010/08/05 23:53:39 webchick Exp $
 
 class UserRegistrationTestCase extends DrupalWebTestCase {
   public static function getInfo() {

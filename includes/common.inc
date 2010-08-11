@@ -1,5 +1,5 @@
 <?php
-// $Id: common.inc,v 1.1199 2010/08/03 02:14:50 dries Exp $
+// $Id: common.inc,v 1.1204 2010/08/10 01:00:42 dries Exp $
 
 /**
  * @file
@@ -2049,7 +2049,7 @@ function url($path = NULL, array $options = array()) {
   // Allow other modules to alter the outbound URL and options.
   drupal_alter('url_outbound', $path, $options, $original_path);
 
-  if ($options['fragment']) {
+  if (isset($options['fragment']) && $options['fragment'] !== '') {
     $options['fragment'] = '#' . $options['fragment'];
   }
 
@@ -2292,29 +2292,29 @@ function l($text, $path, array $options = array()) {
 }
 
 /**
- * Deliver a page callback result to the browser in the format appropriate.
+ * Delivers a page callback result to the browser in the appropriate format.
  *
  * This function is most commonly called by menu_execute_active_handler(), but
  * can also be called by error conditions such as drupal_not_found(),
  * drupal_access_denied(), and drupal_site_offline().
  *
- * When a user requests a page, index.php calls menu_execute_active_handler()
+ * When a user requests a page, index.php calls menu_execute_active_handler(),
  * which calls the 'page callback' function registered in hook_menu(). The page
  * callback function can return one of:
- * - NULL: to indicate no content
- * - an integer menu status constant: to indicate an error condition
- * - a string of HTML content
- * - a renderable array of content
+ * - NULL: to indicate no content.
+ * - An integer menu status constant: to indicate an error condition.
+ * - A string of HTML content.
+ * - A renderable array of content.
  * Returning a renderable array rather than a string of HTML is preferred,
  * because that provides modules with more flexibility in customizing the final
  * result.
  *
  * When the page callback returns its constructed content to
- * menu_execute_active_handler(), this functions gets called. The purpose of
+ * menu_execute_active_handler(), this function gets called. The purpose of
  * this function is to determine the most appropriate 'delivery callback'
  * function to route the content to. The delivery callback function then
  * sends the content to the browser in the needed format. The default delivery
- * callback is drupal_deliver_html_page() which delivers the content as an HTML
+ * callback is drupal_deliver_html_page(), which delivers the content as an HTML
  * page, complete with blocks in addition to the content. This default can be
  * overridden on a per menu router item basis by setting 'delivery callback' in
  * hook_menu() or hook_menu_alter(), and can also be overridden on a per request
@@ -2329,6 +2329,16 @@ function l($text, $path, array $options = array()) {
  * In order for page callbacks to be reusable in different delivery formats,
  * they should not issue any "print" or "echo" statements, but instead just
  * return content.
+ *
+ * Also note that this function does not perform access checks. The delivery
+ * callback function specified in hook_menu(), hook_menu_alter(), or
+ * hook_page_delivery_callback_alter() will be called even if the router item
+ * access checks fail. This is intentional (it is needed for JSON and other
+ * purposes), but it has security implications. Do not call this function
+ * directly unless you understand the security implications, and be careful in
+ * writing delivery callbacks, so that they do not violate security. See
+ * drupal_deliver_html_page() for an example of a delivery callback that
+ * respects security.
  *
  * @param $page_callback_result
  *   The result of a page callback. Can be one of:
@@ -2775,7 +2785,7 @@ function drupal_add_css($data = NULL, $options = NULL) {
  * module styles through CSS selectors.
  *
  * Themes may replace module-defined CSS files by adding a stylesheet with the
- * same filename. For example, themes/garland/system-menus.css would replace
+ * same filename. For example, themes/bartik/system-menus.css would replace
  * modules/system/system-menus.css. This allows themes to override complete
  * CSS files, rather than specific selectors, when necessary.
  *
@@ -5902,7 +5912,7 @@ function drupal_schema_fields_sql($table, $prefix = NULL) {
  * @param $table
  *   The name of the table; this must be defined by a hook_schema()
  *   implementation.
- * @param $object
+ * @param $record
  *   An object or array representing the record to write, passed in by
  *   reference. The function will fill in defaults from the schema and add an
  *   ID value to serial fields.
@@ -5916,10 +5926,10 @@ function drupal_schema_fields_sql($table, $prefix = NULL) {
  *   Failure to write a record will return FALSE. Otherwise SAVED_NEW or
  *   SAVED_UPDATED is returned depending on the operation performed. The $object
  *   parameter will contain values for any serial fields defined by the $table.
- *   For example, $object->nid or $object['nid'] will be populated after
+ *   For example, $record->nid or $record['nid'] will be populated after
  *   inserting a new a new node.
  */
-function drupal_write_record($table, &$object, $primary_keys = array()) {
+function drupal_write_record($table, &$record, $primary_keys = array()) {
   // Standardize $primary_keys to an array.
   if (is_string($primary_keys)) {
     $primary_keys = array($primary_keys);
@@ -5930,19 +5940,10 @@ function drupal_write_record($table, &$object, $primary_keys = array()) {
     return FALSE;
   }
 
-  // Convert to an object if needed.
-  if (is_array($object)) {
-    $object = (object) $object;
-    $array = TRUE;
-  }
-  else {
-    $array = FALSE;
-  }
-
+  $object = (object) $record;
   $fields = array();
 
-  // Go through our schema, build SQL, and when inserting, fill in defaults for
-  // fields that are not set.
+  // Go through the schema to determine fields to write.
   foreach ($schema['fields'] as $field => $info) {
     if ($info['type'] == 'serial') {
       // Skip serial types if we are updating.
@@ -5954,24 +5955,24 @@ function drupal_write_record($table, &$object, $primary_keys = array()) {
       $serial = $field;
     }
 
+    // Skip field if it is in $primary_keys as it is unnecessary to update a
+    // field to the value it is already set to.
+    if (in_array($field, $primary_keys)) {
+      continue;
+    }
+
     if (!property_exists($object, $field)) {
-      // Skip fields that are not provided, unless we are inserting and a
-      // default value is provided by the schema.
-      if (!empty($primary_keys) || !isset($info['default'])) {
-        continue;
-      }
-      $object->$field = $info['default'];
+      // Skip fields that are not provided, default values are already known 
+      // by the database.
+      continue;
     }
 
     // Build array of fields to update or insert.
     if (empty($info['serialize'])) {
       $fields[$field] = $object->$field;
     }
-    elseif (isset($object->$field)) {
-      $fields[$field] = serialize($object->$field);
-    }
     else {
-      $fields[$field] = '';
+      $fields[$field] = serialize($object->$field);
     }
 
     // Type cast to proper datatype, except when the value is NULL and the
@@ -5994,11 +5995,6 @@ function drupal_write_record($table, &$object, $primary_keys = array()) {
   }
 
   if (empty($fields)) {
-    // No changes requested.
-    // If we began with an array, convert back so we don't surprise the caller.
-    if ($array) {
-      $object = (array) $object;
-    }
     return;
   }
 
@@ -6050,9 +6046,18 @@ function drupal_write_record($table, &$object, $primary_keys = array()) {
     $return = FALSE;
   }
 
-  // If we began with an array, convert back so we don't surprise the caller.
-  if ($array) {
-    $object = (array) $object;
+  // If we are inserting, populate empty fields with default values.
+  if (empty($primary_keys)) {
+    foreach ($schema['fields'] as $field => $info) {
+      if (isset($info['default']) && !property_exists($object, $field)) {
+        $object->$field = $info['default'];
+      }
+    }
+  }
+
+  // If we began with an array, convert back.
+  if (is_array($record)) {
+    $record = (array) $object;
   }
 
   return $return;
@@ -6087,7 +6092,7 @@ function drupal_write_record($table, &$object, $primary_keys = array()) {
  * - stylesheets: Theme stylesheets eg: stylesheets[all][] = my-style.css
  * - scripts: Theme scripts eg: scripts[] = my-script.css
  *
- * @see garland.info
+ * @see bartik.info
  *
  * @param $filename
  *   The file we are parsing. Accepts file with relative or absolute path.

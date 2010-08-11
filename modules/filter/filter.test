@@ -1,5 +1,5 @@
 <?php
-// $Id: filter.test,v 1.69 2010/07/01 19:41:18 dries Exp $
+// $Id: filter.test,v 1.71 2010/08/05 23:53:38 webchick Exp $
 
 /**
  * Tests for text format and filter CRUD operations.
