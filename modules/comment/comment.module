@@ -1,5 +1,5 @@
 <?php
-// $Id: comment.module,v 1.888 2010/08/10 00:55:38 dries Exp $
+// $Id: comment.module,v 1.893 2010/08/30 05:58:46 webchick Exp $
 
 /**
  * @file
@@ -688,17 +688,13 @@ function comment_node_view($node, $view_mode) {
       $links['comment_forbidden']['html'] = TRUE;
     }
 
-    $node->content['links']['comment'] = array(
-      '#theme' => 'links__comment_node',
-      '#links' => $links,
-      '#attributes' => array('class' => array('links', 'inline')),
-    );
+    $node->content['links']['#links'] = array_merge($node->content['links']['#links'], $links);
 
     // Only append comments when we are building a node on its own node detail
     // page. We compare $node and $page_node to ensure that comments are not
     // appended to other nodes shown on the page, for example a node_reference
     // displayed in 'full' view mode within another node.
-    if ($node->comment && node_is_page($node) && empty($node->in_preview) && user_access('access comments')) {
+    if ($node->comment && $view_mode == 'full' && node_is_page($node) && empty($node->in_preview) && user_access('access comments')) {
       $node->content['comments'] = comment_node_page_additions($node);
     }
   }
@@ -1398,7 +1394,7 @@ function comment_access($op, $comment) {
   global $user;
 
   if ($op == 'edit') {
-    return ($user->uid && $user->uid == $comment->uid && user_access('edit own comments')) || user_access('administer comments');
+    return ($user->uid && $user->uid == $comment->uid && $comment->status == COMMENT_PUBLISHED && user_access('edit own comments')) || user_access('administer comments');
   }
 }
 
@@ -1880,6 +1876,7 @@ function comment_form($form, &$form_state, $comment) {
       '#type' => 'textfield',
       '#title' => t('Your name'),
       '#default_value' => $author,
+      '#required' => (!$user->uid && $anonymous_contact == COMMENT_ANONYMOUS_MUST_CONTACT),
       '#maxlength' => 60,
       '#size' => 30,
     );
@@ -1890,6 +1887,7 @@ function comment_form($form, &$form_state, $comment) {
     '#type' => 'textfield',
     '#title' => t('E-mail'),
     '#default_value' => $comment->mail,
+    '#required' => (!$user->uid && $anonymous_contact == COMMENT_ANONYMOUS_MUST_CONTACT),
     '#maxlength' => 64,
     '#size' => 30,
     '#description' => t('The content of this field is kept private and will not be shown publicly.'),
@@ -1903,11 +1901,6 @@ function comment_form($form, &$form_state, $comment) {
     '#size' => 30,
     '#access' => $is_admin || (!$user->uid && $anonymous_contact != COMMENT_ANONYMOUS_MAYNOT_CONTACT),
   );
-  // Conditionally mark fields as required for anonymous users, if configured.
-  if (!$user->uid && $anonymous_contact == COMMENT_ANONYMOUS_MUST_CONTACT) {
-    $form['author']['name']['#required'] = TRUE;
-    $form['author']['mail']['#required'] = TRUE;
-  }
 
   // Add administrative comment publishing options.
   $form['author']['date'] = array(
@@ -2055,41 +2048,28 @@ function comment_form_validate($form, &$form_state) {
     }
   }
 
-  // Check validity of name, mail and homepage (if given).
-  if (!$user->uid || $form_state['values']['is_anonymous']) {
-    $node = node_load($form_state['values']['nid']);
-    if (variable_get('comment_anonymous_' . $node->type, COMMENT_ANONYMOUS_MAYNOT_CONTACT) > COMMENT_ANONYMOUS_MAYNOT_CONTACT) {
-      if ($form_state['values']['name']) {
-        $query = db_select('users', 'u');
-        $query->addField('u', 'uid', 'uid');
-        $taken = $query
-          ->condition('name', db_like($form_state['values']['name']), 'LIKE')
-          ->countQuery()
-          ->execute()
-          ->fetchField();
-        if ($taken != 0) {
-          form_set_error('name', t('The name you used belongs to a registered user.'));
-        }
-      }
-      elseif (variable_get('comment_anonymous_' . $node->type, COMMENT_ANONYMOUS_MAYNOT_CONTACT) == COMMENT_ANONYMOUS_MUST_CONTACT) {
-        form_set_error('name', t('You have to leave your name.'));
-      }
-
-      if ($form_state['values']['mail']) {
-        if (!valid_email_address($form_state['values']['mail'])) {
-          form_set_error('mail', t('The e-mail address you specified is not valid.'));
-        }
-      }
-      elseif (variable_get('comment_anonymous_' . $node->type, COMMENT_ANONYMOUS_MAYNOT_CONTACT) == COMMENT_ANONYMOUS_MUST_CONTACT) {
-        form_set_error('mail', t('You have to leave an e-mail address.'));
-      }
-
-      if ($form_state['values']['homepage']) {
-        if (!valid_url($form_state['values']['homepage'], TRUE)) {
-          form_set_error('homepage', t('The URL of your homepage is not valid. Remember that it must be fully qualified, i.e. of the form <code>http://example.com/directory</code>.'));
-        }
+  // Validate anonymous comment author fields (if given).
+  if ($form_state['values']['is_anonymous']) {
+    // If the (original) author of this comment was an anonymous user, verify
+    // that no registered user with this name exists.
+    if ($form_state['values']['name']) {
+      $query = db_select('users', 'u');
+      $query->addField('u', 'uid', 'uid');
+      $taken = $query
+        ->condition('name', db_like($form_state['values']['name']), 'LIKE')
+        ->countQuery()
+        ->execute()
+        ->fetchField();
+      if ($taken) {
+        form_set_error('name', t('The name you used belongs to a registered user.'));
       }
     }
+  }
+  if ($form_state['values']['mail'] && !valid_email_address($form_state['values']['mail'])) {
+    form_set_error('mail', t('The e-mail address you specified is not valid.'));
+  }
+  if ($form_state['values']['homepage'] && !valid_url($form_state['values']['homepage'], TRUE)) {
+    form_set_error('homepage', t('The URL of your homepage is not valid. Remember that it must be fully qualified, i.e. of the form <code>http://example.com/directory</code>.'));
   }
 }
 
@@ -2110,7 +2090,7 @@ function comment_submit($comment) {
   $comment->created = strtotime($comment->date);
   $comment->changed = REQUEST_TIME;
 
-  if (!empty($comment->name) && ($account = user_load_by_name($comment->name))) {
+  if (!$comment->is_anonymous && !empty($comment->name) && ($account = user_load_by_name($comment->name))) {
     $comment->uid = $account->uid;
   }
 
@@ -2630,4 +2610,13 @@ function comment_rdf_mapping() {
       ),
     ),
   );
+}
+
+/**
+ * Implements hook_file_download_access().
+ */
+function comment_file_download_access($field, $entity_type, $entity) {
+  if ($entity_type == 'comment') {
+    return user_access('access comments') && $entity->status == COMMENT_PUBLISHED || user_access('administer comments');
+  }
 }

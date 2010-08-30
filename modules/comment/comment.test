@@ -1,5 +1,5 @@
 <?php
-// $Id: comment.test,v 1.87 2010/08/05 23:53:37 webchick Exp $
+// $Id: comment.test,v 1.89 2010/08/30 00:22:03 webchick Exp $
 
 class CommentHelperCase extends DrupalWebTestCase {
   protected $admin_user;
@@ -521,6 +521,16 @@ class CommentAnonymous extends CommentHelperCase {
     $anonymous_comment2 = $this->postComment($this->node, $this->randomName(), $this->randomName());
     $this->assertTrue($this->commentExists($anonymous_comment2), t('Anonymous comment with contact info (optional) found.'));
 
+    // Ensure anonymous users cannot post in the name of registered users.
+    $edit = array(
+      'name' => $this->admin_user->name,
+      'mail' => $this->randomName() . '@example.com',
+      'subject' => $this->randomName(),
+      'comment_body[' . LANGUAGE_NONE . '][0][value]' => $this->randomName(),
+    );
+    $this->drupalPost('comment/reply/' . $this->node->nid, $edit, t('Save'));
+    $this->assertText(t('The name you used belongs to a registered user.'));
+
     // Require contact info.
     $this->drupalLogin($this->admin_user);
     $this->setCommentAnonymous('2');
@@ -1004,7 +1014,7 @@ class CommentBlockFunctionalTest extends CommentHelperCase {
 
     // Set the block to a region to confirm block is available.
     $edit = array(
-      'comment_recent[region]' => 'sidebar_first',
+      'blocks[comment_recent][region]' => 'sidebar_first',
     );
     $this->drupalPost('admin/structure/block', $edit, t('Save blocks'));
     $this->assertText(t('The block settings have been updated.'), t('Block saved to first sidebar region.'));

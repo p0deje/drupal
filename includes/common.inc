@@ -1,5 +1,5 @@
 <?php
-// $Id: common.inc,v 1.1204 2010/08/10 01:00:42 dries Exp $
+// $Id: common.inc,v 1.1211 2010/08/27 11:54:32 webchick Exp $
 
 /**
  * @file
@@ -741,6 +741,8 @@ function drupal_access_denied() {
  *       A float representing the maximum number of seconds the function call
  *       may take. The default is 30 seconds. If a timeout occurs, the error
  *       code is set to the HTTP_REQUEST_TIMEOUT constant.
+ *   - context
+ *       A context resource created with stream_context_create().
  * @return
  *   An object which can have one or more of the following parameters:
  *   - request
@@ -791,21 +793,27 @@ function drupal_http_request($url, array $options = array()) {
     'method' => 'GET',
     'data' => NULL,
     'max_redirects' => 3,
-    'timeout' => 30,
+    'timeout' => 30.0,
+    'context' => NULL,
   );
+  // stream_socket_client() requires timeout to be a float.
+  $options['timeout'] = (float) $options['timeout'];
 
   switch ($uri['scheme']) {
     case 'http':
     case 'feed':
       $port = isset($uri['port']) ? $uri['port'] : 80;
-      $host = $uri['host'] . ($port != 80 ? ':' . $port : '');
-      $fp = @fsockopen($uri['host'], $port, $errno, $errstr, $options['timeout']);
+      $socket = 'tcp://' . $uri['host'] . ':' . $port;
+      // RFC 2616: "non-standard ports MUST, default ports MAY be included".
+      // We don't add the standard port to prevent from breaking rewrite rules
+      // checking the host that do not take into account the port number.
+      $options['headers']['Host'] = $uri['host'] . ($port != 80 ? ':' . $port : '');
       break;
     case 'https':
       // Note: Only works when PHP is compiled with OpenSSL support.
       $port = isset($uri['port']) ? $uri['port'] : 443;
-      $host = $uri['host'] . ($port != 443 ? ':' . $port : '');
-      $fp = @fsockopen('ssl://' . $uri['host'], $port, $errno, $errstr, $options['timeout']);
+      $socket = 'ssl://' . $uri['host'] . ':' . $port;
+      $options['headers']['Host'] = $uri['host'] . ($port != 443 ? ':' . $port : '');
       break;
     default:
       $result->error = 'invalid schema ' . $uri['scheme'];
@@ -813,12 +821,20 @@ function drupal_http_request($url, array $options = array()) {
       return $result;
   }
 
+  if (empty($options['context'])) {
+    $fp = @stream_socket_client($socket, $errno, $errstr, $options['timeout']);
+  }
+  else {
+    // Create a stream with context. Allows verification of a SSL certificate.
+    $fp = @stream_socket_client($socket, $errno, $errstr, $options['timeout'], STREAM_CLIENT_CONNECT, $options['context']);
+  }
+
   // Make sure the socket opened properly.
   if (!$fp) {
     // When a network error occurs, we use a negative number so it does not
     // clash with the HTTP status codes.
     $result->code = -$errno;
-    $result->error = trim($errstr);
+    $result->error = trim($errstr) ? trim($errstr) : t('Error opening socket @socket', array('@socket' => $socket));
 
     // Mark that this request failed. This will trigger a check of the web
     // server's ability to make outgoing HTTP requests the next time that
@@ -839,11 +855,6 @@ function drupal_http_request($url, array $options = array()) {
   $options['headers'] += array(
     'User-Agent' => 'Drupal (+http://drupal.org/)',
   );
-
-  // RFC 2616: "non-standard ports MUST, default ports MAY be included".
-  // We don't add the standard port to prevent from breaking rewrite rules
-  // checking the host that do not take into account the port number.
-  $options['headers']['Host'] = $host;
 
   // Only add Content-Length if we actually have any content or if it is a POST
   // or PUT request. Some non-standard servers get confused by Content-Length in
@@ -876,8 +887,12 @@ function drupal_http_request($url, array $options = array()) {
   }
   $request .= "\r\n" . $options['data'];
   $result->request = $request;
-
-  fwrite($fp, $request);
+  // Calculate how much time is left of the original timeout value.
+  $timeout = $options['timeout'] - timer_read(__FUNCTION__) / 1000;
+  if ($timeout > 0) {
+    stream_set_timeout($fp, floor($timeout), floor(1000000 * fmod($timeout, 1)));
+    fwrite($fp, $request);
+  }
 
   // Fetch response. Due to PHP bugs like http://bugs.php.net/bug.php?id=43782
   // and http://bugs.php.net/bug.php?id=46049 we can't rely on feof(), but
@@ -3325,7 +3340,7 @@ function drupal_load_stylesheet_content($contents, $optimize = FALSE) {
     // Regexp to match single quoted strings.
     $single_quot = "'[^'\\\\]*(?:\\\\.[^'\\\\]*)*'";
     $contents = preg_replace(
-      "<($double_quot|$single_quot)|$comment>Sus", // Strip all comment blocks
+      "<($double_quot|$single_quot)|$comment>Ss",  // Strip all comment blocks
       "$1",                                        // but keep double/single
       $contents);                                  // quoted strings.
     $contents = preg_replace(
@@ -4577,13 +4592,19 @@ function _drupal_bootstrap_full() {
 
   // Initialize $_GET['q'] prior to invoking hook_init().
   drupal_path_initialize();
-  // Set a custom theme for the current page, if there is one. We need to run
-  // this before invoking hook_init(), since any modules which initialize the
-  // theme system will prevent a custom theme from being correctly set later.
-  menu_set_custom_theme();
-  // Let all modules take action before menu system handles the request
+
+  // Let all modules take action before the menu system handles the request.
   // We do not want this while running update.php.
   if (!defined('MAINTENANCE_MODE') || MAINTENANCE_MODE != 'update') {
+    // Prior to invoking hook_init(), initialize the theme (potentially a custom
+    // one for this page), so that:
+    // - Modules with hook_init() implementations that call theme() or
+    //   theme_get_registry() don't initialize the incorrect theme.
+    // - The theme can have hook_*_alter() implementations affect page building
+    //   (e.g., hook_form_alter(), hook_node_view_alter(), hook_page_alter()),
+    //   ahead of when rendering starts.
+    menu_set_custom_theme();
+    drupal_theme_initialize();
     module_invoke_all('init');
   }
 }
@@ -5559,6 +5580,157 @@ function element_get_visible_children(array $elements) {
 
   return array_keys($visible_children);
 }
+
+/**
+ * Sets a value in a nested array with variable depth.
+ *
+ * This helper function should be used when the depth of the array element you
+ * are changing may vary (that is, the number of parent keys is variable). It
+ * is primarily used for form structures and renderable arrays.
+ *
+ * Example:
+ * @code
+ * // Assume you have a 'signature' element somewhere in a form. It might be:
+ * $form['signature_settings']['signature'] = array(
+ *   '#type' => 'text_format',
+ *   '#title' => t('Signature'),
+ * );
+ * // Or, it might be further nested:
+ * $form['signature_settings']['user']['signature'] = array(
+ *   '#type' => 'text_format',
+ *   '#title' => t('Signature'),
+ * );
+ * @endcode
+ *
+ * To deal with the situation, the code needs to figure out the route to the
+ * element, given an array of parents that is either
+ * @code array('signature_settings', 'signature') @endcode in the first case or
+ * @code array('signature_settings', 'user', 'signature') @endcode in the second
+ * case.
+ *
+ * Without this helper function the only way to set the signature element in one
+ * line would be using eval(), which should be avoided:
+ * @code
+ * // Do not do this! Avoid eval().
+ * eval('$form[\'' . implode("']['", $parents) . '\'] = $element;');
+ * @endcode
+ *
+ * Instead, use this helper function:
+ * @code
+ * drupal_array_set_nested_value($form, $parents, $element);
+ * @endcode
+ *
+ * However if the number of array parent keys is static, the value should always
+ * be set directly rather than calling this function. For instance, for the
+ * first example we could just do:
+ * @code
+ * $form['signature_settings']['signature'] = $element;
+ * @endcode
+ *
+ * @param $array
+ *   A reference to the array to modify.
+ * @param $parents
+ *   An array of parent keys, starting with the outermost key.
+ * @param $value
+ *   The value to set.
+ *
+ * @see drupal_array_get_nested_value()
+ */
+function drupal_array_set_nested_value(&$array, $parents, $value) {
+  $ref = &$array;
+  foreach ($parents as $parent) {
+    // Note that PHP is fine with referencing a not existing array key - in this
+    // case it just creates an entry with NULL as value.
+    $ref = &$ref[$parent];
+  }
+  $ref = $value;
+}
+
+/**
+ * Retrieves a value from a nested array with variable depth.
+ *
+ * This helper function should be used when the depth of the array element you
+ * are changing may vary (that is, the number of parent keys is variable). It is
+ * primarily used for form structures and renderable arrays.
+ *
+ * Without this helper function the only way to get a nested array value with
+ * variable depth in one line would be using eval(), which should be avoided:
+ * @code
+ * // Do not do this! Avoid eval().
+ * // May also throw a PHP notice, if the variable array keys do not exist.
+ * eval('$value = $array[\'' . implode("']['", $parents) . "'];");
+ * @endcode
+ *
+ * Instead, use this helper function:
+ * @code
+ * list($value, $value_exists) = drupal_array_get_nested_value($form, $parents);
+ * if ($value_exists) {
+ *   // ... do something with $value ...
+ * }
+ * @endcode
+ *
+ * However if the number of array parent keys is static, the value should always
+ * be get directly rather than calling this function. For instance:
+ * @code
+ * $value = $form['signature_settings']['signature'];
+ * @endcode
+ *
+ * @param $array
+ *   The array from which to get the value.
+ * @param $parents
+ *   An array of parent keys of the value, starting with the outermost key.
+ *
+ * @return
+ *   An indexed array containing:
+ *   - The requested nested value, if it exists, or NULL if it does not.
+ *   - TRUE if all the parent keys exist, FALSE otherwise.
+ *
+ * @see drupal_array_set_nested_value()
+ * @see drupal_array_value_exists()
+ */
+function drupal_array_get_nested_value($array, $parents) {
+  foreach ($parents as $parent) {
+    if (isset($array[$parent])) {
+      $array = $array[$parent];
+    }
+    else {
+      return array(NULL, FALSE);
+    }
+  }
+  return array($array, TRUE);
+}
+
+/**
+ * Determines whether a value in a nested array with variable depth exists.
+ *
+ * This helper function should be used when the depth of the array element to be
+ * checked may vary (that is, the number of parent keys is variable). See
+ * drupal_array_set_nested_value() for details. This helper is primarily used
+ * for form structures and renderable arrays.
+ *
+ * @param $array
+ *   The array with the value to check for.
+ * @param $parents
+ *   An array of parent keys of the value, starting with the outermost key.
+ *
+ * @return
+ *   TRUE if all the parent keys exist, FALSE otherwise.
+ *
+ * @see drupal_array_set_nested_value()
+ * @see drupal_array_get_nested_value()
+ */
+function drupal_array_nested_value_exists($array, $parents) {
+  foreach ($parents as $parent) {
+    if (isset($array[$parent])) {
+      $array = $array[$parent];
+    }
+    else {
+      return FALSE;
+    }
+  }
+  return TRUE;
+}
+
 
 /**
  * Provide theme registration for themes across .inc files.
@@ -6747,16 +6919,22 @@ function entity_form_submit_build_entity($entity_type, $entity, $form, &$form_st
 /**
  * Performs one or more XML-RPC request(s).
  *
+ * Usage example:
+ * @code
+ * $result = xmlrpc('http://example.com/xmlrpc.php', array(
+ *   'service.methodName' => array($parameter, $second, $third),
+ * ));
+ * @endcode
+ *
  * @param $url
  *   An absolute URL of the XML-RPC endpoint.
- *     Example:
- *     http://www.example.com/xmlrpc.php
- * @param ...
- *   For one request:
- *     The method name followed by a variable number of arguments to the method.
- *   For multiple requests (system.multicall):
- *     An array of call arrays. Each call array follows the pattern of the single
- *     request: method name followed by the arguments to the method.
+ * @param $args
+ *   An associative array whose keys are the methods to call and whose values
+ *   are the arguments to pass to the respective method. If multiple methods
+ *   are specified, a system.multicall is performed.
+ * @param $options
+ *   (optional) An array of options to pass along to drupal_http_request().
+ *
  * @return
  *   For one request:
  *     Either the return value of the method on success, or FALSE.
@@ -6766,10 +6944,9 @@ function entity_form_submit_build_entity($entity_type, $entity, $form, &$form_st
  *     returned by the method called, or an xmlrpc_error object if the call
  *     failed. See xmlrpc_error().
  */
-function xmlrpc($url) {
+function xmlrpc($url, $args, $options = array()) {
   require_once DRUPAL_ROOT . '/includes/xmlrpc.inc';
-  $args = func_get_args();
-  return call_user_func_array('_xmlrpc', $args);
+  return _xmlrpc($url, $args, $options);
 }
 
 /**

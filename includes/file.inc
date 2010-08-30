@@ -1,5 +1,5 @@
 <?php
-// $Id: file.inc,v 1.221 2010/08/08 01:37:34 dries Exp $
+// $Id: file.inc,v 1.226 2010/08/22 13:52:58 dries Exp $
 
 /**
  * @file
@@ -203,7 +203,7 @@ function file_stream_wrapper_valid_scheme($scheme) {
 }
 
 /**
- * Returns the target of a URI (e.g. a stream).
+ * Returns the part of an URI after the schema.
  *
  * @param $uri
  *   A stream, referenced as "scheme://target".
@@ -216,10 +216,10 @@ function file_stream_wrapper_valid_scheme($scheme) {
  * @see file_uri_scheme()
  */
 function file_uri_target($uri) {
-  if ($scheme = file_uri_scheme($uri)) {
-    return file_stream_wrapper_get_instance_by_scheme($scheme)->getTarget($uri);
-  }
-  return FALSE;
+  $data = explode('://', $uri, 2);
+
+  // Remove erroneous leading or trailing, forward-slashes and backslashes.
+  return count($data) == 2 ? trim($data[1], '\/') : FALSE;
 }
 
 /**
@@ -331,9 +331,9 @@ function file_stream_wrapper_get_instance_by_scheme($scheme) {
  *
  * @return
  *   A string containing a URL that may be used to access the file.
- *   If the provided string already contains a preceding 'http', nothing is done
- *   and the same string is returned. If a valid stream wrapper could not be
- *   found to generate an external URL, then FALSE will be returned.
+ *   If the provided string already contains a preceding 'http', 'https', or
+ *   '/', nothing is done and the same string is returned. If a stream wrapper
+ *   could not be found to generate an external URL, then FALSE is returned.
  */
 function file_create_url($uri) {
   // Allow the URI to be altered, e.g. to serve a file from a CDN or static
@@ -355,8 +355,8 @@ function file_create_url($uri) {
     }
     else {
       // If this is not a properly formatted stream, then it is a shipped file.
-      // Therefor, return the URI with the base URL prepended.
-      return $GLOBALS['base_url'] . '/' . $uri;
+      // Therefore, return the urlencoded URI with the base URL prepended.
+      return $GLOBALS['base_url'] . '/' . drupal_encode_path($uri);
     }
   }
   elseif ($scheme == 'http' || $scheme == 'https') {
@@ -495,6 +495,7 @@ function file_load_multiple($fids = array(), $conditions = array()) {
  *
  * @param $fid
  *   A file ID.
+ *
  * @return
  *   A file object.
  *
@@ -542,7 +543,130 @@ function file_save(stdClass $file) {
 }
 
 /**
- * Copy a file to a new location and adds a file record to the database.
+ * Determines where a file is used.
+ *
+ * @param $file
+ *   A file object.
+ *
+ * @return
+ *   A nested array with usage data. The first level is keyed by module name,
+ *   the second by object type, the third has 'id' and 'count' keys.
+ *
+ * @see file_usage_add()
+ * @see file_usage_delete()
+ */
+function file_usage_list(stdClass $file) {
+  $result = db_select('file_usage', 'f')
+    ->fields('f', array('module', 'type', 'id', 'count'))
+    ->condition('fid', $file->fid)
+    ->condition('count', 0, '>')
+    ->execute();
+  $references = array();
+  foreach ($result as $usage) {
+    $references[$usage->module][$usage->type] = array('id' => $usage->id, 'count' => $usage->count);
+  }
+  return $references;
+}
+
+/**
+ * Records that a module is using a file.
+ *
+ * This usage information will be queried during file_delete() to ensure that
+ * a file is not in use before it is physically removed from disk.
+ *
+ * Examples:
+ * - A module that associates files with nodes, so $type would be
+ *   'node' and $id would be the node's nid. Files for all revisions are stored
+ *   within a single nid.
+ * - The User module associates an image with a user, so $type would be 'user'
+ *   and the $id would be the user's uid.
+ *
+ * @param $file
+ *   A file object.
+ * @param $module
+ *   The name of the module using the file.
+ * @param $type
+ *   The type of the object that contains the referenced file. 
+ * @param $id
+ *   The unique, numeric ID of the object containing the referenced file. 
+ * @param $count
+ *   (optional) The number of references to add to the object. Defaults to 1.
+ *
+ * @see file_usage_list()
+ * @see file_usage_delete()
+ */
+function file_usage_add(stdClass $file, $module, $type, $id, $count = 1) {
+  db_merge('file_usage')
+    ->key(array(
+      'fid' => $file->fid,
+      'module' => $module,
+      'type' => $type,
+      'id' => $id,
+    ))
+    ->fields(array('count' => $count))
+    ->expression('count', 'count + :count', array(':count' => $count))
+    ->execute();
+}
+
+/**
+ * Removes a record to indicate that a module is no longer using a file.
+ *
+ * The file_delete() function is typically called after removing a file usage
+ * to remove the record from the file_managed table and delete the file itself.
+ *
+ * @param $file
+ *   A file object.
+ * @param $module
+ *   The name of the module using the file.
+ * @param $type
+ *   (optional) The type of the object that contains the referenced file. May
+ *   be omitted if all module references to a file are being deleted.
+ * @param $id
+ *   (optional) The unique, numeric ID of the object containing the referenced
+ *   file. May be omitted if all module references to a file are being deleted.
+ * @param $count
+ *   (optional) The number of references to delete from the object. Defaults to
+ *   1. 0 may be specified to delete all references to the file within a
+ *   specific object.
+ *
+ * @see file_usage_add()
+ * @see file_usage_list()
+ * @see file_delete()
+ */
+function file_usage_delete(stdClass $file, $module, $type = NULL, $id = NULL, $count = 1) {
+  // Delete rows that have a exact or less value to prevent empty rows.
+  $query = db_delete('file_usage')
+    ->condition('module', $module)
+    ->condition('fid', $file->fid);
+  if ($type && $id) {
+    $query
+      ->condition('type', $type)
+      ->condition('id', $id);
+  }
+  if ($count) {
+    $query->condition('count', $count, '<=');
+  }
+  $result = $query->execute();
+
+  // If the row has more than the specified count decrement it by that number.
+  if (!$result) {
+    $query = db_update('file_usage')
+      ->condition('module', $module)
+      ->condition('fid', $file->fid);
+    if ($type && $id) {
+      $query
+        ->condition('type', $type)
+        ->condition('id', $id);
+    }
+    if ($count) {
+      $query->expression('count', 'count - :count', array(':count' => $count));
+    }
+    $query->execute();
+  }
+}
+
+/**
+ * Copies a file to a new location and adds a file record to the database.
  *
  * This function should be used when manipulating files that have records
  * stored in the database. This is a powerful function that in many ways
@@ -609,7 +733,7 @@ function file_copy(stdClass $source, $destination = NULL, $replace = FILE_EXISTS
 }
 
 /**
- * Copy a file to a new location without invoking the file API.
+ * Copies a file to a new location without invoking the file API.
  *
  * This is a powerful function that in many ways performs like an advanced
  * version of copy().
@@ -691,7 +815,7 @@ function file_unmanaged_copy($source, $destination = NULL, $replace = FILE_EXIST
   file_ensure_htaccess();
   // Perform the copy operation.
   if (!@copy($source, $destination)) {
-    drupal_set_message(t('The specified file %file could not be copied.', array('%file' => $source)), 'error');
+    watchdog('file', 'The specified file %file could not be copied to %destination.', array('%file' => $source, '%destination' => $destination), WATCHDOG_ERROR);
     return FALSE;
   }
 
@@ -943,6 +1067,10 @@ function file_create_filename($basename, $directory) {
   // Strip control characters (ASCII value < 32). Though these are allowed in
   // some filesystems, not many applications handle them well.
   $basename = preg_replace('/[\x00-\x1F]/u', '_', $basename);
+  if (substr(PHP_OS, 0, 3) == 'WIN') {
+    // These characters are not allowed in Windows filenames
+    $basename = str_replace(array(':', '*', '?', '"', '<', '>', '|'), '_', $basename);
+  }
 
   // A URI or path may already have a trailing slash or look like "public://".
   if (substr($directory, -1) == '/') {
@@ -978,30 +1106,30 @@ function file_create_filename($basename, $directory) {
 /**
  * Delete a file and its database record.
  *
- * If the $force parameter is not TRUE hook_file_references() will be called
- * to determine if the file is being used by any modules. If the file is being
- * used is the delete will be canceled.
+ * If the $force parameter is not TRUE, file_usage_list() will be called to
+ * determine if the file is being used by any modules. If the file is being
+ * used the delete will be canceled.
  *
  * @param $file
  *   A file object.
  * @param $force
- *   Boolean indicating that the file should be deleted even if
- *   hook_file_references() reports that the file is in use.
+ *   Boolean indicating that the file should be deleted even if the file is
+ *   reported as in use by the file_usage table.
  *
  * @return mixed
  *   TRUE for success, FALSE in the event of an error, or an array if the file
- *   is being used by another module. The array keys are the module's name and
- *   the values are the number of references.
+ *   is being used by any modules.
  *
  * @see file_unmanaged_delete()
- * @see hook_file_references()
+ * @see file_usage_list()
+ * @see file_usage_delete()
  * @see hook_file_delete()
  */
 function file_delete(stdClass $file, $force = FALSE) {
-  // If any module returns a value from the reference hook, the file will not
-  // be deleted from Drupal, but file_delete will return a populated array that
-  // tests as TRUE.
-  if (!$force && ($references = module_invoke_all('file_references', $file))) {
+  // If any module still has a usage entry in the file_usage table, the file
+  // will not be deleted, but file_delete() will return a populated array
+  // that tests as TRUE.
+  if (!$force && ($references = file_usage_list($file))) {
     return $references;
   }
 
@@ -1012,6 +1140,7 @@ function file_delete(stdClass $file, $force = FALSE) {
   // database, so UIs can still find the file in the database.
   if (file_unmanaged_delete($file->uri)) {
     db_delete('file_managed')->condition('fid', $file->fid)->execute();
+    db_delete('file_usage')->condition('fid', $file->fid)->execute();
     return TRUE;
   }
   return FALSE;
@@ -1042,7 +1171,7 @@ function file_unmanaged_delete($path) {
     return FALSE;
   }
   if (is_file($path)) {
-    return unlink($path);
+    return drupal_unlink($path);
   }
   // Return TRUE for non-existent file, but log that nothing was actually
   // deleted, as the current state is the intended result.
@@ -1090,7 +1219,8 @@ function file_unmanaged_delete_recursive($path) {
       file_unmanaged_delete_recursive($entry_path);
     }
     $dir->close();
-    return rmdir($path);
+
+    return drupal_rmdir($path);
   }
   return file_unmanaged_delete($path);
 }
@@ -1893,6 +2023,36 @@ function drupal_chmod($uri, $mode = NULL) {
 }
 
 /**
+ * Deletes a file.
+ *
+ * PHP's unlink() is broken on Windows, as it can fail to remove a file
+ * when it has a read-only flag set.
+ *
+ * @param $uri
+ *   A URI or pathname.
+ * @param $context
+ *   Refer to http://php.net/manual/en/ref.stream.php
+ *
+ * @return
+ *   Boolean TRUE on success, or FALSE on failure.
+ *
+ * @see unlink()
+ * @ingroup php_wrappers
+ */
+function drupal_unlink($uri, $context = NULL) {
+  $scheme = file_uri_scheme($uri);
+  if ((!$scheme || !file_stream_wrapper_valid_scheme($scheme)) && (substr(PHP_OS, 0, 3) == 'WIN')) {
+    chmod($uri, 0600);
+  }
+  if ($context) {
+    return unlink($uri, $context);
+  }
+  else {
+    return unlink($uri);
+  }
+}
+
+/**
  * Returns the absolute path of a file or directory
  *
  * PHP's realpath() does not properly support streams, so this function
@@ -1988,7 +2148,6 @@ function drupal_dirname($uri) {
  * @ingroup php_wrappers
  */
 function drupal_mkdir($uri, $mode = NULL, $recursive = FALSE, $context = NULL) {
-
   if (is_null($mode)) {
     $mode = variable_get('file_chmod_directory', 0775);
   }
@@ -1998,6 +2157,36 @@ function drupal_mkdir($uri, $mode = NULL, $recursive = FALSE, $context = NULL) {
   }
   else {
     return mkdir($uri, $mode, $recursive, $context);
+  }
+}
+
+/**
+ * Remove a directory.
+ *
+ * PHP's rmdir() is broken on Windows, as it can fail to remove a directory
+ * when it has a read-only flag set.
+ *
+ * @param $uri
+ *   A URI or pathname.
+ * @param $context
+ *   Refer to http://php.net/manual/en/ref.stream.php
+ *
+ * @return
+ *   Boolean TRUE on success, or FALSE on failure.
+ *
+ * @see rmdir()
+ * @ingroup php_wrappers
+ */
+function drupal_rmdir($uri, $context = NULL) {
+  $scheme = file_uri_scheme($uri);
+  if ((!$scheme || !file_stream_wrapper_valid_scheme($scheme)) && (substr(PHP_OS, 0, 3) == 'WIN')) {
+    chmod($uri, 0700);
+  }
+  if ($context) {
+    return rmdir($uri, $context);
+  }
+  else {
+    return rmdir($uri);
   }
 }
 

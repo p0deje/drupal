@@ -1,5 +1,5 @@
 <?php
-// $Id: system.test,v 1.137 2010/08/08 19:35:49 dries Exp $
+// $Id: system.test,v 1.141 2010/08/30 00:22:03 webchick Exp $
 
 /**
  * Helper class for module test cases.
@@ -218,7 +218,7 @@ class ModuleDependencyTestCase extends ModuleTestCase {
     $edit = array();
     $edit['modules[Core][translation][enable]'] = 'translation';
     $this->drupalPost('admin/modules', $edit, t('Save configuration'));
-    $this->assertText(t('Some required modules must be enabled'), t('Dependecy required.'));
+    $this->assertText(t('Some required modules must be enabled'), t('Dependency required.'));
 
     $this->assertModules(array('translation', 'locale'), FALSE);
 
@@ -284,6 +284,39 @@ class ModuleDependencyTestCase extends ModuleTestCase {
     // were not disabled.
     $this->assertModules(array('comment'), TRUE);
 
+  }
+
+  /**
+   * Tests re-enabling forum with taxonomy disabled.
+   */
+  function testEnableForumTaxonomyFieldDependency() {
+    // Enable the forum module.
+    $edit = array();
+    $edit['modules[Core][forum][enable]'] = 'forum';
+    $this->drupalPost('admin/modules', $edit, t('Save configuration'));
+    $this->assertModules(array('forum'), TRUE);
+
+    // Disable the forum module.
+    $edit = array();
+    $edit['modules[Core][forum][enable]'] = FALSE;
+    $this->drupalPost('admin/modules', $edit, t('Save configuration'));
+    $this->assertModules(array('forum'), FALSE);
+
+    // Disable the taxonomy module.
+    $edit = array();
+    $edit['modules[Core][taxonomy][enable]'] = FALSE;
+    $this->drupalPost('admin/modules', $edit, t('Save configuration'));
+    $this->assertModules(array('taxonomy'), FALSE);
+
+    // Attempt to re-enable the forum module with taxonomy disabled and ensure
+    // forum does not try to recreate the taxonomy_forums field.
+    $edit = array();
+    $edit['modules[Core][forum][enable]'] = 'forum';
+    $this->drupalPost('admin/modules', $edit, t('Save configuration'));
+    $this->assertText(t('Some required modules must be enabled'), t('Dependency required.'));
+    $this->drupalPost(NULL, NULL, t('Continue'));
+    $this->assertText(t('The configuration options have been saved.'), t('Modules status has been updated.'));
+    $this->assertModules(array('taxonomy', 'forum'), TRUE);
   }
 }
 
@@ -520,7 +553,7 @@ class CronRunTestCase extends DrupalWebTestCase {
     // Disable the cron threshold through the interface.
     $admin_user = $this->drupalCreateUser(array('administer site configuration'));
     $this->drupalLogin($admin_user);
-    $this->drupalPost('admin/config/system/site-information', array('cron_safe_threshold' => 0), t('Save configuration'));
+    $this->drupalPost('admin/config/system/cron', array('cron_safe_threshold' => 0), t('Save configuration'));
     $this->assertText(t('The configuration options have been saved.'));
     $this->drupalLogout();
 
@@ -663,7 +696,7 @@ class AccessDeniedTestCase extends DrupalWebTestCase {
     // Log back in, set the custom 403 page to /user and remove the block
     $this->drupalLogin($this->admin_user);
     variable_set('site_403', 'user');
-    $this->drupalPost('admin/structure/block', array('user_login[region]' => '-1'), t('Save blocks'));
+    $this->drupalPost('admin/structure/block', array('blocks[user_login][region]' => '-1'), t('Save blocks'));
 
     // Check that we can log in from the 403 page.
     $this->drupalLogout();
@@ -1132,7 +1165,7 @@ class SystemBlockTestCase extends DrupalWebTestCase {
 
     // Set the powered-by block to the footer region.
     $edit = array();
-    $edit['system_powered-by[region]'] = 'footer';
+    $edit['blocks[system_powered-by][region]'] = 'footer';
     $this->drupalPost('admin/structure/block', $edit, t('Save blocks'));
     $this->assertText(t('The block settings have been updated.'), t('Block successfully moved to footer region.'));
 
@@ -1142,7 +1175,7 @@ class SystemBlockTestCase extends DrupalWebTestCase {
 
     // Set the block to the disabled region.
     $edit = array();
-    $edit['system_powered-by[region]'] = '-1';
+    $edit['blocks[system_powered-by][region]'] = '-1';
     $this->drupalPost('admin/structure/block', $edit, t('Save blocks'));
 
     // Confirm that the block is hidden.
@@ -1150,7 +1183,7 @@ class SystemBlockTestCase extends DrupalWebTestCase {
 
     // For convenience of developers, set the block to its default settings.
     $edit = array();
-    $edit['system_powered-by[region]'] = 'footer';
+    $edit['blocks[system_powered-by][region]'] = 'footer';
     $this->drupalPost('admin/structure/block', $edit, t('Save blocks'));
     $this->drupalPost('admin/structure/block/manage/system/powered-by/configure', array('title' => ''), t('Save block'));
   }
@@ -1681,31 +1714,6 @@ class UpdateScriptFunctionalTest extends DrupalWebTestCase {
     $this->drupalLogin($user1);
     $this->drupalGet($this->update_url, array('external' => TRUE));
     $this->assertResponse(200);
-  }
-
-  /**
-   * Tests the detection of requirements for the update script to proceed.
-   */
-  function testUpdateRequirements() {
-    $this->drupalLogin($this->update_user);
-    $this->drupalGet($this->update_url, array('external' => TRUE));
-    $this->assertResponse(200);
-    // Test if disabling a module that another enabled module depends on will
-    // prevent the update from proceeding.
-    module_disable(array('block'), FALSE);
-    $this->assertFalse(module_exists('block'), t('Block module is disabled.'));
-    $this->assertTrue(module_exists('dashboard'), t('Dashboard module is enabled.'));
-    $this->drupalGet($this->update_url, array('external' => TRUE));
-    $this->assertText(t('Unresolved dependency'), t('The update process cannot proceed when a module dependency is not enabled.'));
-
-    // Test if modules required by the current install profile are not required
-    // to be enabled for an update to proceed.
-    module_enable(array('block'));
-    $this->assertTrue(module_exists('block'), t('Block module is enabled.'));
-    module_disable(array('overlay'));
-    $this->assertFalse(module_exists('overlay'), t('Overlay module is disabled.'));
-    $this->drupalGet($this->update_url, array('external' => TRUE));
-    $this->assertNoText(t('Unresolved dependency'), t('The update process can proceed when modules from the install profile are disabled.'));
   }
 
   /**

@@ -1,5 +1,5 @@
 <?php
-// $Id: image.field.inc,v 1.23 2010/08/09 19:55:57 dries Exp $
+// $Id: image.field.inc,v 1.25 2010/08/30 06:19:42 webchick Exp $
 
 /**
  * @file
@@ -107,10 +107,12 @@ function image_field_instance_settings_form($field, $instance) {
   // Add maximum and minimum resolution settings.
   $max_resolution = explode('x', $settings['max_resolution']) + array('', '');
   $form['max_resolution'] = array(
+    '#type' => 'item',
     '#title' => t('Maximum image resolution'),
     '#element_validate' => array('_image_field_resolution_validate'),
-    '#theme_wrappers' => array('form_element'),
     '#weight' => 4.1,
+    '#field_prefix' => '<div class="container-inline">',
+    '#field_suffix' => '</div>',
     '#description' => t('The maximum allowed image size expressed as WIDTHxHEIGHT (e.g. 640x480). Leave blank for no restriction. If a larger image is uploaded, it will be resized to reflect the given width and height. Resizing images on upload will cause the loss of <a href="http://en.wikipedia.org/wiki/Exchangeable_image_file_format">EXIF data</a> in the image.'),
   );
   $form['max_resolution']['x'] = array(
@@ -119,7 +121,6 @@ function image_field_instance_settings_form($field, $instance) {
     '#size' => 5,
     '#maxlength' => 5,
     '#field_suffix' => ' x ',
-    '#theme_wrappers' => array(),
   );
   $form['max_resolution']['y'] = array(
     '#type' => 'textfield',
@@ -127,15 +128,16 @@ function image_field_instance_settings_form($field, $instance) {
     '#size' => 5,
     '#maxlength' => 5,
     '#field_suffix' => ' ' . t('pixels'),
-    '#theme_wrappers' => array(),
   );
 
   $min_resolution = explode('x', $settings['min_resolution']) + array('', '');
   $form['min_resolution'] = array(
+    '#type' => 'item',
     '#title' => t('Minimum image resolution'),
     '#element_validate' => array('_image_field_resolution_validate'),
-    '#theme_wrappers' => array('form_element'),
     '#weight' => 4.2,
+    '#field_prefix' => '<div class="container-inline">',
+    '#field_suffix' => '</div>',
     '#description' => t('The minimum allowed image size expressed as WIDTHxHEIGHT (e.g. 640x480). Leave blank for no restriction. If a smaller image is uploaded, it will be rejected.'),
   );
   $form['min_resolution']['x'] = array(
@@ -144,7 +146,6 @@ function image_field_instance_settings_form($field, $instance) {
     '#size' => 5,
     '#maxlength' => 5,
     '#field_suffix' => ' x ',
-    '#theme_wrappers' => array(),
   );
   $form['min_resolution']['y'] = array(
     '#type' => 'textfield',
@@ -152,7 +153,6 @@ function image_field_instance_settings_form($field, $instance) {
     '#size' => 5,
     '#maxlength' => 5,
     '#field_suffix' => ' ' . t('pixels'),
-    '#theme_wrappers' => array(),
   );
 
   // Remove the description option.
@@ -230,6 +230,13 @@ function image_field_prepare_view($entity_type, $entities, $field, $instances, $
  */
 function image_field_presave($entity_type, $entity, $field, $instance, $langcode, &$items) {
   file_field_presave($entity_type, $entity, $field, $instance, $langcode, $items);
+}
+
+/**
+ * Implements hook_field_insert().
+ */
+function image_field_insert($entity_type, $entity, $field, $instance, $langcode, &$items) {
+  file_field_insert($entity_type, $entity, $field, $instance, $langcode, $items);
 }
 
 /**

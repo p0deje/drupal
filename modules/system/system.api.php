@@ -1,5 +1,5 @@
 <?php
-// $Id: system.api.php,v 1.184 2010/08/08 19:45:37 dries Exp $
+// $Id: system.api.php,v 1.187 2010/08/22 13:55:53 dries Exp $
 
 /**
  * @file
@@ -2301,31 +2301,6 @@ function hook_file_move($file, $source) {
 }
 
 /**
- * Report the number of times a file is referenced by a module.
- *
- * This hook is called to determine if a files is in use. Multiple modules may
- * be referencing the same file and to prevent one from deleting a file used by
- * another this hook is called.
- *
- * @param $file
- *   The file object being checked for references.
- * @return
- *   If the module uses this file return an array with the module name as the
- *   key and the value the number of times the file is used.
- *
- * @see file_delete()
- * @see upload_file_references()
- */
-function hook_file_references($file) {
-  // If user.module is still using a file, do not let other modules delete it.
-  $file_used = (bool) db_query_range('SELECT 1 FROM {user} WHERE pictire = :fid', 0, 1, array(':fid' => $file->fid))->fetchField();
-  if ($file_used) {
-    // Return the name of the module and how many references it has to the file.
-    return array('user' => 1);
-  }
-}
-
-/**
  * Respond to a file being deleted.
  *
  * @param $file
@@ -2577,7 +2552,7 @@ function hook_schema() {
         'not null' => TRUE,
         'default' => ''),
       'title' => array(
-        'description' => 'The title of this node, always treated a non-markup plain text.',
+        'description' => 'The title of this node, always treated as non-markup plain text.',
         'type' => 'varchar',
         'length' => 255,
         'not null' => TRUE,
@@ -2591,6 +2566,16 @@ function hook_schema() {
       'nid_vid' => array('nid', 'vid'),
       'vid'     => array('vid')
       ),
+    'foreign keys' => array(
+      'node_revision' => array(
+        'table' => 'node_revision',
+        'columns' => array('vid' => 'vid'),
+        ),
+      'node_author' => array(
+        'table' => 'users',
+        'columns' => array('uid' => 'uid')
+        ),
+       ),
     'primary key' => array('nid'),
   );
   return $schema;

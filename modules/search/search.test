@@ -1,5 +1,5 @@
 <?php
-// $Id: search.test,v 1.69 2010/08/10 01:11:36 dries Exp $
+// $Id: search.test,v 1.73 2010/08/30 00:22:03 webchick Exp $
 
 // The search index can contain different types of content. Typically the type is 'node'.
 // Here we test with _test_ and _test2_ as the type.
@@ -559,7 +559,7 @@ class SearchBlockTestCase extends DrupalWebTestCase {
 
     // Set the block to a region to confirm block is availble.
     $edit = array();
-    $edit['search_form[region]'] = 'footer';
+    $edit['blocks[search_form][region]'] = 'footer';
     $this->drupalPost('admin/structure/block', $edit, t('Save blocks'));
     $this->assertText(t('The block settings have been updated.'), t('Block successfully move to footer region.'));
   }
@@ -570,7 +570,7 @@ class SearchBlockTestCase extends DrupalWebTestCase {
   function testBlock() {
     // Enable the block, and place it in the 'content' region so that it isn't
     // hidden on 404 pages.
-    $edit = array('search_form[region]' => 'content');
+    $edit = array('blocks[search_form][region]' => 'content');
     $this->drupalPost('admin/structure/block', $edit, t('Save blocks'));
 
     // Test a normal search via the block form, from the front page.
@@ -847,6 +847,66 @@ class SearchCommentTestCase extends DrupalWebTestCase {
 }
 
 /**
+ * Tests search_expression_insert() and search_expression_extract().
+ *
+ * @see http://drupal.org/node/419388 (issue)
+ */
+class SearchExpressionInsertExtractTestCase extends DrupalUnitTestCase {
+  public static function getInfo() {
+    return array(
+      'name' => 'Search expression insert/extract',
+      'description' => 'Tests the functions search_expression_insert() and search_expression_extract()',
+      'group' => 'Search',
+    );
+  }
+
+  function setUp() {
+    parent::setUp('search');
+  }
+
+  /**
+   * Tests search_expression_insert() and search_expression_extract().
+   */
+  function testInsertExtract() {
+    $base_expression = "mykeyword";
+    // Build an array of option, value, what should be in the expression, what
+    // should be retrieved from expression.
+    $cases = array(
+      array('foo', 'bar', 'foo:bar', 'bar'), // Normal case.
+      array('foo', NULL, '', NULL), // Empty value: shouldn't insert.
+      array('foo', ' ', 'foo:', ''), // Space as value: should insert but retrieve empty string.
+      array('foo', '', 'foo:', ''), // Empty string as value: should insert but retrieve empty string.
+      array('foo', '0', 'foo:0', '0'), // String zero as value: should insert.
+      array('foo', 0, 'foo:0', '0'), // Numeric zero as value: should insert.
+    );
+
+    foreach ($cases as $index => $case) {
+      $after_insert = search_expression_insert($base_expression, $case[0], $case[1]);
+      if (empty($case[2])) {
+        $this->assertEqual($after_insert, $base_expression, "Empty insert does not change expression in case $index");
+      }
+      else {
+        $this->assertEqual($after_insert, $base_expression . ' ' . $case[2], "Insert added correct expression for case $index");
+      }
+
+      $retrieved = search_expression_extract($after_insert, $case[0]);
+      if (!isset($case[3])) {
+        $this->assertFalse(isset($retrieved), "Empty retrieval results in unset value in case $index");
+      }
+      else {
+        $this->assertEqual($retrieved, $case[3], "Value is retrieved for case $index");
+      }
+
+      $after_clear = search_expression_insert($after_insert, $case[0]);
+      $this->assertEqual(trim($after_clear), $base_expression, "After clearing, base expression is restored for case $index");
+
+      $cleared = search_expression_extract($after_clear, $case[0]);
+      $this->assertFalse(isset($cleared), "After clearing, value could not be retrieved for case $index");
+    }
+  }
+}
+
+/**
  * Tests that comment count display toggles properly on comment status of node
  * 
  * Issue 537278
@@ -988,6 +1048,58 @@ class SearchSimplifyTestCase extends DrupalWebTestCase {
   }
 }
 
+
+/**
+ * Tests keywords and conditions.
+ */
+class SearchKeywordsConditions extends DrupalWebTestCase {
+
+  public static function getInfo() {
+    return array(
+      'name' => 'Keywords and conditions',
+      'description' => 'Verify the search pulls in keywords and extra conditions.',
+      'group' => 'Search',
+    );
+  }
+
+  function setUp() {
+    parent::setUp('search', 'search_extra_type');
+    // Create searching user.
+    $this->searching_user = $this->drupalCreateUser(array('search content', 'access content', 'access comments', 'post comments without approval'));
+    // Login with sufficient privileges.
+    $this->drupalLogin($this->searching_user);
+    // Test with all search modules enabled.
+    variable_set('search_active_modules', array('node' => 'node', 'user' => 'user', 'search_extra_type' => 'search_extra_type'));
+    menu_rebuild();
+  }
+
+  /**
+   * Verify the kewords are captured and conditions respected.
+   */
+  function testSearchKeyswordsConditions() {
+    // No keys, not conditions - no results.
+    $this->drupalGet('search/dummy_path');
+    $this->assertNoText('Dummy search snippet to display');
+    // With keys - get results.
+    $keys = 'bike shed ' . $this->randomName();
+    $this->drupalGet("search/dummy_path/{$keys}");
+    $this->assertText("Dummy search snippet to display. Keywords: {$keys}");
+    $keys = 'blue drop ' . $this->randomName();
+    $this->drupalGet("search/dummy_path", array('query' => array('keys' => $keys)));
+    $this->assertText("Dummy search snippet to display. Keywords: {$keys}");
+    // Add some conditions and keys.
+    $keys = 'moving drop ' . $this->randomName();
+    $this->drupalGet("search/dummy_path/bike", array('query' => array('search_conditions' => $keys)));
+    $this->assertText("Dummy search snippet to display.");
+    $this->assertRaw(print_r(array('search_conditions' => $keys), TRUE));
+    // Add some conditions and no keys.
+    $keys = 'drop kick ' . $this->randomName();
+    $this->drupalGet("search/dummy_path", array('query' => array('search_conditions' => $keys)));
+    $this->assertText("Dummy search snippet to display.");
+    $this->assertRaw(print_r(array('search_conditions' => $keys), TRUE));
+  }
+}
+
 /**
  * Test config page.
  */
@@ -1025,7 +1137,7 @@ class SearchConfigSettingsForm extends DrupalWebTestCase {
 
     // Enable the search block.
     $edit = array();
-    $edit['search_form[region]'] = 'content';
+    $edit['blocks[search_form][region]'] = 'content';
     $this->drupalPost('admin/structure/block', $edit, t('Save blocks'));
   }
 
@@ -1333,5 +1445,115 @@ class SearchTokenizerTestCase extends DrupalWebTestCase {
     }
 
     return '';
+  }
+}
+
+/**
+ * Tests that we can embed a form in search results and submit it.
+ */
+class SearchEmbedForm extends DrupalWebTestCase {
+  /**
+   * Node used for testing.
+   */
+  public $node;
+
+  /**
+   * Count of how many times the form has been submitted.
+   */
+  public $submit_count = 0;
+
+  public static function getInfo() {
+    return array(
+      'name' => 'Embedded forms',
+      'description' => 'Verifies that a form embedded in search results works',
+      'group' => 'Search',
+    );
+  }
+
+  function setUp() {
+    parent::setUp('search', 'search_embedded_form');
+
+    // Create a user and a node, and update the search index.
+    $test_user = $this->drupalCreateUser(array('access content', 'search content', 'administer nodes'));
+    $this->drupalLogin($test_user);
+
+    $this->node = $this->drupalCreateNode();
+
+    node_update_index();
+    search_update_totals();
+
+    // Set up a dummy initial count of times the form has been submitted.
+    $this->submit_count = 12;
+    variable_set('search_embedded_form_submitted', $this->submit_count);
+    $this->refreshVariables();
+  }
+
+  /**
+   * Tests that the embedded form appears and can be submitted.
+   */
+  function testEmbeddedForm() {
+    // First verify we can submit the form from the module's page.
+    $this->drupalPost('search_embedded_form',
+      array('name' => 'John'),
+      t('Send away'));
+    $this->assertText(t('Test form was submitted'), 'Form message appears');
+    $count = variable_get('search_embedded_form_submitted', 0);
+    $this->assertEqual($this->submit_count + 1, $count, 'Form submission count is correct');
+    $this->submit_count = $count;
+
+    // Now verify that we can see and submit the form from the search results.
+    $this->drupalGet('search/node/' . $this->node->title);
+    $this->assertText(t('Your name'), 'Form is visible');
+    $this->drupalPost('search/node/' . $this->node->title,
+      array('name' => 'John'),
+      t('Send away'));
+    $this->assertText(t('Test form was submitted'), 'Form message appears');
+    $count = variable_get('search_embedded_form_submitted', 0);
+    $this->assertEqual($this->submit_count + 1, $count, 'Form submission count is correct');
+    $this->submit_count = $count;
+
+    // Now verify that if we submit the search form, it doesn't count as
+    // our form being submitted.
+    $this->drupalPost('search',
+      array('keys' => 'foo'),
+      t('Search'));
+    $this->assertNoText(t('Test form was submitted'), 'Form message does not appear');
+    $count = variable_get('search_embedded_form_submitted', 0);
+    $this->assertEqual($this->submit_count, $count, 'Form submission count is correct');
+    $this->submit_count = $count;
+  }
+}
+
+/**
+ * Tests that hook_search_page runs.
+ */
+class SearchPageOverride extends DrupalWebTestCase {
+  public $search_user;
+
+  public static function getInfo() {
+    return array(
+      'name' => 'Search page override',
+      'description' => 'Verify that hook_search_page can override search page display.',
+      'group' => 'Search',
+    );
+  }
+
+  function setUp() {
+    parent::setUp('search', 'search_extra_type');
+
+    // Login as a user that can create and search content.
+    $this->search_user = $this->drupalCreateUser(array('search content', 'administer search'));
+    $this->drupalLogin($this->search_user);
+
+    // Enable the extra type module for searching.
+    variable_set('search_active_modules', array('node' => 'node', 'user' => 'user', 'search_extra_type' => 'search_extra_type'));
+    menu_rebuild();
+  }
+
+  function testSearchPageHook() {
+    $keys = 'bike shed ' . $this->randomName();
+    $this->drupalGet("search/dummy_path/{$keys}");
+    $this->assertText('Dummy search snippet', 'Dummy search snippet is shown');
+    $this->assertText('Test page text is here', 'Page override is working');
   }
 }

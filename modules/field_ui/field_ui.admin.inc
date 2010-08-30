@@ -1,5 +1,5 @@
 <?php
-// $Id: field_ui.admin.inc,v 1.60 2010/08/10 17:05:18 webchick Exp $
+// $Id: field_ui.admin.inc,v 1.63 2010/08/28 20:12:42 webchick Exp $
 
 /**
  * @file
@@ -402,7 +402,7 @@ function field_ui_field_overview_form($form, &$form_state, $entity_type, $bundle
     $name = '_add_existing_field';
     $table[$name] = array(
       '#parents' => array($name),
-      '#attributes' => array('class' => array('draggable', 'tabledrag-leaf', 'menu-disabled')),
+      '#attributes' => array('class' => array('draggable', 'tabledrag-leaf', 'add-new')),
       'label' => array(
         '#type' => 'textfield',
         '#size' => 15,
@@ -817,7 +817,8 @@ function field_ui_display_overview_form($form, &$form_state, $entity_type, $bund
       // We are currently editing this field's formatter settings. Display the
       // settings form and submit buttons.
       $table[$name]['settings_edit_form'] = array();
-      $additions = module_invoke($formatter['module'], 'field_formatter_settings_form', $field, $instance, $view_mode, $form, $form_state);
+      $function = $formatter['module'] . '_field_formatter_settings_form';
+      $additions = $function($field, $instance, $view_mode, $form, $form_state);
       if (is_array($additions)) {
         $table[$name]['settings_edit_form'] = array(
           '#type' => 'container',
@@ -839,8 +840,9 @@ function field_ui_display_overview_form($form, &$form_state, $entity_type, $bund
           '#name' => $name . '_formatter_settings_cancel',
           '#value' => t('Cancel'),
           '#op' => 'cancel',
-          // Do not check errors for the 'Cancel' button.
-          '#limit_validation_errors' => array(),
+          // Do not check errors for the 'Cancel' button. We still need the
+          // value of the 'formatter type' select in $form_state['values'].
+          '#limit_validation_errors' => array(array('settings', $name, 'type'))
         );
         $table[$name]['#settings_editing'] = TRUE;
         // When formatter is changed, cancel the currently edited settings. The
@@ -864,8 +866,9 @@ function field_ui_display_overview_form($form, &$form_state, $entity_type, $bund
           '#src' => 'misc/configure.png',
           '#attributes' => array('class' => array('field-formatter-settings-edit'), 'alt' => t('Edit')),
           '#op' => 'edit',
-          // Do not check errors for the 'Edit' button.
-          '#limit_validation_errors' => array(),
+          // Do not check errors for the 'Edit' button. We still need the value
+          // of the 'formatter type' select in $form_state['values'].
+          '#limit_validation_errors' => array(array('settings', $name, 'type')),
           '#prefix' => '<div class="field-formatter-settings-edit-wrapper">',
           '#suffix' => '</div>',
         );
