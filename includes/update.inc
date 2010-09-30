@@ -1,5 +1,5 @@
 <?php
-// $Id: update.inc,v 1.65 2010/08/27 10:42:48 webchick Exp $
+// $Id: update.inc,v 1.69 2010/09/25 18:10:53 dries Exp $
 
 /**
  * @file
@@ -977,10 +977,13 @@ function update_get_update_list() {
 
   $modules = drupal_get_installed_schema_version(NULL, FALSE, TRUE);
   foreach ($modules as $module => $schema_version) {
-    $pending = array();
+    // Skip uninstalled and incompatible modules.
+    if ($schema_version == SCHEMA_UNINSTALLED || update_check_incompatibility($module)) {
+      continue;
+    }
+    // Otherwise, get the list of updates defined by this module.
     $updates = drupal_get_schema_versions($module);
-    // Skip incompatible module updates, otherwise test schema versions.
-    if (!update_check_incompatibility($module) && $updates !== FALSE && $schema_version >= 0) {
+    if ($updates !== FALSE) {
       // module_invoke returns NULL for nonexisting hooks, so if no updates
       // are removed, it will == 0.
       $last_removed = module_invoke($module, 'update_last_removed');
@@ -1312,3 +1315,16 @@ function update_retrieve_dependencies() {
   return $return;
 }
 
+/**
+ * @defgroup update-api-6.x-to-7.x Update versions of API functions.
+ * @{
+ * Functions similar to normal API function but not firing hooks.
+ *
+ * During update, it is impossible to judge the consequences of firing a hook
+ * as it might hit a module not yet updated. So simplified versions of some
+ * core APIs are provided.
+ */
+
+/**
+ * @} End of "defgroup update-api-6.x-to-7.x"
+ */

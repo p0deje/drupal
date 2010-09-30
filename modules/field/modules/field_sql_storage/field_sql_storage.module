@@ -1,5 +1,5 @@
 <?php
-// $Id: field_sql_storage.module,v 1.51 2010/08/22 16:11:12 dries Exp $
+// $Id: field_sql_storage.module,v 1.54 2010/09/29 01:37:02 dries Exp $
 
 /**
  * @file
@@ -106,7 +106,7 @@ function _field_sql_storage_indexname($name, $index) {
  */
 function _field_sql_storage_etid($entity_type) {
   $etid = variable_get('field_sql_storage_' . $entity_type . '_etid', NULL);
-  if (is_null($etid)) {
+  if (!isset($etid)) {
     $etid = db_insert('field_config_entity_type')->fields(array('type' => $entity_type))->execute();
     variable_set('field_sql_storage_' . $entity_type . '_etid', $etid);
   }
@@ -188,17 +188,28 @@ function _field_sql_storage_schema($field) {
     ),
   );
 
+  $field += array('columns' => array(), 'indexes' => array(), 'foreign keys' => array());
   // Add field columns.
-  foreach ((array) $field['columns'] as $column_name => $attributes) {
+  foreach ($field['columns'] as $column_name => $attributes) {
     $real_name = _field_sql_storage_columnname($field['field_name'], $column_name);
     $current['fields'][$real_name] = $attributes;
   }
 
   // Add indexes.
-  foreach ((array) $field['indexes'] as $index_name => $columns) {
+  foreach ($field['indexes'] as $index_name => $columns) {
     $real_name = _field_sql_storage_indexname($field['field_name'], $index_name);
     foreach ($columns as $column_name) {
       $current['indexes'][$real_name][] = _field_sql_storage_columnname($field['field_name'], $column_name);
+    }
+  }
+
+  // Add foreign keys.
+  foreach ($field['foreign keys'] as $specifier => $specification) {
+    $real_name = _field_sql_storage_indexname($field['field_name'], $specifier);
+    $current['foreign keys'][$real_name]['table'] = $specification['table'];
+    foreach ($specification['columns'] as $column => $referenced) {
+      $sql_storage_column = _field_sql_storage_columnname($field['field_name'], $column_name);
+      $current['foreign keys'][$real_name]['columns'][$sql_storage_column] = $referenced;
     }
   }
 
@@ -565,7 +576,7 @@ function field_sql_storage_field_storage_query(EntityFieldQuery $query) {
   }
   foreach ($query->entityOrder as $key => $direction) {
     $sql_field = $key == 'entity_type' ? 'fcet.type' : "$field_base_table.$key";
-    $query->orderBy($sql_field, $direction);
+    $select_query->orderBy($sql_field, $direction);
   }
   return $query->finishQuery($select_query, $id_key);
 }

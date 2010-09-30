@@ -1,5 +1,5 @@
 <?php
-// $Id: node.install,v 1.53 2010/08/22 13:55:53 dries Exp $
+// $Id: node.install,v 1.58 2010/09/29 19:46:40 dries Exp $
 
 /**
  * @file
@@ -411,11 +411,25 @@ function node_update_dependencies() {
   // the Field module has been enabled, but before upgrading field data.
   $dependencies['node'][7006] = array(
     'system' => 7049,
+    // It must also run after filter_update_7000() because it needs to query
+    // the list of existing text formats.
+    'filter' => 7000,
   );
   $dependencies['system'][7050] = array(
     'node' => 7006,
   );
   return $dependencies;
+}
+
+/**
+ * Utility function: fetch the node types directly from the database.
+ *
+ * This function is valid for a database schema version 7000.
+ *
+ * @ingroup update-api-6.x-to-7.x
+ */
+function _update_7000_node_get_types() {
+  return db_query('SELECT * FROM {node_type}')->fetchAllAssoc('type', PDO::FETCH_OBJ);
 }
 
 /**
@@ -471,10 +485,9 @@ function node_update_7004() {
   // Map old preview setting to new values order.
   $original_preview ? $original_preview = 2 : $original_preview = 1;
   drupal_static_reset('_node_types_build');
-  $type_list = node_type_get_types();
 
   // Apply original settings to all types.
-  foreach ($type_list as $type => $entity) {
+  foreach (_update_7000_node_get_types() as $type => $type_object) {
     variable_set('teaser_length_' . $type, $original_length);
     variable_set('node_preview_' . $type, $original_preview);
   }
@@ -486,7 +499,7 @@ function node_update_7004() {
  * Add status/comment/promote and sticky columns to the {node_revision} table.
  */
 function node_update_7005() {
-  foreach(array('status', 'comment', 'promote', 'sticky') as $column) {
+  foreach (array('status', 'comment', 'promote', 'sticky') as $column) {
     db_add_field('node_revision', $column, array(
       'type' => 'int',
       'not null' => TRUE,
@@ -503,36 +516,71 @@ function node_update_7006(&$sandbox) {
 
   // Get node type info for every invocation.
   drupal_static_reset('_node_types_build');
-  $node_types = node_type_get_types();
 
   if (!isset($sandbox['total'])) {
     // Initial invocation.
 
-    // Get node type info, specifically the body field settings.
-    $result = db_select('node_type', 'node_type')
-      ->fields('node_type')
-      ->execute();
+    // First, create the body field.
+    $body_field = array(
+      'field_name' => 'body',
+      'type' => 'text_with_summary',
+      'module' => 'text',
+      'cardinality' => 1,
+      'entity_types' => array('node'),
+      'translatable' => TRUE,
+    );
+    _update_7000_field_create_field($body_field);
 
     $default_trim_length = variable_get('teaser_length', 600);
+
+    // Get node type info, specifically the body field settings.
+    $node_types = _update_7000_node_get_types();
+
+    // Create default settings for orphan nodes.
+    $extra_types = db_query('SELECT DISTINCT type FROM {node} WHERE type NOT IN (:types)', array(':types' => array_keys($node_types)))->fetchCol();
+    foreach ($extra_types as $type) {
+      $type_object = new stdClass;
+      $type_object->type = $type;
+      // Always create a body. Querying node_revisions for a non-empty body
+      // would skip creating body fields for types that have a body but
+      // the nodes of that type so far had empty bodies.
+      $type_object->has_body = 1;
+      $type_object->body_label = 'Body';
+      $node_types[$type_object->type] = $type_object;
+    }
+
     // Add body field instances for existing node types.
-    foreach ($result as $node_type) {
+    foreach ($node_types as $node_type) {
       if ($node_type->has_body) {
-        $instance = node_add_body_field($node_type, $node_type->body_label);
-        // Update newly created instance to convert teaser_length variable
-        // into formatter settings.
         $trim_length = variable_get('teaser_length_' . $node_type->type, $default_trim_length);
-        $instance_changed = FALSE;
-        foreach ($instance['display'] as $view_mode => $view_mode_info) {
-          if ($view_mode_info['type'] == 'text_trimmed' || $view_mode_info['type'] == 'text_summary_or_trimmed') {
-            if (!isset($view_mode_info['settings']['trim_length'])) {
-              $instance['display'][$view_mode]['settings']['trim_length'] = $trim_length;
-              $instance_changed = TRUE;
-            }
-          }
-        }
-        if ($instance_changed) {
-          field_update_instance($instance);
-        }
+
+        $instance = array(
+          'entity_type' => 'node',
+          'bundle' => $node_type->type,
+          'label' => $node_type->body_label,
+          'widget' => array(
+            'type' => 'text_textarea_with_summary',
+            'settings' => array(
+              'rows' => 20,
+              'summary_rows' => 5,
+            ),
+            'weight' => -4,
+            'module' => 'text',
+          ),
+          'settings' => array('display_summary' => TRUE),
+          'display' => array(
+            'default' => array(
+              'label' => 'hidden',
+              'type' => 'text_default',
+            ),
+            'teaser' => array(
+              'label' => 'hidden',
+              'type' => 'text_summary_or_trimmed',
+              'trim_length' => $trim_length,
+            ),
+          ),
+        );
+        _update_7000_field_create_instance($body_field, $instance);
         variable_del('teaser_length_' . $node_type->type);
       }
       // Leave 'teaser_length' variable for aggregator module upgrade.
@@ -542,6 +590,9 @@ function node_update_7006(&$sandbox) {
       );
     }
 
+    // Used below when updating the stored text format of each node body.
+    $sandbox['existing_text_formats'] = db_query("SELECT format FROM {filter_format}")->fetchCol();
+
     // Initialize state for future calls.
     $sandbox['last'] = 0;
     $sandbox['count'] = 0;
@@ -549,13 +600,11 @@ function node_update_7006(&$sandbox) {
     $query = db_select('node', 'n');
     $query->join('node_revision', 'nr', 'n.vid = nr.vid');
     $sandbox['total'] = $query->countQuery()->execute()->fetchField();
+
+    $sandbox['body_field_id'] = $body_field['id'];
   }
   else {
     // Subsequent invocations.
-
-    // Grab the body field ID for field_sql_storage_field_storage_write().
-    $body_field = field_info_field('body');
-    $body_field_id = $body_field['id'];
 
     $found = FALSE;
     if ($sandbox['total']) {
@@ -600,14 +649,23 @@ function node_update_7006(&$sandbox) {
             $revision->body = substr($revision->body, strlen($break));
           }
           $node->body[$langcode][0]['value'] = $revision->body;
-          // Explicitly store the current default text format if the revision
-          // did not have its own text format. Similar conversions for other
-          // core modules are performed in filter_update_7005(), but we do this
-          // one here since we are already migrating the data.
-          $node->body[$langcode][0]['format'] = !empty($revision->format) ? $revision->format : variable_get('filter_default_format', 1);
+          // Update the revision's text format for the changes to the Drupal 7
+          // filter system. This uses the same kind of logic that occurs, for
+          // example, in user_update_7010(), but we do this here rather than
+          // via a separate set of database queries, since we are already
+          // migrating the data.
+          if (empty($revision->body) && empty($revision->format)) {
+            $node->body[$langcode][0]['format'] = NULL;
+          }
+          elseif (!in_array($revision->format, $sandbox['existing_text_formats'])) {
+            $node->body[$langcode][0]['format'] = variable_get('filter_default_format', 1);
+          }
+          else {
+            $node->body[$langcode][0]['format'] = $revision->format;
+          }
           // This is a core update and no contrib modules are enabled yet, so
           // we can assume default field storage for a faster update.
-          field_sql_storage_field_storage_write('node', $node, FIELD_STORAGE_INSERT, array($body_field_id));
+          _update_7000_field_sql_storage_write('node', $node->type, $node->nid, $node->vid, 'body', $node->body);
         }
 
         // Migrate the status columns to the {node_revision} table.
@@ -659,7 +717,7 @@ function node_update_7007() {
 function node_update_7008() {
   $roles = user_roles(FALSE, 'administer nodes');
   foreach ($roles as $rid => $role) {
-    user_role_grant_permissions($rid, array('access content overview'));
+    _update_7000_user_role_grant_permissions($rid, array('access content overview'), 'node');
   }
 }
 

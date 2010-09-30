@@ -1,4 +1,4 @@
-/* $Id: style.css,v 1.65 2010/08/18 00:44:52 dries Exp $ */
+/* $Id: style.css,v 1.73 2010/09/23 02:11:19 dries Exp $ */
 
 /**
  * Generic elements.
@@ -6,7 +6,7 @@
 body {
   color: #000;
   background: #fff;
-  font: 81.3%/1.538em normal Lucida Grande, Lucida Sans Unicode, sans-serif;
+  font: normal 81.3%/1.538em "Lucida Grande", "Lucida Sans Unicode", sans-serif;
 }
 a {
   color: #0074BD;
@@ -139,6 +139,10 @@ pre,
 kbd {
   font-size: 1.231em;
 }
+pre {
+  margin: 0.5em 0;
+  white-space: pre-wrap;
+}
 
 /**
  * Skip link.
@@ -231,35 +235,6 @@ kbd {
 }
 #help div.more-help-link {
   text-align: right;
-}
-
-/**
- * Messages.
- */
-div.messages {
-  padding: 9px;
-  margin: 0.5em 0 0;
-  color: #036;
-  background: #f8fff0;
-  border-left: 16px solid #be7;
-}
-div.warning {
-  color: #840;
-  background: #fffce5;
-  border-left: 16px solid #ed5;
-}
-div.error {
-  color: #8c2e0b;
-  background: #fef5f1;
-  border-left: 16px solid #ed541d;
-}
-div.error p.error {
-  color: #333;
-}
-div.status {
-  color: #234600;
-  background: #f8fff0;
-  border-left: 16px solid #be7;
 }
 
 /**
@@ -455,6 +430,9 @@ ul.admin-list li div.description a {
   padding: 0px;
   min-height: inherit;
 }
+div.submitted {
+  color: #898989;
+}
 
 /**
  * Tables.
@@ -623,6 +601,7 @@ div.teaser-checkbox .form-item,
 }
 .form-disabled input.form-autocomplete,
 .form-disabled input.form-text,
+.form-disabled input.form-file,
 .form-disabled textarea.form-textarea,
 .form-disabled select.form-select {
   background-color: #eee;
@@ -634,15 +613,14 @@ div.teaser-checkbox .form-item,
   border-top: 0;
   padding: 10px 2px;
 }
-.filter-wrapper > div {
-  padding-right: 6px;
-  padding-left: 6px;
+.filter-wrapper .fieldset-wrapper {
+  padding: 0 6px;
 }
 .filter-wrapper .form-item,
 .filter-wrapper .filter-guidelines,
 .filter-wrapper .filter-help {
   font-size: 0.923em;
-  padding: 0;
+  padding: 2px 0 0 0;
 }
 ul.tips,
 div.description,
@@ -716,6 +694,7 @@ form input#edit-delete {
 }
 input.form-autocomplete,
 input.form-text,
+input.form-file,
 textarea.form-textarea,
 select.form-select {
   padding: 2px;
@@ -725,6 +704,7 @@ select.form-select {
   color: #333;
 }
 input.form-text:focus,
+input.form-file:focus,
 textarea.form-textarea:focus,
 select.form-select:focus {
   color: #000;
@@ -960,23 +940,23 @@ div.add-or-remove-shortcuts {
 
 /* Field UI */
 
-.field-display-overview input.field-formatter-settings-edit {
+#field-display-overview input.field-formatter-settings-edit {
   margin: 0;
   padding: 1px 8px;
 }
-.field-display-overview tr.field-formatter-settings-changed {
+#field-display-overview tr.field-formatter-settings-changed {
   background: #FFFFBB;
 }
-.field-display-overview tr.drag {
+#field-display-overview tr.drag {
   background: #FFEE77;
 }
-.field-display-overview tr.field-formatter-settings-editing {
+#field-display-overview tr.field-formatter-settings-editing {
   background: #D5E9F2;
 }
-.field-display-overview .field-formatter-settings-edit-form .form-item {
+#field-display-overview .field-formatter-settings-edit-form .form-item {
   margin: 10px 0;
 }
-.field-display-overview .field-formatter-settings-edit-form .form-submit {
+#field-display-overview .field-formatter-settings-edit-form .form-submit {
   margin-bottom: 0;
 }
 
@@ -1031,15 +1011,4 @@ table tbody tr.update-unsupported {
   color: #840;
   background: #fffce5;
   border-bottom: 1px solid #ed5;
-}
-
-/* Vertical Tabs */
-div.vertical-tabs .vertical-tabs-list {
-  font-size: 1em;
-}
-div.vertical-tabs ul li.vertical-tab-button strong {
-  font-size: 0.923em;
-}
-div.vertical-tabs ul li.vertical-tab-button .summary {
-  font-size: 0.846em;
 }

@@ -1,5 +1,5 @@
 <?php
-// $Id: system.admin.inc,v 1.298 2010/08/22 12:55:04 dries Exp $
+// $Id: system.admin.inc,v 1.310 2010/09/28 02:30:32 dries Exp $
 
 /**
  * @file
@@ -639,7 +639,7 @@ function system_theme_settings($form, &$form_state, $key = '') {
     }
 
     // Restore the original current theme.
-    if (!is_null($default_theme)) {
+    if (isset($default_theme)) {
       $GLOBALS['theme_key'] = $default_theme;
     }
     else {
@@ -676,8 +676,10 @@ function system_theme_settings_validate($form, &$form_state) {
     }
   }
 
+  $validators = array('file_validate_extensions' => array('ico png gif jpg jpeg apng svg'));
+
   // Check for a new uploaded favicon.
-  $file = file_save_upload('favicon_upload');
+  $file = file_save_upload('favicon_upload', $validators);
   if (isset($file)) {
     // File upload was attempted.
     if ($file) {
@@ -957,8 +959,13 @@ function system_modules($form, $form_state = array()) {
         t('Description'),
         array('data' => t('Operations'), 'colspan' => 3),
       ),
+      // Ensure that the "Core" package fieldset comes first.
+      '#weight' => $package == 'Core' ? -10 : NULL,
     );
   }
+
+  // Lastly, sort all fieldsets by title.
+  uasort($form['modules'], 'element_sort_by_title');
 
   $form['actions'] = array('#type' => 'actions');
   $form['actions']['submit'] = array(
@@ -1024,7 +1031,7 @@ function _system_modules_build_row($info, $extra) {
   $status_long = '';
 
   // Check the core compatibility.
-  if (!isset($info['core']) || $info['core'] != DRUPAL_CORE_COMPATIBILITY || empty($info['files'])) {
+  if (!isset($info['core']) || $info['core'] != DRUPAL_CORE_COMPATIBILITY) {
     $compatible = FALSE;
     $status_short .= t('Incompatible with this version of Drupal core. ');
     $status_long .= t('This version is not compatible with Drupal !core_version and should be replaced.', array('!core_version' => DRUPAL_CORE_COMPATIBILITY));
@@ -1054,7 +1061,7 @@ function _system_modules_build_row($info, $extra) {
   }
   else {
     $form['enable'] = array(
-      '#markup' =>  theme('image', array('path' => 'misc/watchdog-error.png', 'alt' => t('incompatible'), 'title' => $status_short)),
+      '#markup' =>  theme('image', array('path' => 'misc/watchdog-error.png', 'alt' => $status_short, 'title' => $status_short)),
     );
     $form['description']['#markup'] .= theme('system_modules_incompatible', array('message' => $status_long));
   }
@@ -1243,12 +1250,16 @@ function system_modules_submit($form, &$form_state) {
     drupal_set_message(t('The configuration options have been saved.'));
   }
 
-  // Clear all caches. We need to invoke drupal_flush_all_caches() to ensure
-  // that also dependent caches are flushed, e.g. the filter cache and field
-  // cache, and also registered themes are rebuilt, since modules can also
-  // register themes.
-  drupal_flush_all_caches();
+  // Clear all caches.
+  registry_rebuild();
+  system_rebuild_theme_data();
+  drupal_theme_rebuild();
+  node_types_rebuild();
+  menu_rebuild();
+  cache_clear_all('schema', 'cache');
   entity_info_cache_clear();
+  drupal_clear_css_cache();
+  drupal_clear_js_cache();
 
   $form_state['redirect'] = 'admin/modules';
 
@@ -1734,7 +1745,7 @@ function system_performance_settings() {
   $is_writable = is_dir($directory) && is_writable($directory);
   $disabled = !$is_writable;
   $disabled_message = '';
-  if(!$is_writable) {
+  if (!$is_writable) {
     $disabled_message = ' ' . t('<strong class="error">Set up the <a href="!file-system">public files directory</a> to make these optimizations available.</strong>', array('!file-system' => url('admin/config/media/file-system')));
   }
 
@@ -1803,7 +1814,7 @@ function system_file_system_settings() {
   $form['file_public_path'] = array(
     '#type' => 'textfield',
     '#title' => t('Public file system path'),
-    '#default_value' => variable_get('file_public_path', file_directory_path()),
+    '#default_value' => variable_get('file_public_path', conf_path() . '/files'),
     '#maxlength' => 255,
     '#description' => t('A local file system path where public files will be stored. This directory must exist and be writable by Drupal. This directory must be relative to the Drupal installation directory and be accessible over the web.'),
     '#after_build' => array('system_check_directory'),
@@ -1812,7 +1823,7 @@ function system_file_system_settings() {
   $form['file_private_path'] = array(
     '#type' => 'textfield',
     '#title' => t('Private file system path'),
-    '#default_value' => variable_get('file_private_path', file_directory_path('private')),
+    '#default_value' => variable_get('file_private_path', ''),
     '#maxlength' => 255,
     '#description' => t('A local file system path where private files will be stored. This directory must exist and be writable by Drupal. This directory should not be accessible over the web.'),
     '#after_build' => array('system_check_directory'),
@@ -1821,14 +1832,14 @@ function system_file_system_settings() {
   $form['file_temporary_path'] = array(
     '#type' => 'textfield',
     '#title' => t('Temporary directory'),
-    '#default_value' => variable_get('file_temporary_path', file_directory_path('temporary')),
+    '#default_value' => variable_get('file_temporary_path', file_directory_temp()),
     '#maxlength' => 255,
     '#description' => t('A local file system path where temporary files will be stored. This directory should not be accessible over the web.'),
     '#after_build' => array('system_check_directory'),
   );
   // Any visible, writeable wrapper can potentially be used for the files
   // directory, including a remote file system that integrates with a CDN.
-  foreach(file_get_stream_wrappers(STREAM_WRAPPERS_WRITE_VISIBLE) as $scheme => $info) {
+  foreach (file_get_stream_wrappers(STREAM_WRAPPERS_WRITE_VISIBLE) as $scheme => $info) {
     $options[$scheme] = check_plain($info['description']);
   }
 
@@ -2098,7 +2109,8 @@ function theme_system_date_time_settings($variables) {
     $delete_key = $key . '_delete';
     $row = array();
     $row[] = $form['format'][$key]['#title'];
-    unset($form['format'][$key]['#title']);
+    $form['format'][$key]['#title_display'] = 'invisible';
+    $row[] = $form['format'][$key]['#title_display'];
     $row[] = array('data' => drupal_render($form['format'][$key]));
     $row[] = array('data' => drupal_render($form['delete'][$delete_key]));
     $rows[] = $row;
@@ -2707,7 +2719,7 @@ function theme_system_themes_page($variables) {
     // Start new theme group.
     $output .= '<div class="system-themes-list system-themes-list-'. $state .' clearfix"><h2>'. $title .'</h2>';
 
-    foreach($theme_groups[$state] as $theme) {
+    foreach ($theme_groups[$state] as $theme) {
 
       // Theme the screenshot.
       $screenshot = $theme->screenshot ? theme('image', $theme->screenshot) : '<div class="no-screenshot">' . t('no screenshot') . '</div>';
@@ -2868,6 +2880,7 @@ function system_configure_date_formats_form($form, &$form_state, $dfid = 0) {
   $form['date_format'] = array(
     '#type' => 'textfield',
     '#title' => t('Format string'),
+    '#maxlength' => 100,
     '#description' => t('A user-defined date format. See the <a href="@url">PHP manual</a> for available options.', array('@url' => 'http://php.net/manual/function.date.php')),
     '#default_value' => ($dfid ? $format->format : ''),
     '#field_suffix' => ' <small id="edit-date-format-suffix">' . $now . '</small>',
@@ -2928,7 +2941,7 @@ function system_actions_manage() {
   actions_synchronize();
   $actions = actions_list();
   $actions_map = actions_actions_map($actions);
-  $options = array(t('Choose an advanced action'));
+  $options = array();
   $unconfigurable = array();
 
   foreach ($actions_map as $key => $array) {
@@ -3000,9 +3013,7 @@ function system_actions_manage_form($form, &$form_state, $options = array()) {
   );
   $form['parent']['action'] = array(
     '#type' => 'select',
-    '#default_value' => '',
     '#options' => $options,
-    '#description' => '',
   );
   $form['parent']['actions'] = array('#type' => 'actions');
   $form['parent']['actions']['submit'] = array(

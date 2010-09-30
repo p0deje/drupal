@@ -1,5 +1,5 @@
 <?php
-// $Id: system.module,v 1.957 2010/08/22 13:52:58 dries Exp $
+// $Id: system.module,v 1.967 2010/09/29 16:06:11 webchick Exp $
 
 /**
  * @file
@@ -264,6 +264,7 @@ function system_entity_info() {
       'base table' => 'file_managed',
       'entity keys' => array(
         'id' => 'fid',
+        'label' => 'filename',
       ),
       'static cache' => FALSE,
     ),
@@ -398,9 +399,13 @@ function system_element_info() {
   );
   $types['select'] = array(
     '#input' => TRUE,
-    '#size' => 0,
+    // In order to be able to determine whether a select list needs an empty
+    // default option, #required has to be NULL by default, as form_builder()
+    // preemptively sets #required to FALSE for all elements.
+    // @see form_process_select()
+    '#required' => NULL,
     '#multiple' => FALSE,
-    '#process' => array('ajax_process_form'),
+    '#process' => array('form_process_select', 'ajax_process_form'),
     '#theme' => 'select',
     '#theme_wrappers' => array('form_element'),
   );
@@ -647,7 +652,6 @@ function system_menu() {
   $items['admin/modules/list/confirm'] = array(
     'title' => 'List',
     'access arguments' => array('administer modules'),
-    'type' => MENU_CALLBACK,
   );
   $items['admin/modules/uninstall'] = array(
     'title' => 'Uninstall',
@@ -660,7 +664,6 @@ function system_menu() {
   $items['admin/modules/uninstall/confirm'] = array(
     'title' => 'Uninstall',
     'access arguments' => array('administer modules'),
-    'type' => MENU_CALLBACK,
     'file' => 'system.admin.inc',
   );
 
@@ -687,7 +690,6 @@ function system_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('system_ip_blocking_delete', 5),
     'access arguments' => array('block IP addresses'),
-    'type' => MENU_CALLBACK,
     'file' => 'system.admin.inc',
   );
 
@@ -828,7 +830,6 @@ function system_menu() {
   $items['admin/config/regional/date-time/types/%/delete'] = array(
     'title' => 'Delete date type',
     'description' => 'Allow users to delete a configured date type.',
-    'type' => MENU_CALLBACK,
     'page callback' => 'drupal_get_form',
     'page arguments' => array('system_delete_date_format_type_form', 5),
     'access arguments' => array('administer site configuration'),
@@ -856,7 +857,6 @@ function system_menu() {
   $items['admin/config/regional/date-time/formats/%/edit'] = array(
     'title' => 'Edit date format',
     'description' => 'Allow users to edit a configured date format.',
-    'type' => MENU_CALLBACK,
     'page callback' => 'drupal_get_form',
     'page arguments' => array('system_configure_date_formats_form', 5),
     'access arguments' => array('administer site configuration'),
@@ -865,7 +865,6 @@ function system_menu() {
   $items['admin/config/regional/date-time/formats/%/delete'] = array(
     'title' => 'Delete date format',
     'description' => 'Allow users to delete a configured date format.',
-    'type' => MENU_CALLBACK,
     'page callback' => 'drupal_get_form',
     'page arguments' => array('system_date_delete_format_form', 5),
     'access arguments' => array('administer site configuration'),
@@ -873,7 +872,6 @@ function system_menu() {
   );
   $items['admin/config/regional/date-time/formats/lookup'] = array(
     'title' => 'Date and time lookup',
-    'type' => MENU_CALLBACK,
     'page callback' => 'system_date_time_lookup',
     'access arguments' => array('administer site configuration'),
     'file' => 'system.admin.inc',
@@ -937,7 +935,6 @@ function system_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('system_actions_configure'),
     'access arguments' => array('administer actions'),
-    'type' => MENU_CALLBACK,
     'file' => 'system.admin.inc',
   );
   $items['admin/config/system/actions/delete/%actions'] = array(
@@ -946,7 +943,6 @@ function system_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('system_actions_delete_form', 5),
     'access arguments' => array('administer actions'),
-    'type' => MENU_CALLBACK,
     'file' => 'system.admin.inc',
   );
   $items['admin/config/system/actions/orphan'] = array(
@@ -1073,9 +1069,8 @@ function system_library() {
     'website' => 'http://jquery.com',
     'version' => '1.4.2',
     'js' => array(
-      'misc/jquery.js' => array('weight' => JS_LIBRARY - 20),
+      'misc/jquery.js' => array('weight' => JS_LIBRARY - 20, 'preprocess' => TRUE),
     ),
-    'preprocess' => TRUE,
   );
 
   // jQuery Once.
@@ -1084,9 +1079,8 @@ function system_library() {
     'website' => 'http://plugins.jquery.com/project/once',
     'version' => '1.2',
     'js' => array(
-      'misc/jquery.once.js' => array('weight' => JS_LIBRARY - 19),
+      'misc/jquery.once.js' => array('weight' => JS_LIBRARY - 19, 'preprocess' => TRUE),
     ),
-    'preprocess' => TRUE,
   );
 
   // jQuery Form Plugin.
@@ -1829,14 +1823,13 @@ function _system_filetransfer_backend_form_common() {
 function system_init() {
   $path = drupal_get_path('module', 'system');
   // Add the CSS for this module.
+  drupal_add_css($path . '/system.base.css', array('weight' => CSS_SYSTEM, 'preprocess' => TRUE));
   if (arg(0) == 'admin' || (variable_get('node_admin_theme', '0') && arg(0) == 'node' && (arg(1) == 'add' || arg(2) == 'edit' || arg(2) == 'delete'))) {
-    drupal_add_css($path . '/admin.css', array('weight' => CSS_SYSTEM));
+    drupal_add_css($path . '/system.admin.css', array('weight' => CSS_SYSTEM));
   }
-  drupal_add_css($path . '/system.css', array('weight' => CSS_SYSTEM, 'preprocess' => TRUE));
-  drupal_add_css($path . '/system-behavior.css', array('weight' => CSS_SYSTEM, 'preprocess' => TRUE));
-  drupal_add_css($path . '/system-menus.css', array('weight' => CSS_SYSTEM, 'preprocess' => TRUE));
-  drupal_add_css($path . '/system-messages.css', array('weight' => CSS_SYSTEM, 'preprocess' => TRUE));
-
+  drupal_add_css($path . '/system.menus.css', array('weight' => CSS_SYSTEM, 'preprocess' => TRUE));
+  drupal_add_css($path . '/system.messages.css', array('weight' => CSS_SYSTEM, 'preprocess' => TRUE));
+  drupal_add_css($path . '/system.theme.css', array('weight' => CSS_SYSTEM, 'preprocess' => TRUE));
 
   // Ignore slave database servers for this request.
   //
@@ -1857,6 +1850,29 @@ function system_init() {
     }
     else {
       unset($_SESSION['ignore_slave_server']);
+    }
+  }
+
+  // Add CSS/JS files from module .info files.
+  system_add_module_assets();
+}
+
+/**
+ * Adds CSS and JavaScript files declared in module .info files.
+ */
+function system_add_module_assets() {
+  foreach (system_get_info('module') as $module => $info) {
+    if (!empty($info['stylesheets'])) {
+      foreach ($info['stylesheets'] as $media => $stylesheets) {
+        foreach ($stylesheets as $stylesheet) {
+          drupal_add_css($stylesheet, array('media' => $media, 'preprocess' => TRUE));
+        }
+      }
+    }
+    if (!empty($info['scripts'])) {
+      foreach ($info['scripts'] as $script) {
+        drupal_add_js($script, array('preprocess' => TRUE));
+      }
     }
   }
 }
@@ -2191,7 +2207,7 @@ function system_update_files_database(&$files, $type) {
 
   // All remaining files are not in the system table, so we need to add them.
   $query = db_insert('system')->fields(array('filename', 'name', 'type', 'owner', 'info'));
-  foreach($files as &$file) {
+  foreach ($files as &$file) {
     if (isset($file->exists)) {
       unset($file->exists);
     }
@@ -2217,25 +2233,40 @@ function system_update_files_database(&$files, $type) {
 }
 
 /**
- * Returns an array of information about active modules or themes.
+ * Returns an array of information about enabled modules or themes.
  *
  * This function returns the information from the {system} table corresponding
  * to the cached contents of the .info file for each active module or theme.
  *
  * @param $type
  *   Either 'module' or 'theme'.
+ * @param $name
+ *   (optional) The name of a module or theme whose information shall be
+ *   returned. If omitted, all records for the provided $type will be returned.
+ *   If $name does not exist in the provided $type or is not enabled, an empty
+ *   array will be returned.
  *
  * @return
- *   An associative array of module or theme information keyed by name.
+ *   An associative array of module or theme information keyed by name, or only
+ *   information for $name, if given. If no records are available, an empty
+ *   array is returned.
  *
  * @see system_rebuild_module_data()
  * @see system_rebuild_theme_data()
  */
-function system_get_info($type) {
+function system_get_info($type, $name = NULL) {
   $info = array();
-  $result = db_query('SELECT name, info FROM {system} WHERE type = :type AND status = 1', array(':type' => $type));
-  foreach ($result as $item) {
-    $info[$item->name] = unserialize($item->info);
+  if ($type == 'module') {
+    $type = 'module_enabled';
+  }
+  $list = system_list($type);
+  foreach ($list as $shortname => $item) {
+    if (!empty($item->status)) {
+      $info[$shortname] = $item->info;
+    }
+  }
+  if (isset($name)) {
+    return isset($info[$name]) ? $info[$name] : array();
   }
   return $info;
 }
@@ -2289,6 +2320,15 @@ function _system_rebuild_module_data() {
 
     // Merge in defaults and save.
     $modules[$key]->info = $module->info + $defaults;
+
+    // Prefix stylesheets and scripts with module path.
+    $path = dirname($module->uri);
+    if (isset($module->info['stylesheets'])) {
+      $module->info['stylesheets'] = _system_info_add_path($module->info['stylesheets'], $path);
+    }
+    if (isset($module->info['scripts'])) {
+      $module->info['scripts'] = _system_info_add_path($module->info['scripts'], $path);
+    }
 
     // Install profiles are hidden by default, unless explicitly specified
     // otherwise in the .info file.
@@ -2381,6 +2421,8 @@ function _system_rebuild_theme_data() {
     'features' => _system_default_theme_features(),
     'screenshot' => 'screenshot.png',
     'php' => DRUPAL_MINIMUM_PHP,
+    'stylesheets' => array(),
+    'scripts' => array(),
   );
 
   $sub_themes = array();
@@ -2413,28 +2455,14 @@ function _system_rebuild_theme_data() {
       }
     }
 
-    // Give the stylesheets proper path information.
-    $pathed_stylesheets = array();
-    if (isset($themes[$key]->info['stylesheets'])) {
-      foreach ($themes[$key]->info['stylesheets'] as $media => $stylesheets) {
-        foreach ($stylesheets as $stylesheet) {
-          $pathed_stylesheets[$media][$stylesheet] = dirname($themes[$key]->uri) . '/' . $stylesheet;
-        }
-      }
-    }
-    $themes[$key]->info['stylesheets'] = $pathed_stylesheets;
+    // Prefix stylesheets and scripts with module path.
+    $path = dirname($theme->uri);
+    $theme->info['stylesheets'] = _system_info_add_path($theme->info['stylesheets'], $path);
+    $theme->info['scripts'] = _system_info_add_path($theme->info['scripts'], $path);
 
-    // Give the scripts proper path information.
-    $scripts = array();
-    if (isset($themes[$key]->info['scripts'])) {
-      foreach ($themes[$key]->info['scripts'] as $script) {
-        $scripts[$script] = dirname($themes[$key]->uri) . '/' . $script;
-      }
-    }
-    $themes[$key]->info['scripts'] = $scripts;
     // Give the screenshot proper path information.
     if (!empty($themes[$key]->info['screenshot'])) {
-      $themes[$key]->info['screenshot'] = dirname($themes[$key]->uri) . '/' . $themes[$key]->info['screenshot'];
+      $themes[$key]->info['screenshot'] = $path . '/' . $themes[$key]->info['screenshot'];
     }
   }
 
@@ -2479,6 +2507,41 @@ function system_rebuild_theme_data() {
   system_get_files_database($themes, 'theme');
   system_update_files_database($themes, 'theme');
   return $themes;
+}
+
+/**
+ * Prefixes all values in an .info file array with a given path.
+ *
+ * This helper function is mainly used to prefix all array values of an .info
+ * file property with a single given path (to the module or theme); e.g., to
+ * prefix all values of the 'stylesheets' or 'scripts' properties with the file
+ * path to the defining module/theme.
+ *
+ * @param $info
+ *   A nested array of data of an .info file to be processed.
+ * @param $path
+ *   A file path to prepend to each value in $info.
+ *
+ * @return
+ *   The $info array with prefixed values.
+ *
+ * @see _system_rebuild_module_data()
+ * @see _system_rebuild_theme_data()
+ */
+function _system_info_add_path($info, $path) {
+  foreach ($info as $key => $value) {
+    // Recurse into nested values until we reach the deepest level.
+    if (is_array($value)) {
+      $info[$key] = _system_info_add_path($info[$key], $path);
+    }
+    // Unset the original value's key and set the new value with prefix, using
+    // the original value as key, so original values can still be looked up.
+    else {
+      unset($info[$key]);
+      $info[$value] = $path . '/' . $value;
+    }
+  }
+  return $info;
 }
 
 /**
@@ -2712,7 +2775,6 @@ function confirm_form($form, $question, $path, $description = NULL, $yes = NULL,
   else {
     $options = array('path' => $path);
   }
-  $cancel = l($no ? $no : t('Cancel'), $options['path'], $options);
 
   drupal_set_title($question, PASS_THROUGH);
 
@@ -2720,12 +2782,17 @@ function confirm_form($form, $question, $path, $description = NULL, $yes = NULL,
   $form['description'] = array('#markup' => $description);
   $form[$name] = array('#type' => 'hidden', '#value' => 1);
 
-  $form['actions'] = array(
-    '#type' => 'actions',
-    '#attributes' => array('class' => array('container-inline')),
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => $yes ? $yes : t('Confirm'),
   );
-  $form['actions']['submit'] = array('#type' => 'submit', '#value' => $yes ? $yes : t('Confirm'));
-  $form['actions']['cancel'] = array('#markup' => $cancel);
+  $form['actions']['cancel'] = array(
+    '#type' => 'link',
+    '#title' => $no ? $no : t('Cancel'),
+    '#href' => $options['path'],
+    '#options' => $options,
+  );
   // By default, render the form using theme_confirm_form().
   if (!isset($form['#theme'])) {
     $form['#theme'] = 'confirm_form';
@@ -3697,6 +3764,35 @@ function theme_confirm_form($variables) {
  */
 function theme_system_settings_form($variables) {
   return drupal_render_children($variables['form']);
+}
+
+/**
+ * Returns HTML for an exposed filter form.
+ *
+ * @param $variables
+ *   An associative array containing:
+ *   - form: An associative array containing the structure of the form.
+ *
+ * @return
+ *   A string containing an HTML-formatted form.
+ *
+ * @ingroup themeable
+ */
+function theme_exposed_filters($variables) {
+  $form = $variables['form'];
+  $output = '';
+
+  if (isset($form['current'])) {
+    $items = array();
+    foreach (element_children($form['current']) as $key) {
+      $items[] = drupal_render($form['current'][$key]);
+    }
+    $output .= theme('item_list', array('items' => $items, 'attributes' => array('class' => array('clearfix', 'current-filters'))));
+  }
+
+  $output .= drupal_render_children($form);
+
+  return '<div class="exposed-filters">' . $output . '</div>';
 }
 
 /**

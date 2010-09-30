@@ -1,5 +1,5 @@
 <?php
-// $Id: field.crud.inc,v 1.67 2010/08/03 23:01:14 dries Exp $
+// $Id: field.crud.inc,v 1.71 2010/09/29 01:37:02 dries Exp $
 
 /**
  * @file
@@ -79,6 +79,11 @@
  *     'columns' setting are allowed. Note that field types can specify
  *     default indexes, which can be modified or added to when
  *     creating a field.
+ * - foreign keys: (optional) An associative array of relations, using the same
+ *   structure as the 'foreign keys' definition of hook_schema(). Note, however,
+ *   that the field data is not necessarily stored in SQL. Also, the possible
+ *   usage is limited, as you cannot specify another field as related, only
+ *   existing SQL tables, such as filter formats.
  * - settings (array)
  *     A sub-array of key/value pairs of field-type-specific settings. Each
  *     field type module defines and documents its own field settings.
@@ -317,10 +322,13 @@ function field_create_field($field) {
   $field['storage']['module'] = $storage_type['module'];
   $field['storage']['active'] = 1;
   // Collect storage information.
+  module_load_install($field['module']);
   $schema = (array) module_invoke($field['module'], 'field_schema', $field);
-  $schema += array('columns' => array(), 'indexes' => array());
+  $schema += array('columns' => array(), 'indexes' => array(), 'foreign keys' => array());
   // 'columns' are hardcoded in the field type.
   $field['columns'] = $schema['columns'];
+  // 'foreign keys' are hardcoded in the field type.
+  $field['foreign keys'] = $schema['foreign keys'];
   // 'indexes' can be both hardcoded in the field type, and specified in the
   // incoming $field definition.
   $field += array(
@@ -426,6 +434,7 @@ function field_update_field($field) {
 
   // Collect the new storage information, since what is in
   // $prior_field may no longer be right.
+  module_load_install($field['module']);
   $schema = (array) module_invoke($field['module'], 'field_schema', $field);
   $schema += array('columns' => array(), 'indexes' => array());
   // 'columns' are hardcoded in the field type.
@@ -552,6 +561,7 @@ function field_read_fields($params = array(), $include_additional = array()) {
     module_invoke_all('field_read_field', $field);
 
     // Populate storage information.
+    module_load_install($field['module']);
     $schema = (array) module_invoke($field['module'], 'field_schema', $field);
     $schema += array('columns' => array(), 'indexes' => array());
     $field['columns'] = $schema['columns'];
@@ -758,16 +768,8 @@ function _field_write_instance($instance, $update = FALSE) {
   );
   // If no weight specified, make sure the field sinks at the bottom.
   if (!isset($instance['widget']['weight'])) {
-    $weights = array();
-    foreach (field_info_instances($instance['entity_type'], $instance['bundle']) as $existing_instance) {
-      if ($instance['field_name'] != $existing_instance['field_name']) {
-        $weights[] = $existing_instance['widget']['weight'];
-      }
-    }
-    foreach (field_info_extra_fields($instance['entity_type'], $instance['bundle'], 'form') as $extra) {
-      $weights[] = $extra['weight'];
-    }
-    $instance['widget']['weight'] = $weights ? max($weights) + 1 : 0;
+    $max_weight = field_info_max_weight($instance['entity_type'], $instance['bundle'], 'form');
+    $instance['widget']['weight'] = isset($max_weight) ? $max_weight + 1 : 0;
   }
   // Check widget module.
   $widget_type = field_info_widget_types($instance['widget']['type']);
@@ -792,16 +794,8 @@ function _field_write_instance($instance, $update = FALSE) {
     }
     // If no weight specified, make sure the field sinks at the bottom.
     if (!isset($display['weight'])) {
-      $weights = array();
-      foreach (field_info_instances($instance['entity_type'], $instance['bundle']) as $existing_instance) {
-        if ($instance['field_name'] != $existing_instance['field_name']) {
-          $weights[] = $existing_instance['display'][$view_mode]['weight'];
-        }
-      }
-      foreach (field_info_extra_fields($instance['entity_type'], $instance['bundle'], 'display') as $extra) {
-        $weights[] = $extra['display'][$view_mode]['weight'];
-      }
-      $display['weight'] = $weights ? max($weights) + 1 : 0;
+      $max_weight = field_info_max_weight($instance['entity_type'], $instance['bundle'], $view_mode);
+      $display['weight'] = isset($max_weight) ? $max_weight + 1 : 0;
     }
     $instance['display'][$view_mode] = $display;
   }

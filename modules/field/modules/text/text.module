@@ -1,5 +1,5 @@
 <?php
-// $Id: text.module,v 1.62 2010/08/22 12:55:04 dries Exp $
+// $Id: text.module,v 1.65 2010/09/18 02:18:35 dries Exp $
 
 /**
  * @file
@@ -52,60 +52,7 @@ function text_field_info() {
       'description' => t('This field stores long text in the database along with optional summary text.'),
       'instance_settings' => array('text_processing' => 1, 'display_summary' => 0),
       'default_widget' => 'text_textarea_with_summary',
-      'default_formatter' => 'text_summary_or_trimmed',
-    ),
-  );
-}
-
-/**
- * Implements hook_field_schema().
- */
-function text_field_schema($field) {
-  switch ($field['type']) {
-    case 'text':
-      $columns = array(
-        'value' => array(
-          'type' => 'varchar',
-          'length' => $field['settings']['max_length'],
-          'not null' => FALSE,
-        ),
-      );
-      break;
-    case 'text_long':
-      $columns = array(
-        'value' => array(
-          'type' => 'text',
-          'size' => 'big',
-          'not null' => FALSE,
-        ),
-      );
-      break;
-    case 'text_with_summary':
-      $columns = array(
-        'value' => array(
-          'type' => 'text',
-          'size' => 'big',
-          'not null' => FALSE,
-        ),
-        'summary' => array(
-          'type' => 'text',
-          'size' => 'big',
-          'not null' => FALSE,
-        ),
-      );
-      break;
-  }
-  $columns += array(
-    'format' => array(
-      'type' => 'int',
-      'unsigned' => TRUE,
-      'not null' => FALSE,
-    ),
-  );
-  return array(
-    'columns' => $columns,
-    'indexes' => array(
-      'format' => array('format'),
+      'default_formatter' => 'text_default',
     ),
   );
 }
@@ -653,16 +600,13 @@ function text_field_prepare_translation($entity_type, $entity, $field, $instance
 /**
  * Implements hook_filter_format_update().
  */
-function text_filter_format_update() {
+function text_filter_format_update($format) {
   field_cache_clear();
 }
 
 /**
- * Implements hook_filter_format_delete().
- *
- * @todo D8: Properly update filter format references in all fields. See
- *   http://drupal.org/node/556022 for details.
+ * Implements hook_filter_format_disable().
  */
-function text_filter_format_delete() {
+function text_filter_format_disable($format) {
   field_cache_clear();
 }

@@ -1,5 +1,5 @@
 <?php
-// $Id: node.module,v 1.1294 2010/08/30 05:58:46 webchick Exp $
+// $Id: node.module,v 1.1303 2010/09/29 14:08:54 dries Exp $
 
 /**
  * @file
@@ -132,10 +132,6 @@ function node_theme() {
     'node_search_admin' => array(
       'render element' => 'form',
     ),
-    'node_filters' => array(
-      'render element' => 'form',
-      'file' => 'node.admin.inc',
-    ),
     'node_add_list' => array(
       'variables' => array('content' => NULL),
       'file' => 'node.pages.inc',
@@ -181,6 +177,7 @@ function node_entity_info() {
         'id' => 'nid',
         'revision' => 'vid',
         'bundle' => 'type',
+        'label' => 'title',
       ),
       'bundle keys' => array(
         'bundle' => 'type',
@@ -926,7 +923,7 @@ function node_object_prepare($node) {
 /**
  * Perform validation checks on the given node.
  */
-function node_validate($node, $form = array()) {
+function node_validate($node, $form, &$form_state) {
   $type = node_type_get_type($node);
 
   if (isset($node->nid) && (node_last_changed($node->nid) > $node->changed)) {
@@ -946,9 +943,18 @@ function node_validate($node, $form = array()) {
     form_set_error('date', t('You have to specify a valid date.'));
   }
 
-  // Do node-type-specific validation checks.
-  node_invoke($node, 'validate', $form);
-  module_invoke_all('node_validate', $node, $form);
+  // Invoke hook_validate() for node type specific validation and
+  // hook_node_validate() for miscellaneous validation needed by modules. Can't
+  // use node_invoke() or module_invoke_all(), because $form_state must be
+  // receivable by reference.
+  $function = node_type_get_base($node) . '_validate';
+  if (function_exists($function)) {
+    $function($node, $form, $form_state);
+  }
+  foreach (module_implements('node_validate') as $module) {
+    $function = $module . '_node_validate';
+    $function($node, $form, $form_state);
+  }
 }
 
 /**
@@ -1710,7 +1716,7 @@ function theme_node_search_admin($variables) {
   foreach (element_children($form['factors']) as $key) {
     $row = array();
     $row[] = $form['factors'][$key]['#title'];
-    unset($form['factors'][$key]['#title']);
+    $form['factors'][$key]['#title_display'] = 'invisible';
     $row[] = drupal_render($form['factors'][$key]);
     $rows[] = $row;
   }
@@ -1838,12 +1844,10 @@ function node_menu() {
     'title' => 'Delete',
     'page arguments' => array('node_type_delete_confirm', 4),
     'access arguments' => array('administer content types'),
-    'type' => MENU_CALLBACK,
     'file' => 'content_types.inc',
   );
 
   $items['node'] = array(
-    'title' => 'Content',
     'page callback' => 'node_page_default',
     'access arguments' => array('access content'),
     'type' => MENU_CALLBACK,
@@ -1873,7 +1877,7 @@ function node_menu() {
       'title' => $type->name,
       'title callback' => 'check_plain',
       'page callback' => 'node_add',
-      'page arguments' => array(2),
+      'page arguments' => array($type->type),
       'access callback' => 'node_access',
       'access arguments' => array('create', $type->type),
       'description' => $type->description,
@@ -1889,7 +1893,6 @@ function node_menu() {
     'page arguments' => array(1),
     'access callback' => 'node_access',
     'access arguments' => array('view', 1),
-    'type' => MENU_CALLBACK,
   );
   $items['node/%node/view'] = array(
     'title' => 'View',
@@ -1937,7 +1940,6 @@ function node_menu() {
     'page arguments' => array(1, TRUE),
     'access callback' => '_node_revision_access',
     'access arguments' => array(1),
-    'type' => MENU_CALLBACK,
   );
   $items['node/%node/revisions/%/revert'] = array(
     'title' => 'Revert to earlier revision',
@@ -1946,7 +1948,6 @@ function node_menu() {
     'page arguments' => array('node_revision_revert_confirm', 1),
     'access callback' => '_node_revision_access',
     'access arguments' => array(1, 'update'),
-    'type' => MENU_CALLBACK,
     'file' => 'node.pages.inc',
   );
   $items['node/%node/revisions/%/delete'] = array(
@@ -1956,7 +1957,6 @@ function node_menu() {
     'page arguments' => array('node_revision_delete_confirm', 1),
     'access callback' => '_node_revision_access',
     'access arguments' => array(1, 'delete'),
-    'type' => MENU_CALLBACK,
     'file' => 'node.pages.inc',
   );
   return $items;
@@ -2001,13 +2001,6 @@ function _node_custom_theme() {
   if (variable_get('node_admin_theme')) {
     return variable_get('admin_theme');
   }
-}
-
-/**
- * Implements hook_init().
- */
-function node_init() {
-  drupal_add_css(drupal_get_path('module', 'node') . '/node.css', array('preprocess' => TRUE));
 }
 
 function node_last_changed($nid) {
@@ -3163,8 +3156,8 @@ function node_access_acquire_grants($node, $delete = TRUE) {
   $grants = module_invoke_all('node_access_records', $node);
   // Let modules alter the grants.
   drupal_alter('node_access_records', $grants, $node);
-  // If no grants are set, then use the default grant.
-  if (empty($grants)) {
+  // If no grants are set and the node is published, then use the default grant.
+  if (empty($grants) && !empty($node->status)) {
     $grants[] = array('realm' => 'all', 'gid' => 0, 'grant_view' => 1, 'grant_update' => 0, 'grant_delete' => 0);
   }
   else {
@@ -3213,7 +3206,7 @@ function node_access_write_grants($node, $grants, $realm = NULL, $delete = TRUE)
   }
 
   // Only perform work when node_access modules are active.
-  if (count(module_implements('node_grants'))) {
+  if (!empty($grants) && count(module_implements('node_grants'))) {
     $query = db_insert('node_access')->fields(array('nid', 'realm', 'gid', 'grant_view', 'grant_update', 'grant_delete'));
     foreach ($grants as $grant) {
       if ($realm && $realm != $grant['realm']) {
@@ -3583,7 +3576,7 @@ function node_save_action($node) {
 function node_assign_owner_action($node, $context) {
   $node->uid = $context['owner_uid'];
   $owner_name = db_query("SELECT name FROM {users} WHERE uid = :uid", array(':uid' => $context['owner_uid']))->fetchField();
-  watchdog('action', 'Changed owner of @type %title to uid %name.', array('@type' =>  node_type_get_type($node), '%title' => $node->title, '%name' => $owner_name));
+  watchdog('action', 'Changed owner of @type %title to uid %name.', array('@type' =>  node_type_get_name($node), '%title' => $node->title, '%name' => $owner_name));
 }
 
 /**

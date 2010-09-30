@@ -1,5 +1,5 @@
 <?php
-// $Id: common.inc,v 1.1211 2010/08/27 11:54:32 webchick Exp $
+// $Id: common.inc,v 1.1228 2010/09/26 23:31:35 dries Exp $
 
 /**
  * @file
@@ -162,7 +162,7 @@ define('DRUPAL_CACHE_GLOBAL', 0x0008);
 function drupal_add_region_content($region = NULL, $data = NULL) {
   static $content = array();
 
-  if (!is_null($region) && !is_null($data)) {
+  if (isset($region) && isset($data)) {
     $content[$region][] = $data;
   }
   return $content;
@@ -230,7 +230,7 @@ function drupal_get_profile() {
 function drupal_set_breadcrumb($breadcrumb = NULL) {
   $stored_breadcrumb = &drupal_static(__FUNCTION__);
 
-  if (!is_null($breadcrumb)) {
+  if (isset($breadcrumb)) {
     $stored_breadcrumb = $breadcrumb;
   }
   return $stored_breadcrumb;
@@ -242,7 +242,7 @@ function drupal_set_breadcrumb($breadcrumb = NULL) {
 function drupal_get_breadcrumb() {
   $breadcrumb = drupal_set_breadcrumb();
 
-  if (is_null($breadcrumb)) {
+  if (!isset($breadcrumb)) {
     $breadcrumb = menu_get_active_breadcrumb();
   }
 
@@ -1355,6 +1355,8 @@ function filter_xss($string, $allowed_tags = array('a', 'em', 'strong', 'cite', 
     (
     <(?=[^a-zA-Z!/])  # a lone <
     |                 # or
+    <!--.*?-->        # a comment
+    |                 # or
     <[^>]*(>|$)       # a string that starts with a <, up until the > or the end of the string
     |                 # or
     >                 # just a >
@@ -1393,7 +1395,7 @@ function _filter_xss_split($m, $store = FALSE) {
     return '&lt;';
   }
 
-  if (!preg_match('%^<\s*(/\s*)?([a-zA-Z0-9]+)([^>]*)>?$%', $string, $matches)) {
+  if (!preg_match('%^<\s*(/\s*)?([a-zA-Z0-9]+)([^>]*)>?|(<!--.*?-->)$%', $string, $matches)) {
     // Seriously malformed
     return '';
   }
@@ -1401,10 +1403,19 @@ function _filter_xss_split($m, $store = FALSE) {
   $slash = trim($matches[1]);
   $elem = &$matches[2];
   $attrlist = &$matches[3];
+  $comment = &$matches[4];
+
+  if ($comment) {
+    $elem = '!--';
+  }
 
   if (!isset($allowed_html[strtolower($elem)])) {
     // Disallowed HTML element
     return '';
+  }
+
+  if ($comment) {
+    return $comment;
   }
 
   if ($slash != '') {
@@ -1605,7 +1616,7 @@ function format_rss_item($title, $link, $description, $args = array()) {
  * Format XML elements.
  *
  * @param $array
- *   An array where each item represent an element and is either a:
+ *   An array where each item represents an element and is either a:
  *   - (key => value) pair (<key>value</key>)
  *   - Associative array with fields:
  *     - 'key': element name
@@ -2256,9 +2267,9 @@ function l($text, $path, array $options = array()) {
 
   // Merge in defaults.
   $options += array(
-      'attributes' => array(),
-      'html' => FALSE,
-    );
+    'attributes' => array(),
+    'html' => FALSE,
+  );
 
   // Append active class.
   if (($path == $_GET['q'] || ($path == '<front>' && drupal_is_front_page())) &&
@@ -2387,7 +2398,7 @@ function drupal_deliver_page($page_callback_result, $default_delivery_callback =
     // If a delivery callback is specified, but doesn't exist as a function,
     // something is wrong, but don't print anything, since it's not known
     // what format the response needs to be in.
-    watchdog('delivery callback not found', check_plain($delivery_callback) . ': ' . check_plain($_GET['q']), NULL, WATCHDOG_ERROR);
+    watchdog('delivery callback not found', 'callback %callback not found: %q.', array('%callback' => $delivery_callback, '%q' => $_GET['q']), WATCHDOG_ERROR);
   }
 }
 
@@ -2420,7 +2431,7 @@ function drupal_deliver_html_page($page_callback_result) {
         // Print a 404 page.
         drupal_add_http_header('Status', '404 Not Found');
 
-        watchdog('page not found', check_plain($_GET['q']), NULL, WATCHDOG_WARNING);
+        watchdog('page not found', 'page not found: %q.', array('%q' => $_GET['q']), WATCHDOG_WARNING);
 
         // Keep old path for reference, and to allow forms to redirect to it.
         if (!isset($_GET['destination'])) {
@@ -2449,7 +2460,7 @@ function drupal_deliver_html_page($page_callback_result) {
       case MENU_ACCESS_DENIED:
         // Print a 403 page.
         drupal_add_http_header('Status', '403 Forbidden');
-        watchdog('access denied', check_plain($_GET['q']), NULL, WATCHDOG_WARNING);
+        watchdog('access denied', 'access denied: %q', array('%q' => $_GET['q']), WATCHDOG_WARNING);
 
         // Keep old path for reference, and to allow forms to redirect to it.
         if (!isset($_GET['destination'])) {
@@ -4587,7 +4598,7 @@ function _drupal_bootstrap_full() {
     // Running inside the simpletest child site, log fatal errors to test
     // specific file directory.
     ini_set('log_errors', 1);
-    ini_set('error_log', file_directory_path() . '/error.log');
+    ini_set('error_log', 'public://error.log');
   }
 
   // Initialize $_GET['q'] prior to invoking hook_init().
@@ -5455,6 +5466,15 @@ function element_sort($a, $b) {
 }
 
 /**
+ * Array sorting callback; sorts elements by title.
+ */
+function element_sort_by_title($a, $b) {
+  $a_title = (is_array($a) && isset($a['#title'])) ? $a['#title'] : '';
+  $b_title = (is_array($b) && isset($b['#title'])) ? $b['#title'] : '';
+  return strnatcasecmp($a_title, $b_title);
+}
+
+/**
  * Retrieve the default properties for the defined element type.
  */
 function element_info($type) {
@@ -5528,7 +5548,7 @@ function element_children(&$elements, $sort = FALSE) {
   $children = array();
   $sortable = FALSE;
   foreach ($elements as $key => $value) {
-    if ($key[0] !== '#') {
+    if ($key === '' || $key[0] !== '#') {
       $children[$key] = $value;
       if (is_array($value) && isset($value['#weight'])) {
         $sortable = TRUE;
@@ -5579,6 +5599,31 @@ function element_get_visible_children(array $elements) {
   }
 
   return array_keys($visible_children);
+}
+
+/**
+ * Sets HTML attributes based on element properties.
+ *
+ * @param $element
+ *   The renderable element to process.
+ * @param $map
+ *   An associative array whose keys are element property names and whose values
+ *   are the HTML attribute names to set for corresponding the property; e.g.,
+ *   array('#propertyname' => 'attributename'). If both names are identical
+ *   except for the leading '#', then an attribute name value is sufficient and
+ *   no property name needs to be specified.
+ */
+function element_set_attributes(array &$element, array $map) {
+  foreach ($map as $property => $attribute) {
+    // If the key is numeric, the attribute name needs to be taken over.
+    if (is_int($property)) {
+      $property = '#' . $attribute;
+    }
+    // Do not overwrite already existing attributes.
+    if (isset($element[$property]) && !isset($element['#attributes'][$attribute])) {
+      $element['#attributes'][$attribute] = $element[$property];
+    }
+  }
 }
 
 /**
@@ -5636,7 +5681,7 @@ function element_get_visible_children(array $elements) {
  *
  * @see drupal_array_get_nested_value()
  */
-function drupal_array_set_nested_value(&$array, $parents, $value) {
+function drupal_array_set_nested_value(array &$array, array $parents, $value) {
   $ref = &$array;
   foreach ($parents as $parent) {
     // Note that PHP is fine with referencing a not existing array key - in this
@@ -5649,8 +5694,8 @@ function drupal_array_set_nested_value(&$array, $parents, $value) {
 /**
  * Retrieves a value from a nested array with variable depth.
  *
- * This helper function should be used when the depth of the array element you
- * are changing may vary (that is, the number of parent keys is variable). It is
+ * This helper function should be used when the depth of the array element being
+ * retrieved may vary (that is, the number of parent keys is variable). It is
  * primarily used for form structures and renderable arrays.
  *
  * Without this helper function the only way to get a nested array value with
@@ -5663,14 +5708,23 @@ function drupal_array_set_nested_value(&$array, $parents, $value) {
  *
  * Instead, use this helper function:
  * @code
- * list($value, $value_exists) = drupal_array_get_nested_value($form, $parents);
- * if ($value_exists) {
+ * $value = drupal_array_get_nested_value($form, $parents);
+ * @endcode
+ *
+ * The return value will be NULL, regardless of whether the actual value is NULL
+ * or whether the requested key does not exist. If it is required to know
+ * whether the nested array key actually exists, pass a third argument that is
+ * altered by reference:
+ * @code
+ * $key_exists = NULL;
+ * $value = drupal_array_get_nested_value($form, $parents, $key_exists);
+ * if ($key_exists) {
  *   // ... do something with $value ...
  * }
  * @endcode
  *
  * However if the number of array parent keys is static, the value should always
- * be get directly rather than calling this function. For instance:
+ * be retrieved directly rather than calling this function. For instance:
  * @code
  * $value = $form['signature_settings']['signature'];
  * @endcode
@@ -5679,34 +5733,54 @@ function drupal_array_set_nested_value(&$array, $parents, $value) {
  *   The array from which to get the value.
  * @param $parents
  *   An array of parent keys of the value, starting with the outermost key.
+ * @param &$key_exists
+ *   (optional) If given, an already defined variable that is altered by
+ *   reference.
  *
  * @return
- *   An indexed array containing:
- *   - The requested nested value, if it exists, or NULL if it does not.
- *   - TRUE if all the parent keys exist, FALSE otherwise.
+ *   The requested nested value. Possibly NULL if the value is NULL or not all
+ *   nested parent keys exist. $key_exists is altered by reference and is a
+ *   Boolean that indicates whether all nested parent keys exist (TRUE) or not
+ *   (FALSE). This allows to distinguish between the two possibilities when NULL
+ *   is returned.
  *
  * @see drupal_array_set_nested_value()
- * @see drupal_array_value_exists()
  */
-function drupal_array_get_nested_value($array, $parents) {
+function drupal_array_get_nested_value(array &$array, array $parents, &$key_exists = NULL) {
+  $ref = &$array;
   foreach ($parents as $parent) {
-    if (isset($array[$parent])) {
-      $array = $array[$parent];
+    // array_key_exists() is slower than isset() and triggers notices if the
+    // second argument is not an array, so only call it when absolutely
+    // necessary.
+    if (isset($ref[$parent]) || (is_array($ref) && array_key_exists($parent, $ref))) {
+      $ref = &$ref[$parent];
     }
     else {
-      return array(NULL, FALSE);
+      $key_exists = FALSE;
+      return NULL;
     }
   }
-  return array($array, TRUE);
+  $key_exists = TRUE;
+  return $ref;
 }
 
 /**
- * Determines whether a value in a nested array with variable depth exists.
+ * Determines whether a nested array with variable depth contains all of the requested keys.
  *
  * This helper function should be used when the depth of the array element to be
  * checked may vary (that is, the number of parent keys is variable). See
- * drupal_array_set_nested_value() for details. This helper is primarily used
- * for form structures and renderable arrays.
+ * drupal_array_set_nested_value() for details. It is primarily used for form
+ * structures and renderable arrays.
+ *
+ * If it is required to also get the value of the checked nested key, use
+ * drupal_array_get_nested_value() instead.
+ *
+ * If the number of array parent keys is static, this helper function is
+ * unnecessary and the following code can be used instead:
+ * @code
+ * $value_exists = isset($form['signature_settings']['signature']);
+ * $key_exists = array_key_exists('signature', $form['signature_settings']);
+ * @endcode
  *
  * @param $array
  *   The array with the value to check for.
@@ -5716,21 +5790,15 @@ function drupal_array_get_nested_value($array, $parents) {
  * @return
  *   TRUE if all the parent keys exist, FALSE otherwise.
  *
- * @see drupal_array_set_nested_value()
  * @see drupal_array_get_nested_value()
  */
-function drupal_array_nested_value_exists($array, $parents) {
-  foreach ($parents as $parent) {
-    if (isset($array[$parent])) {
-      $array = $array[$parent];
-    }
-    else {
-      return FALSE;
-    }
-  }
-  return TRUE;
+function drupal_array_nested_key_exists(array $array, array $parents) {
+  // Although this function is similar to PHP's array_key_exists(), its
+  // arguments should be consistent with drupal_array_get_nested_value().
+  $key_exists = NULL;
+  drupal_array_get_nested_value($array, $parents, $key_exists);
+  return $key_exists;
 }
-
 
 /**
  * Provide theme registration for themes across .inc files.
@@ -5775,7 +5843,7 @@ function drupal_common_theme() {
       // - http://dev.w3.org/html5/spec/Overview.html#alt
       // The title attribute is optional in all cases, so it is omitted by
       // default.
-      'variables' => array('path' => NULL, 'alt' => '', 'title' => NULL, 'attributes' => array(), 'getsize' => TRUE),
+      'variables' => array('path' => NULL, 'width' => NULL, 'height' => NULL, 'alt' => '', 'title' => NULL, 'attributes' => array()),
     ),
     'breadcrumb' => array(
       'variables' => array('breadcrumb' => NULL),
@@ -5891,6 +5959,9 @@ function drupal_common_theme() {
     'date' => array(
       'render element' => 'element',
     ),
+    'exposed_filters' => array(
+      'render element' => 'form',
+    ),
     'checkbox' => array(
       'render element' => 'element',
     ),
@@ -5959,7 +6030,7 @@ function drupal_common_theme() {
  */
 function drupal_install_schema($module) {
   $schema = drupal_get_schema_unprocessed($module);
-  _drupal_schema_initialize($module, $schema);
+  _drupal_schema_initialize($schema, $module, FALSE);
 
   foreach ($schema as $name => $table) {
     db_create_table($name, $table);
@@ -5982,7 +6053,7 @@ function drupal_install_schema($module) {
  */
 function drupal_uninstall_schema($module) {
   $schema = drupal_get_schema_unprocessed($module);
-  _drupal_schema_initialize($module, $schema);
+  _drupal_schema_initialize($schema, $module, FALSE);
 
   foreach ($schema as $table) {
     if (db_table_exists($table['name'])) {
@@ -6020,7 +6091,7 @@ function drupal_get_schema_unprocessed($module, $table = NULL) {
   module_load_install($module);
   $schema = module_invoke($module, 'schema');
 
-  if (!is_null($table) && isset($schema[$table])) {
+  if (isset($table) && isset($schema[$table])) {
     return $schema[$table];
   }
   elseif (!empty($schema)) {
@@ -6032,20 +6103,30 @@ function drupal_get_schema_unprocessed($module, $table = NULL) {
 /**
  * Fill in required default values for table definitions returned by hook_schema().
  *
- * @param $module
- *   The module for which hook_schema() was invoked.
  * @param $schema
  *   The schema definition array as it was returned by the module's
  *   hook_schema().
+ * @param $module
+ *   The module for which hook_schema() was invoked.
+ * @param $remove_descriptions
+ *   (optional) Whether to additionally remove 'description' keys of all tables
+ *   and fields to improve performance of serialize() and unserialize().
+ *   Defaults to TRUE.
  */
-function _drupal_schema_initialize($module, &$schema) {
+function _drupal_schema_initialize(&$schema, $module, $remove_descriptions = TRUE) {
   // Set the name and module key for all tables.
-  foreach ($schema as $name => $table) {
+  foreach ($schema as $name => &$table) {
     if (empty($table['module'])) {
-      $schema[$name]['module'] = $module;
+      $table['module'] = $module;
     }
     if (!isset($table['name'])) {
-      $schema[$name]['name'] = $name;
+      $table['name'] = $name;
+    }
+    if ($remove_descriptions) {
+      unset($table['description']);
+      foreach ($table['fields'] as &$field) {
+        unset($field['description']);
+      }
     }
   }
 }
@@ -6134,7 +6215,7 @@ function drupal_write_record($table, &$record, $primary_keys = array()) {
     }
 
     if (!property_exists($object, $field)) {
-      // Skip fields that are not provided, default values are already known 
+      // Skip fields that are not provided, default values are already known
       // by the database.
       continue;
     }
@@ -6153,7 +6234,7 @@ function drupal_write_record($table, &$record, $primary_keys = array()) {
     // MySQL PDO silently casts e.g. FALSE and '' to 0 when inserting the value
     // into an integer column, but PostgreSQL PDO does not. Also type cast NULL
     // when the column does not allow this.
-    if (!is_null($object->$field) || !empty($info['not null'])) {
+    if (isset($object->$field) || !empty($info['not null'])) {
       if ($info['type'] == 'int' || $info['type'] == 'serial') {
         $fields[$field] = (int) $fields[$field];
       }
@@ -6646,6 +6727,14 @@ function entity_get_info($entity_type = NULL) {
         if (empty($entity_info[$name]['entity keys']['bundle']) && empty($entity_info[$name]['bundles'])) {
           $entity_info[$name]['bundles'] = array($name => array('label' => $entity_info[$name]['label']));
         }
+        // Prepare entity schema fields SQL info for
+        // DrupalEntityControllerInterface::buildQuery().
+        if (isset($entity_info[$name]['base table'])) {
+          $entity_info[$name]['schema_fields_sql']['base table'] = drupal_schema_fields_sql($entity_info[$name]['base table']);
+          if (isset($entity_info[$name]['revision table'])) {
+            $entity_info[$name]['schema_fields_sql']['revision table'] = drupal_schema_fields_sql($entity_info[$name]['revision table']);
+          }
+        }
       }
       // Let other modules alter the entity info.
       drupal_alter('entity_info', $entity_info);
@@ -6715,10 +6804,10 @@ function entity_create_stub_entity($entity_type, $ids) {
   $entity = new stdClass();
   $info = entity_get_info($entity_type);
   $entity->{$info['entity keys']['id']} = $ids[0];
-  if (!empty($info['entity keys']['revision']) && !is_null($ids[1])) {
+  if (!empty($info['entity keys']['revision']) && isset($ids[1])) {
     $entity->{$info['entity keys']['revision']} = $ids[1];
   }
-  if (!empty($info['entity keys']['bundle']) && !is_null($ids[2])) {
+  if (!empty($info['entity keys']['bundle']) && isset($ids[2])) {
     $entity->{$info['entity keys']['bundle']} = $ids[2];
   }
   return $entity;
@@ -6866,6 +6955,30 @@ function entity_uri($entity_type, $entity) {
     }
   }
   return $entity->uri ? $entity->uri : NULL;
+}
+
+/**
+ * Returns the label of an entity.
+ *
+ * @param $entity_type
+ *   The entity type; e.g. 'node' or 'user'.
+ * @param $entity
+ *   The entity for which to generate a path.
+ *
+ * @return
+ *   A string with the entity label (e.g. node title), or FALSE if not found.
+ */
+function entity_label($entity_type, $entity) {
+  $label = FALSE;
+  $info = entity_get_info($entity_type);
+  if (isset($info['label callback']) && function_exists($info['label callback'])) {
+    $label = $info['label callback']($entity);
+  }
+  elseif (!empty($info['entity keys']['label']) && isset($entity->{$info['entity keys']['label']})) {
+    $label = $entity->{$info['entity keys']['label']};
+  }
+
+  return $label;
 }
 
 /**

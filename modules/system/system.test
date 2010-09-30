@@ -1,5 +1,5 @@
 <?php
-// $Id: system.test,v 1.141 2010/08/30 00:22:03 webchick Exp $
+// $Id: system.test,v 1.143 2010/09/24 00:37:44 dries Exp $
 
 /**
  * Helper class for module test cases.
@@ -653,8 +653,7 @@ class AccessDeniedTestCase extends DrupalWebTestCase {
     parent::setUp();
 
     // Create an administrative user.
-    $this->admin_user = $this->drupalCreateUser(array('administer site configuration', 'administer blocks'));
-    $this->drupalLogin($this->admin_user);
+    $this->admin_user = $this->drupalCreateUser(array('access administration pages', 'administer site configuration', 'administer blocks'));
   }
 
   function testAccessDenied() {
@@ -662,6 +661,7 @@ class AccessDeniedTestCase extends DrupalWebTestCase {
     $this->assertText(t('Access denied'), t('Found the default 403 page'));
     $this->assertResponse(403);
 
+    $this->drupalLogin($this->admin_user);
     $edit = array(
       'title' => $this->randomName(10),
       'body' => array(LANGUAGE_NONE => array(array('value' => $this->randomName(100)))),
@@ -671,6 +671,7 @@ class AccessDeniedTestCase extends DrupalWebTestCase {
     // Use a custom 403 page.
     $this->drupalPost('admin/config/system/site-information', array('site_403' => 'node/' . $node->nid), t('Save configuration'));
 
+    $this->drupalLogout();
     $this->drupalGet('admin');
     $this->assertText($node->title, t('Found the custom 403 page'));
 
@@ -1299,13 +1300,14 @@ class SystemThemeFunctionalTest extends DrupalWebTestCase {
   function testThemeSettings() {
     // Specify a filesystem path to be used for the logo.
     $file = current($this->drupalGetTestFiles('image'));
+    $fullpath = drupal_realpath($file->uri);
     $edit = array(
       'default_logo' => FALSE,
-      'logo_path' => $file->uri,
+      'logo_path' => $fullpath,
     );
     $this->drupalPost('admin/appearance/settings', $edit, t('Save configuration'));
     $this->drupalGet('node');
-    $this->assertRaw($file->uri, t('Logo path successfully changed.'));
+    $this->assertRaw($fullpath, t('Logo path successfully changed.'));
 
     // Upload a file to use for the logo.
     $file = current($this->drupalGetTestFiles('image'));

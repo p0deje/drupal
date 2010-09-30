@@ -1,5 +1,5 @@
 <?php
-// $Id: system.api.php,v 1.187 2010/08/22 13:55:53 dries Exp $
+// $Id: system.api.php,v 1.196 2010/09/29 01:37:03 dries Exp $
 
 /**
  * @file
@@ -87,7 +87,16 @@ function hook_hook_info_alter(&$hooks) {
  *   - uri callback: A function taking an entity as argument and returning the
  *     uri elements of the entity, e.g. 'path' and 'options'. The actual entity
  *     uri can be constructed by passing these elements to url().
+ *   - label callback: (optional) A function taking an entity as argument and
+ *     returning the label of the entity; e.g., $node->title or
+ *     $comment->subject. A callback should be specified when the label is the
+ *     result of complex logic. Otherwise, the 'label' property of the
+ *     'entity keys' the property should be used.
  *   - fieldable: Set to TRUE if you want your entity type to be fieldable.
+ *   - translation: An associative array of modules registered as field
+ *     translation handlers. Array keys are the module names, array values
+ *     can be any data structure the module uses to provide field translation.
+ *     Any empty value disallows the module to appear as a translation handler.
  *   - entity keys: An array describing how the Field API can extract the
  *     information it needs from the objects of the type. Elements:
  *     - id: The name of the property that contains the primary id of the
@@ -103,6 +112,11 @@ function hook_hook_info_alter(&$hooks) {
  *       omitted if this entity type exposes a single bundle (all entities have
  *       the same collection of fields). The name of this single bundle will be
  *       the same as the entity type.
+ *     - label: The property name of the entity that contains the label. For
+ *       example, if the entity's label is located in $entity->subject, then
+ *       'subect' should be specified here. In case complex logic is required to
+ *       build the label, a 'label callback' should be implemented instead. See
+ *       entity_label() for details.
  *   - bundle keys: An array describing how the Field API can extract the
  *     information it needs from the bundle objects for this type (e.g
  *     $vocabulary objects for terms; not applicable for nodes). This entry can
@@ -165,6 +179,9 @@ function hook_entity_info() {
       'revision table' => 'node_revision',
       'uri callback' => 'node_uri',
       'fieldable' => TRUE,
+      'translation' => array(
+        'locale' => TRUE,
+      ),
       'entity keys' => array(
         'id' => 'nid',
         'revision' => 'vid',
@@ -973,6 +990,8 @@ function hook_page_build(&$page) {
  *     - MENU_DEFAULT_LOCAL_TASK: Every set of local tasks should provide one
  *       "default" task, which should display the same page as the parent item.
  *     If the "type" element is omitted, MENU_NORMAL_ITEM is assumed.
+ *   - "options": An array of options to be passed to l() when generating a link
+ *     from this menu item.
  *
  * For a detailed usage example, see page_example.module.
  * For comprehensive documentation on the menu system, see
@@ -1181,6 +1200,53 @@ function hook_menu_local_tasks_alter(&$data, $router_item, $root_path) {
 }
 
 /**
+ * Alter links in the active trail before it is rendered as the breadcrumb.
+ *
+ * This hook is invoked by menu_get_active_breadcrumb() and allows alteration
+ * of the breadcrumb links for the current page, which may be preferred instead
+ * of setting a custom breadcrumb via drupal_set_breadcrumb().
+ *
+ * Implementations should take into account that menu_get_active_breadcrumb()
+ * subsequently performs the following adjustments to the active trail *after*
+ * this hook has been invoked:
+ * - The last link in $active_trail is removed, if its 'href' is identical to
+ *   the 'href' of $item. This happens, because the breadcrumb normally does
+ *   not contain a link to the current page.
+ * - The (second to) last link in $active_trail is removed, if the current $item
+ *   is a MENU_DEFAULT_LOCAL_TASK. This happens in order to do not show a link
+ *   to the current page, when being on the path for the default local task;
+ *   e.g. when being on the path node/%/view, the breadcrumb should not contain
+ *   a link to node/%.
+ *
+ * Each link in the active trail must contain:
+ * - title: The localized title of the link.
+ * - href: The system path to link to.
+ * - localized_options: An array of options to pass to url().
+ *
+ * @param $active_trail
+ *   An array containing breadcrumb links for the current page.
+ * @param $item
+ *   The menu router item of the current page.
+ *
+ * @see drupal_set_breadcrumb()
+ * @see menu_get_active_breadcrumb()
+ * @see menu_get_active_trail()
+ * @see menu_set_active_trail()
+ */
+function hook_menu_breadcrumb_alter(&$active_trail, $item) {
+  // Always display a link to the current page by duplicating the last link in
+  // the active trail. This means that menu_get_active_breadcrumb() will remove
+  // the last link (for the current page), but since it is added once more here,
+  // it will appear.
+  if (!drupal_is_front_page()) {
+    $end = end($active_trail);
+    if ($item['href'] == $end['href']) {
+      $active_trail[] = $end;
+    }
+  }
+}
+
+/**
  * Alter contextual links before they are rendered.
  *
  * This hook is invoked by menu_contextual_links(). The system-determined
@@ -1204,9 +1270,10 @@ function hook_menu_local_tasks_alter(&$data, $router_item, $root_path) {
  *   This is a normalized path, which means that an originally passed path of
  *   'node/123' became 'node/%'.
  *
+ * @see hook_contextual_links_view_alter()
  * @see menu_contextual_links()
  * @see hook_menu()
- * @see system_preprocess()
+ * @see contextual_preprocess()
  */
 function hook_menu_contextual_links_alter(&$links, $router_item, $root_path) {
   // Add a link to all contextual links for nodes.
@@ -1327,16 +1394,56 @@ function hook_form_alter(&$form, &$form_state, $form_id) {
  *   Nested array of form elements that comprise the form.
  * @param $form_state
  *   A keyed array containing the current state of the form.
+ * @param $form_id
+ *   String representing the name of the form itself. Typically this is the
+ *   name of the function that generated the form.
  *
  * @see hook_form_alter()
  * @see drupal_prepare_form()
  */
-function hook_form_FORM_ID_alter(&$form, &$form_state) {
+function hook_form_FORM_ID_alter(&$form, &$form_state, $form_id) {
   // Modification for the form with the given form ID goes here. For example, if
   // FORM_ID is "user_register_form" this code would run only on the user
   // registration form.
 
   // Add a checkbox to registration form about agreeing to terms of use.
+  $form['terms_of_use'] = array(
+    '#type' => 'checkbox',
+    '#title' => t("I agree with the website's terms and conditions."),
+    '#required' => TRUE,
+  );
+}
+
+/**
+ * Provide a form-specific alteration for shared forms.
+ *
+ * Modules can implement hook_form_BASE_FORM_ID_alter() to modify a specific
+ * form belonging to multiple form_ids, rather than implementing
+ * hook_form_alter() and checking for conditions that would identify the
+ * shared form constructor.
+ *
+ * Examples for such forms are node_form() or comment_form().
+ *
+ * Note that this hook fires after hook_form_FORM_ID_alter() and before
+ * hook_form_alter().
+ *
+ * @param $form
+ *   Nested array of form elements that comprise the form.
+ * @param $form_state
+ *   A keyed array containing the current state of the form.
+ * @param $form_id
+ *   String representing the name of the form itself. Typically this is the
+ *   name of the function that generated the form.
+ *
+ * @see hook_form_FORM_ID_alter()
+ * @see drupal_prepare_form()
+ */
+function hook_form_BASE_FORM_ID_alter(&$form, &$form_state, $form_id) {
+  // Modification for the form with the given BASE_FORM_ID goes here. For
+  // example, if BASE_FORM_ID is "node_form", this code would run on every
+  // node form, regardless of node type.
+
+  // Add a checkbox to the node form about agreeing to terms of use.
   $form['terms_of_use'] = array(
     '#type' => 'checkbox',
     '#title' => t("I agree with the website's terms and conditions."),
@@ -1432,9 +1539,10 @@ function hook_boot() {
  * used to set up global parameters which are needed later in the request.
  * when this hook is called, all modules are already loaded in memory.
  *
- * For example, this hook is a typical place for modules to add CSS or JS
- * that should be present on every page. This hook is not run on cached
- * pages - though CSS or JS added this way will be present on a cached page.
+ * This hook is not run on cached pages.
+ *
+ * To add CSS or JS that should be present on all pages, modules should not
+ * implement this hook, but declare these files in their .info file.
  */
 function hook_init() {
   drupal_add_css(drupal_get_path('module', 'book') . '/book.css');
@@ -2525,9 +2633,11 @@ function hook_requirements($phase) {
  * details on schema definition structures.
  *
  * @return
- * A schema definition structure array. For each element of the
- * array, the key is a table name and the value is a table structure
- * definition.
+ *   A schema definition structure array. For each element of the
+ *   array, the key is a table name and the value is a table structure
+ *   definition.
+ *
+ * @ingroup schemaapi
  */
 function hook_schema() {
   $schema['node'] = array(
@@ -3186,7 +3296,7 @@ function hook_drupal_goto_alter(&$path, &$options, &$http_response_code) {
  *   array will be the most likely target for changes.
  */
 function hook_html_head_alter(&$head_elements) {
-  foreach($head_elements as $key => $element) {
+  foreach ($head_elements as $key => $element) {
     if (isset($element['#attributes']['rel']) && $element['#attributes']['rel'] == 'canonical') {
       // I want a custom canonical url.
       $head_elements[$key]['#attributes']['href'] = mymodule_canonical_url();
@@ -3554,7 +3664,7 @@ function hook_page_delivery_callback_alter(&$callback) {
  */
 function hook_system_themes_page_alter(&$theme_groups) {
   foreach ($theme_groups as $state => &$group) {
-    foreach($theme_groups[$state] as &$theme) {
+    foreach ($theme_groups[$state] as &$theme) {
       // Add a foo link to each list of theme operations.
       $theme->operations[] = l(t('Foo'), 'admin/appearance/foo', array('query' => array('theme' => $theme->name)));
     }
@@ -3946,7 +4056,7 @@ function hook_filetransfer_backends() {
 /**
  * Control site status before menu dispatching.
  *
- * The hook is called after checking whether the site is offline but before 
+ * The hook is called after checking whether the site is offline but before
  * the current router item is retrieved and executed by
  * menu_execute_active_handler(). If the site is in offline mode,
  * $menu_site_status is set to MENU_SITE_OFFLINE.

@@ -1,4 +1,4 @@
-/* $Id: colors.css,v 1.3 2010/08/22 13:58:29 dries Exp $ */
+/* $Id: colors.css,v 1.6 2010/09/16 20:52:01 dries Exp $ */
 
 /* ---------- Color Module Styles ----------- */
 
@@ -6,13 +6,13 @@ body {
   background-color: #292929;
   color: #ffffff;
 }
-html,
 #page-wrapper,
+#main,
 body.overlay {
   background-color: #ffffff;
   color: #3b3b3b;
 }
-#navigation ul.links li.active-trail a {
+#main-menu ul.links li.active-trail a {
   background: #ffffff;
 }
 .tabs ul.primary li a.active {
@@ -28,7 +28,7 @@ body.overlay {
   background-image: -moz-linear-gradient(-90deg, #0779bf, #48a9e4);
 }
 a {
-  color: #288CC9;
+  color: #0071B3;
 }
 a:hover,
 a:focus {
@@ -45,6 +45,7 @@ a:active {
   background: #292929;
 }
 #header #name-and-slogan,
-#header #name-and-slogan a {
+#header #name-and-slogan a,
+#secondary-menu-links li a {
   color: #fffeff;
 }

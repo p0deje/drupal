@@ -1,5 +1,5 @@
 <?php
-// $Id: search.module,v 1.358 2010/08/18 18:40:50 dries Exp $
+// $Id: search.module,v 1.362 2010/09/28 02:30:31 dries Exp $
 
 /**
  * @file
@@ -98,13 +98,6 @@ function search_help($path, $arg) {
 }
 
 /**
- * Implements hook_init().
- */
-function search_init() {
-  drupal_add_css(drupal_get_path('module', 'search') . '/search.css', array('preprocess' => TRUE));
-}
-
-/**
  * Implements hook_theme().
  */
 function search_theme() {
@@ -189,7 +182,6 @@ function search_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('search_reindex_confirm'),
     'access arguments' => array('administer search'),
-    'type' => MENU_CALLBACK,
     'file' => 'search.admin.inc',
   );
 
@@ -361,7 +353,7 @@ function search_cron() {
   // to date.
   drupal_register_shutdown_function('search_update_totals');
 
-  foreach(variable_get('search_active_modules', array('node', 'user')) as $module) {
+  foreach (variable_get('search_active_modules', array('node', 'user')) as $module) {
     // Update word index
     module_invoke($module, 'update_index');
   }
@@ -967,7 +959,7 @@ function search_form($form, &$form_state, $action = '', $keys = '', $type = NULL
   if (!$action) {
     $action = 'search/' . $module_info['path'];
   }
-  if (is_null($prompt)) {
+  if (!isset($prompt)) {
     $prompt = t('Enter your keywords');
   }
 

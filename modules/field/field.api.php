@@ -1,5 +1,5 @@
 <?php
-// $Id: field.api.php,v 1.88 2010/08/03 01:54:24 dries Exp $
+// $Id: field.api.php,v 1.90 2010/09/11 00:03:41 webchick Exp $
 
 /**
  * @ingroup field_fieldable_type
@@ -210,6 +210,9 @@ function hook_field_info_alter(&$info) {
 
 /**
  * Define the Field API schema for a field structure.
+ *
+ * This hook MUST be defined in .install for it to be detected during
+ * installation and upgrade.
  *
  * @param $field
  *   A field structure.
@@ -2060,6 +2063,33 @@ function hook_field_storage_pre_update($entity_type, $entity, &$skip_fields) {
       _forum_update_forum_index($entity->nid);
     }
   }
+}
+
+/**
+ * Returns the maximum weight for the entity components handled by the module.
+ *
+ * Field API takes care of fields and 'extra_fields'. This hook is intended for
+ * third-party modules adding other entity components (e.g. field_group).
+ *
+ * @param $entity_type
+ *   The type of entity; e.g. 'node' or 'user'.
+ * @param $bundle
+ *   The bundle name.
+ * @param $context
+ *   The context for which the maximum weight is requested. Either 'form', or
+ *   the name of a view mode.
+ * @return
+ *   The maximum weight of the entity's components, or NULL if no components
+ *   were found.
+ */
+function hook_field_info_max_weight($entity_type, $bundle, $context) {
+  $weights = array();
+
+  foreach (my_module_entity_additions($entity_type, $bundle, $context) as $addition) {
+    $weights[] = $addition['weight'];
+  }
+
+  return $weights ? max($weights) : NULL;
 }
 
 /**

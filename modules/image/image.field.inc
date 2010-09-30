@@ -1,5 +1,5 @@
 <?php
-// $Id: image.field.inc,v 1.25 2010/08/30 06:19:42 webchick Exp $
+// $Id: image.field.inc,v 1.29 2010/09/24 21:36:22 dries Exp $
 
 /**
  * @file
@@ -15,7 +15,7 @@ function image_field_info() {
       'label' => t('Image'),
       'description' => t('This field stores the ID of an image file as an integer value.'),
       'settings' => array(
-        'uri_scheme' => 'public',
+        'uri_scheme' => variable_get('file_default_scheme', 'public'),
         'default_image' => 0,
       ),
       'instance_settings' => array(
@@ -29,37 +29,6 @@ function image_field_info() {
       ),
       'default_widget' => 'image_image',
       'default_formatter' => 'image',
-    ),
-  );
-}
-
-/**
- * Implements hook_field_schema().
- */
-function image_field_schema($field) {
-  return array(
-    'columns' => array(
-      'fid' => array(
-        'description' => 'The {files}.fid being referenced in this field.',
-        'type' => 'int',
-        'not null' => FALSE,
-        'unsigned' => TRUE,
-      ),
-      'alt' => array(
-        'description' => "Alternative image text, for the image's 'alt' attribute.",
-        'type' => 'varchar',
-        'length' => 128,
-        'not null' => FALSE,
-      ),
-      'title' => array(
-        'description' => "Image title text, for the image's 'title' attribute.",
-        'type' => 'varchar',
-        'length' => 128,
-        'not null' => FALSE,
-      ),
-    ),
-    'indexes' => array(
-      'fid' => array('fid'),
     ),
   );
 }
@@ -300,7 +269,8 @@ function image_field_widget_settings_form($field, $instance) {
   $form['preview_image_style'] = array(
     '#title' => t('Preview image style'),
     '#type' => 'select',
-    '#options' => array('' => '<' . t('no preview') . '>') + image_style_options(FALSE),
+    '#required' => FALSE,
+    '#options' => image_style_options(FALSE),
     '#default_value' => $settings['preview_image_style'],
     '#description' => t('The preview image will be shown while editing the content.'),
     '#weight' => 15,
@@ -369,7 +339,7 @@ function image_field_widget_process($element, &$form_state, $form) {
   if ($element['#file'] && $widget_settings['preview_image_style']) {
     $element['preview'] = array(
       '#type' => 'markup',
-      '#markup' => theme('image_style', array('style_name' => $widget_settings['preview_image_style'], 'path' => $element['#file']->uri, 'getsize' => FALSE)),
+      '#markup' => theme('image_style', array('style_name' => $widget_settings['preview_image_style'], 'path' => $element['#file']->uri)),
     );
   }
 
@@ -449,22 +419,24 @@ function image_field_formatter_settings_form($field, $instance, $view_mode, $for
   $display = $instance['display'][$view_mode];
   $settings = $display['settings'];
 
-  $image_styles = array('' => t('None (original image)')) + image_style_options(FALSE);
+  $image_styles = image_style_options(FALSE);
   $form['image_style'] = array(
     '#title' => t('Image style'),
     '#type' => 'select',
+    '#required' => FALSE,
     '#default_value' => $settings['image_style'],
+    '#empty_option' => t('None (original image)'),
     '#options' => $image_styles,
   );
 
   $link_types = array(
-    '' => t('<none>'),
     'content' => t('Content'),
     'file' => t('File'),
   );
   $form['image_link'] = array(
     '#title' => t('Link image to'),
     '#type' => 'select',
+    '#required' => FALSE,
     '#default_value' => $settings['image_link'],
     '#options' => $link_types,
   );

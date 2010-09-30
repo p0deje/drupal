@@ -1,5 +1,5 @@
 <?php
-// $Id: system.install,v 1.502 2010/08/27 19:31:47 webchick Exp $
+// $Id: system.install,v 1.509 2010/09/25 18:10:53 dries Exp $
 
 /**
  * @file
@@ -323,7 +323,7 @@ function system_requirements($phase) {
       }
     }
     else {
-      if (variable_get('file_default_scheme', 'public') == 'public') {
+      if (file_default_scheme() == 'public') {
         $requirements['file system']['value'] = $t('Writable (<em>public</em> download method)');
       }
       else {
@@ -770,14 +770,14 @@ function system_schema() {
         'default' => 0,
       ),
       'filename' => array(
-        'description' => 'Name of the file with no path components. This may differ from the basename of the filepath if the file is renamed to avoid overwriting an existing file.',
+        'description' => 'Name of the file with no path components. This may differ from the basename of the URI if the file is renamed to avoid overwriting an existing file.',
         'type' => 'varchar',
         'length' => 255,
         'not null' => TRUE,
         'default' => '',
       ),
       'uri' => array(
-        'description' => 'Path of the file relative to Drupal root.',
+        'description' => 'The URI to access the file (either local or remote).',
         'type' => 'varchar',
         'length' => 255,
         'not null' => TRUE,
@@ -1573,8 +1573,7 @@ function system_schema() {
     ),
     'primary key' => array('filename'),
     'indexes' => array(
-      'bootstrap' => array('status', 'bootstrap', 'type', 'weight', 'name'),
-      'system_list' => array('weight', 'name'),
+      'system_list' => array('status', 'bootstrap', 'type', 'weight', 'name'),
       'type_name' => array('type', 'name'),
     ),
   );
@@ -1865,14 +1864,6 @@ function system_update_7005() {
 }
 
 /**
- * Registry tables and drop the file key of the menu router, since it is no
- * longer needed.
- */
-function system_update_7006() {
-  // Update moved to update_fix_d7_requirements().
-}
-
-/**
  * Convert to new method of storing permissions.
  *
  * This update is in system.install rather than user.install so that
@@ -1899,14 +1890,6 @@ function system_update_7007() {
 }
 
 /**
- * Use the poll_choice primary key to record votes in poll_votes rather than
- * the choice order. Rename chorder to weight.
- */
-function system_update_7008() {
-  // Moved to poll_update_7001().
-}
-
-/**
  * Rename the variable for primary links.
  */
 function system_update_7009() {
@@ -1915,13 +1898,6 @@ function system_update_7009() {
     variable_set('menu_main_links_source', $current_primary);
     variable_del('menu_primary_links_source');
   }
-}
-
-/**
- * Moved to system_update_6048().
- */
-function system_update_7010() {
-  return '';
 }
 
 /**
@@ -1944,8 +1920,6 @@ function system_update_7011() {
   }
   $insert->execute();
 }
-
-// system_update_7012() moved to block_update_7002().
 
 /**
  * Convert default time zone offset to default time zone name.
@@ -2000,12 +1974,6 @@ function system_update_7013() {
 }
 
 /**
- * Drop the bootstrap column from the {system} table. This was reverted.
- */
-function system_update_7014() {
-}
-
-/**
  * Change the user logout path.
  */
 function system_update_7015() {
@@ -2056,13 +2024,15 @@ function system_update_7016() {
  * Change the theme setting 'toggle_node_info' into a per content type variable.
  */
 function system_update_7017() {
-  $types = node_type_get_types();
-  if (count($types)) {
-    foreach ($types as $type) {
-      $node_info = theme_get_setting('toggle_node_info_' . $type->type);
-      if ($node_info !== NULL) {
-        variable_set('node_submitted_' . $type->type, $node_info);
-      }
+  // Get the global theme settings.
+  $settings = variable_get('theme_settings', array());
+  // Get the settings of the default theme.
+  $settings = array_merge($settings, variable_get('theme_' . variable_get('theme_default', 'garland') . '_settings', array()));
+
+  $types = _update_7000_node_get_types();
+  foreach ($types as $type) {
+    if (isset($settings['toggle_node_info_' . $type->type])) {
+      variable_set('node_submitted_' . $type->type, $settings['toggle_node_info_' . $type->type]);
     }
   }
 
@@ -2127,8 +2097,6 @@ function system_update_7027() {
   module_enable($module_list, FALSE);
 }
 
-// system_update_7028() moved to taxonomy_update_7001().
-
 /**
  * Add new 'view own unpublished content' permission for authenticated users.
  * Preserves legacy behavior from Drupal 6.x.
@@ -2140,20 +2108,6 @@ function system_update_7029() {
       'permission' => 'view own unpublished content',
     ))
     ->execute();
-}
-
-/**
- * Moved to comment_update_7011().
- */
-function system_update_7030() {
-}
-
-/**
- * Removed in favour of Drupal 6 backport.
- *
- * @see system_update_6052()
- */
-function system_update_7031() {
 }
 
 /**
@@ -2268,13 +2222,6 @@ function system_update_7034() {
 }
 
 /**
- * Migrate upload module files to the new {file_managed} table.
- */
-function system_update_7035() {
-  // Update merged into system_update_7059().
-}
-
-/**
  * Split the 'access site in maintenance mode' permission from 'administer site configuration'.
  */
 function system_update_7036() {
@@ -2306,29 +2253,6 @@ function system_update_7037() {
 }
 
 /**
- * Adds fields to the {menu_router} table to allow custom themes to be set per
- * page.
- */
-function system_update_7039() {
-  // Moved to update_fix_d7_requirements().
-}
-
-/**
- * Create new date format tables.
- */
-function system_update_7040() {
-  // Moved to update_fix_d7_requirements().
-}
-
-/**
- * Adds 'delivery_callback' field to the {menu_router} table to allow a custom
- * function to be used for final page rendering and sending to browser.
- */
-function system_update_7041() {
-  // Moved to update_fix_d7_requirements().
-}
-
-/**
  * Upgrade the {url_alias} table and create a cache bin for path aliases.
  */
 function system_update_7042() {
@@ -2348,13 +2272,6 @@ function system_update_7042() {
   // provided any meaningful unique constraint ('pid' is a primary key).
   db_add_index('url_alias', 'source_language_pid', array('source', 'language', 'pid'));
   db_add_index('url_alias', 'alias_language_pid', array('alias', 'language', 'pid'));
-}
-
-/**
- * Add a 'context' field to {menu_router} to control contextual placement of local tasks.
- */
-function system_update_7043() {
-  // Moved to update_fix_d7_requirements().
 }
 
 /**
@@ -2726,7 +2643,7 @@ function system_update_7060(&$sandbox) {
         'settings' => array(
           'display_field' => 1,
           'display_default' => variable_get('upload_list_default', 1),
-          'uri_scheme' => variable_get('file_default_scheme', 'public'),
+          'uri_scheme' => file_default_scheme(),
           'default_file' => 0,
         ),
       );
@@ -2830,7 +2747,7 @@ function system_update_7060(&$sandbox) {
   }
 
   $basename = variable_get('file_directory_path', conf_path() . '/files');
-  $scheme = variable_get('file_default_scheme', 'public') . '://';
+  $scheme = file_default_scheme() . '://';
   foreach ($node_revisions as $vid => $revision) {
     // We will convert filepaths to uri using the default scheme
     // and stripping off the existing file directory path.
@@ -2882,6 +2799,15 @@ function system_update_7060(&$sandbox) {
     // Indicate our current progress to the batch update system.
     $sandbox['#finished'] = $sandbox['progress'] / $sandbox['max'];
   }
+}
+
+/**
+ * Replace 'system_list' index with 'bootstrap' index on {system}.
+ */
+function system_update_7061() {
+  db_drop_index('system', 'bootstrap');
+  db_drop_index('system', 'system_list');
+  db_add_index('system', 'system_list', array('status', 'bootstrap', 'type', 'weight', 'name'));
 }
 
 /**

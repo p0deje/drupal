@@ -1,5 +1,5 @@
 <?php
-// $Id: theme.inc,v 1.606 2010/08/22 12:46:21 dries Exp $
+// $Id: theme.inc,v 1.615 2010/09/26 23:31:35 dries Exp $
 
 /**
  * @file
@@ -95,8 +95,8 @@ function drupal_theme_initialize() {
   $base_theme = array();
   $ancestor = $theme;
   while ($ancestor && isset($themes[$ancestor]->base_theme)) {
-    $base_theme[] = $new_base_theme = $themes[$themes[$ancestor]->base_theme];
     $ancestor = $themes[$ancestor]->base_theme;
+    $base_theme[] = $themes[$ancestor];
   }
   _drupal_theme_initialize($themes[$theme], array_reverse($base_theme));
 
@@ -583,7 +583,6 @@ function list_themes($refresh = FALSE) {
       try {
         foreach (system_list('theme') as $theme) {
           if (file_exists($theme->filename)) {
-            $theme->info = unserialize($theme->info);
             $themes[] = $theme;
           }
         }
@@ -605,9 +604,7 @@ function list_themes($refresh = FALSE) {
         }
       }
       foreach ($theme->info['scripts'] as $script => $path) {
-        if (file_exists($path)) {
-          $theme->scripts[$script] = $path;
-        }
+        $theme->scripts[$script] = $path;
       }
       if (isset($theme->info['engine'])) {
         $theme->engine = $theme->info['engine'];
@@ -771,7 +768,11 @@ function theme($hook, $variables = array()) {
       }
     }
     if (!isset($hooks[$hook])) {
-      watchdog('theme', 'Theme key "@key" not found.', array('@key' => $hook), WATCHDOG_WARNING);
+      // Only log a message when not trying theme suggestions ($hook being an
+      // array).
+      if (!isset($candidate)) {
+        watchdog('theme', 'Theme key "@key" not found.', array('@key' => $hook), WATCHDOG_WARNING);
+      }
       return '';
     }
   }
@@ -869,6 +870,7 @@ function theme($hook, $variables = array()) {
   }
 
   // Generate the output using either a function or a template.
+  $output = '';
   if (isset($info['function'])) {
     if (function_exists($info['function'])) {
       $output = $info['function']($variables);
@@ -1117,7 +1119,7 @@ function theme_get_setting($setting_name, $theme = NULL) {
   $cache = &drupal_static(__FUNCTION__, array());
 
   // If no key is given, use the current theme if we can determine it.
-  if (is_null($theme)) {
+  if (!isset($theme)) {
     $theme = !empty($GLOBALS['theme_key']) ? $GLOBALS['theme_key'] : '';
   }
 
@@ -1478,6 +1480,8 @@ function theme_links($variables) {
  *   An associative array containing:
  *   - path: Either the path of the image file (relative to base_path()) or a
  *     full URL.
+ *   - width: The width of the image (if known).
+ *   - height: The height of the image (if known).
  *   - alt: The alternative text for text-based browsers. HTML 4 and XHTML 1.0
  *     always require an alt attribute. The HTML 5 draft allows the alt
  *     attribute to be omitted in some cases. Therefore, this variable defaults
@@ -1491,38 +1495,19 @@ function theme_links($variables) {
  *   - title: The title text is displayed when the image is hovered in some
  *     popular browsers.
  *   - attributes: Associative array of attributes to be placed in the img tag.
- *   - getsize: If set to TRUE, the image's dimension are fetched and added as
- *     width/height attributes.
  */
 function theme_image($variables) {
-  $path = $variables['path'];
-  $alt = $variables['alt'];
-  $title = $variables['title'];
   $attributes = $variables['attributes'];
-  $getsize = $variables['getsize'];
+  $attributes['src'] = file_create_url($variables['path']);
 
-  if (!$getsize || (is_file($path) && (list($width, $height) = @getimagesize($path)))) {
-    // The src attribute can be omitted, by passing NULL for $path and FALSE for
-    // $getsize.
-    if (isset($path)) {
-      $attributes['src'] = file_create_url($path);
+  foreach (array('width', 'height', 'alt', 'title') as $key) {
+
+    if (isset($variables[$key])) {
+      $attributes[$key] = $variables[$key];
     }
-    // The alt attribute defaults to an empty string. By passing NULL as value,
-    // it can be omitted.
-    if (isset($alt)) {
-      $attributes['alt'] = $alt;
-    }
-    if (isset($title)) {
-      $attributes['title'] = $title;
-    }
-    if (!isset($attributes['width']) && !empty($width)) {
-      $attributes['width'] = $width;
-    }
-    if (!isset($attributes['height']) && !empty($height)) {
-      $attributes['height'] = $height;
-    }
-    return '<img' . drupal_attributes($attributes) . ' />';
   }
+
+  return '<img' . drupal_attributes($attributes) . ' />';
 }
 
 /**
@@ -1563,6 +1548,8 @@ function theme_breadcrumb($variables) {
  *     associative array with the following keys:
  *     - "data": an array of cells
  *     - Any HTML attributes, such as "class", to apply to the table row.
+ *     - "no_striping": a boolean indicating that the row should receive no
+ *       'even / odd' styling. Defaults to FALSE.
  *     Each cell can be either a string or an associative array with the
  *     following keys:
  *     - "data": The string to display in the table cell.
@@ -1731,8 +1718,10 @@ function theme_table($variables) {
       }
       if (count($cells)) {
         // Add odd/even class
-        $class = $flip[$class];
-        $attributes['class'][] = $class;
+        if (empty($row['no_striping'])) {
+          $class = $flip[$class];
+          $attributes['class'][] = $class;
+        }
 
         // Build row
         $output .= ' <tr' . drupal_attributes($attributes) . '>';
@@ -2002,7 +1991,7 @@ function theme_indentation($variables) {
 
 /**
  * Returns HTML output for a single table cell for theme_table().
- * 
+ *
  * @param $cell
  *   Array of cell information, or string to display in cell.
  * @param bool $header
@@ -2252,7 +2241,6 @@ function template_preprocess_page(&$variables) {
 
   $variables['base_path']         = base_path();
   $variables['front_page']        = url();
-  $variables['breadcrumb']        = theme('breadcrumb', array('breadcrumb' => drupal_get_breadcrumb()));
   $variables['feed_icons']        = drupal_get_feeds();
   $variables['language']          = $GLOBALS['language'];
   $variables['language']->dir     = $GLOBALS['language']->direction ? 'rtl' : 'ltr';
@@ -2264,7 +2252,6 @@ function template_preprocess_page(&$variables) {
   $variables['site_name']         = (theme_get_setting('toggle_name') ? filter_xss_admin(variable_get('site_name', 'Drupal')) : '');
   $variables['site_slogan']       = (theme_get_setting('toggle_slogan') ? filter_xss_admin(variable_get('site_slogan', '')) : '');
   $variables['tabs']              = theme('menu_local_tasks');
-  $variables['title']             = drupal_get_title();
 
   if ($node = menu_get_object()) {
     $variables['node'] = $node;
@@ -2275,6 +2262,29 @@ function template_preprocess_page(&$variables) {
     $variables['theme_hook_suggestions'] = $suggestions;
   }
 }
+
+/**
+ * Process variables for page.tpl.php
+ *
+ * Perform final addition of variables before passing them into the template.
+ * To customize these variables, simply set them in an earlier step.
+ *
+ * @see template_preprocess_page()
+ * @see page.tpl.php
+ */
+function template_process_page(&$variables) {
+  if (!isset($variables['breadcrumb'])) {
+    // Build the breadcrumb last, so as to increase the chance of being able to
+    // re-use the cache of an already rendered menu containing the active link
+    // for the current page.
+    // @see menu_tree_page_data()
+    $variables['breadcrumb'] = theme('breadcrumb', array('breadcrumb' => drupal_get_breadcrumb()));
+  }
+  if (!isset($variables['title'])) {
+    $variables['title'] = drupal_get_title();
+  }
+}
+
 /**
  * Process variables for html.tpl.php
  *
