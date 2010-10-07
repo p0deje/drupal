@@ -1,5 +1,5 @@
 <?php
-// $Id: file.inc,v 1.233 2010/09/28 02:34:42 dries Exp $
+// $Id: file.inc,v 1.235 2010/10/05 06:23:18 webchick Exp $
 
 /**
  * @file
@@ -853,7 +853,6 @@ function file_unmanaged_copy($source, $destination = NULL, $replace = FILE_EXIST
   file_ensure_htaccess();
   // Perform the copy operation.
   if (!@copy($source, $destination)) {
-    drupal_set_message(t('The specified file %file could not be copied.', array('%file' => $source)), 'error');
     watchdog('file', 'The specified file %file could not be copied to %destination.', array('%file' => $source, '%destination' => drupal_realpath($destination)), WATCHDOG_ERROR);
     return FALSE;
   }
@@ -2278,9 +2277,9 @@ function drupal_tempnam($directory, $prefix) {
  * Get the path of system-appropriate temporary directory.
  */
 function file_directory_temp() {
-  $temporary_directory = variable_get('file_directory_temp', NULL);
+  $temporary_directory = variable_get('file_temporary_path', NULL);
 
-  if (!isset($temporary_directory)) {
+  if (empty($temporary_directory)) {
     $directories = array();
 
     // Has PHP been set with an upload_tmp_dir?
@@ -2317,7 +2316,7 @@ function file_directory_temp() {
       $temporary_directory = variable_get('file_public_path', conf_path() . '/files') . $path_delimiter . 'tmp';
     }
     // Save the path of the discovered directory.
-    variable_set('file_directory_temp', $temporary_directory);
+    variable_set('file_temporary_path', $temporary_directory);
   }
 
   return $temporary_directory;

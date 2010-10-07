@@ -1,4 +1,4 @@
-// $Id: CHANGELOG.txt,v 1.372 2010/09/16 01:10:37 webchick Exp $
+// $Id: CHANGELOG.txt,v 1.374 2010/10/07 03:35:03 webchick Exp $
 
 Drupal 7.0, xxxx-xx-xx (development version)
 ----------------------

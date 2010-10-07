@@ -1,5 +1,5 @@
 <?php
-// $Id: standard.install,v 1.24 2010/09/30 01:06:09 dries Exp $
+// $Id: standard.install,v 1.26 2010/10/05 06:17:29 webchick Exp $
 
 /**
  * Implements hook_install().
@@ -297,7 +297,7 @@ function standard_install() {
     'settings' => array(
       'allowed_values' => array(
         array(
-          'vid' => $vocabulary->vid,
+          'vocabulary' => $vocabulary->machine_name,
           'parent' => 0,
         ),
       ),
@@ -401,7 +401,7 @@ function standard_install() {
   // Enable default permissions for system roles.
   $filtered_html_permission = filter_permission_name($filtered_html_format);
   user_role_grant_permissions(DRUPAL_ANONYMOUS_RID, array('access content', 'access comments', $filtered_html_permission));
-  user_role_grant_permissions(DRUPAL_AUTHENTICATED_RID, array('access content', 'access comments', 'post comments', 'post comments without approval', $filtered_html_permission));
+  user_role_grant_permissions(DRUPAL_AUTHENTICATED_RID, array('access content', 'access comments', 'post comments', 'skip comment approval', $filtered_html_permission));
 
   // Create a default role for site administrators, with all available permissions assigned.
   $admin_role = new stdClass();

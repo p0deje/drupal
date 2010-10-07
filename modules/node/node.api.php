@@ -1,5 +1,5 @@
 <?php
-// $Id: node.api.php,v 1.75 2010/09/29 14:08:54 dries Exp $
+// $Id: node.api.php,v 1.77 2010/10/05 02:21:26 dries Exp $
 
 /**
  * @file
@@ -748,18 +748,20 @@ function hook_node_submit($node, $form, &$form_state) {
  * the RSS item generated for this node.
  * For details on how this is used, see node_feed().
  *
- * @see taxonomy_node_view()
- * @see upload_node_view()
+ * @see blog_node_view()
+ * @see forum_node_view()
  * @see comment_node_view()
  *
  * @param $node
  *   The node that is being assembled for rendering.
  * @param $view_mode
  *   The $view_mode parameter from node_view().
+ * @param $langcode
+ *   The language code used for rendering.
  *
  * @ingroup node_api_hooks
  */
-function hook_node_view($node, $view_mode) {
+function hook_node_view($node, $view_mode, $langcode) {
   $node->content['my_additional_field'] = array(
     '#markup' => $additional_field,
     '#weight' => 10,
