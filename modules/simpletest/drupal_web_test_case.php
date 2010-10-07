@@ -1,5 +1,5 @@
 <?php
-// $Id: drupal_web_test_case.php,v 1.240 2010/10/05 06:17:29 webchick Exp $
+// $Id: drupal_web_test_case.php,v 1.3.2.34 2010/10/07 20:57:16 boombatower Exp $
 
 /**
  * Global variable that holds information about the tests being run.
@@ -3418,7 +3418,7 @@ class DrupalRemoteTestCase extends DrupalWebTestCase {
 //     global $conf;
 //
     // Set to that verbose mode works properly.
-    $this->originalFileDirectory = file_directory_path();
+    $this->originalFileDirectory = variable_get('file_public_path', conf_path() . '/files');
 //
 //     spl_autoload_register('db_autoload');
 //
