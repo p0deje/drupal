@@ -1,4 +1,4 @@
-; $Id: simpletest.info,v 1.24 2010/10/05 20:04:19 webchick Exp $
+; $Id: simpletest.info,v 1.8.2.14 2010/10/08 02:41:34 boombatower Exp $
 name = Testing
 description = Provides a framework for unit and functional testing.
 package = Testing
@@ -9,5 +9,6 @@ files[] = simpletest.install
 files[] = simpletest.test
 files[] = drupal_web_test_case.php
 configure = admin/config/development/testing/settings
+dependencies[] = simpletest_monitor
 
 testing_api = 2.x
