@@ -1,5 +1,5 @@
 <?php
-// $Id: system.admin.inc,v 1.317 2010/10/07 03:26:41 webchick Exp $
+// $Id: system.admin.inc,v 1.320 2010/10/15 04:23:18 webchick Exp $
 
 /**
  * @file
@@ -1346,7 +1346,6 @@ function system_modules_uninstall_submit($form, &$form_state) {
  *   use as the default value of the IP address form field.
  */
 function system_ip_blocking($default_ip = '') {
-  $output = '';
   $rows = array();
   $header = array(t('Blocked IP addresses'), t('Operations'));
   $result = db_query('SELECT * FROM {blocked_ips}');
@@ -2068,28 +2067,12 @@ function system_add_date_format_type_form($form, &$form_state) {
     '#title' => t('Date type'),
     '#type' => 'textfield',
     '#required' => TRUE,
-    '#field_suffix' => ' <small id="edit-date-type-suffix">&nbsp;</small>',
-  );
-  $js_settings = array(
-    'type' => 'setting',
-    'data' => array(
-      'machineReadableValue' => array(
-        'date-type' => array(
-          'text' => t('Machine name'),
-          'target' => 'machine-name',
-          'searchPattern' => '[^a-z0-9]+',
-          'replaceToken' => '_',
-        ),
-      ),
-    ),
   );
   $form['machine_name'] = array(
-    '#title' => t('Machine readable name'),
-    '#description' => t('The unique machine readable name for this date type, can only contain lowercase letters, numbers and underscores.'),
-    '#type' => 'textfield',
-    '#required' => TRUE,
-    '#attached' => array(
-      'js' => array(drupal_get_path('module', 'system') . '/system.js', $js_settings),
+    '#type' => 'machine_name',
+    '#machine_name' => array(
+      'exists' => 'system_get_date_types',
+      'source' => array('date_type'),
     ),
   );
 
@@ -2492,28 +2475,38 @@ function theme_system_admin_index($variables) {
  */
 function theme_status_report($variables) {
   $requirements = $variables['requirements'];
-
-  $i = 0;
+  $severities = array(
+    REQUIREMENT_INFO => array(
+      'title' => t('Info'),
+      'class' => 'info',
+    ),
+    REQUIREMENT_OK => array(
+      'title' => t('OK'),
+      'class' => 'ok',
+    ),
+    REQUIREMENT_WARNING => array(
+      'title' => t('Warning'),
+      'class' => 'warning',
+    ),
+    REQUIREMENT_ERROR => array(
+      'title' => t('Error'),
+      'class' => 'error',
+    ),
+  );
   $output = '<table class="system-status-report">';
+
   foreach ($requirements as $requirement) {
     if (empty($requirement['#type'])) {
-      $class = ++$i % 2 == 0 ? 'even' : 'odd';
-
-      $classes = array(
-        REQUIREMENT_INFO => 'info',
-        REQUIREMENT_OK => 'ok',
-        REQUIREMENT_WARNING => 'warning',
-        REQUIREMENT_ERROR => 'error',
-      );
-      $class = $classes[isset($requirement['severity']) ? (int) $requirement['severity'] : 0] . ' ' . $class;
+      $severity = $severities[isset($requirement['severity']) ? (int) $requirement['severity'] : 0];
+      $severity['icon'] = '<div title="' . $severity['title'] . '"><span class="element-invisible">' . $severity['title'] . '</span></div>';
 
       // Output table row(s)
       if (!empty($requirement['description'])) {
-        $output .= '<tr class="' . $class . ' merge-down"><td>' . $requirement['title'] . '</td><td>' . $requirement['value'] . '</td></tr>';
-        $output .= '<tr class="' . $class . ' merge-up"><td colspan="2">' . $requirement['description'] . '</td></tr>';
+        $output .= '<tr class="' . $severity['class'] . ' merge-down"><td class="status-icon">' . $severity['icon'] . '</td><td class="status-title">' . $requirement['title'] . '</td><td class="status-value">' . $requirement['value'] . '</td></tr>';
+        $output .= '<tr class="' . $severity['class'] . ' merge-up"><td colspan="3" class="status-description">' . $requirement['description'] . '</td></tr>';
       }
       else {
-        $output .= '<tr class="' . $class . '"><td>' . $requirement['title'] . '</td><td>' . $requirement['value'] . '</td></tr>';
+        $output .= '<tr class="' . $severity['class'] . '"><td class="status-icon">' . $severity['icon'] . '</td><td class="status-title">' . $requirement['title'] . '</td><td class="status-value">' . $requirement['value'] . '</td></tr>';
       }
     }
   }

@@ -1,5 +1,5 @@
 <?php
-// $Id: system.api.php,v 1.197 2010/10/02 01:22:41 dries Exp $
+// $Id: system.api.php,v 1.199 2010/10/15 03:36:21 webchick Exp $
 
 /**
  * @file
@@ -284,6 +284,17 @@ function hook_entity_load($entities, $type) {
  *   The type of entity being inserted (i.e. node, user, comment).
  */
 function hook_entity_insert($entity, $type) {
+  // Insert the new entity into a fictional table of all entities.
+  $info = entity_get_info($type);
+  $id = reset(entity_extract_ids($type, $entity));
+  db_insert('example_entity')
+    ->fields(array(
+      'type' => $type,
+      'id' => $id,
+      'created' => REQUEST_TIME,
+      'updated' => REQUEST_TIME,
+    ))
+    ->execute();
 }
 
 /**
@@ -295,6 +306,34 @@ function hook_entity_insert($entity, $type) {
  *   The type of entity being updated (i.e. node, user, comment).
  */
 function hook_entity_update($entity, $type) {
+  // Update the entity's entry in a fictional table of all entities.
+  $info = entity_get_info($type);
+  $id = reset(entity_extract_ids($type, $entity));
+  db_update('example_entity')
+    ->fields(array(
+      'updated' => REQUEST_TIME,
+    ))
+    ->condition('type', $type)
+    ->condition('id', $id)
+    ->execute();
+}
+
+/**
+ * Act on entities when deleted.
+ *
+ * @param $entity
+ *   The entity object.
+ * @param $type
+ *   The type of entity being deleted (i.e. node, user, comment).
+ */
+function hook_entity_delete($entity, $type) {
+  // Delete the entity's entry from a fictional table of all entities.
+  $info = entity_get_info($type);
+  $id = reset(entity_extract_ids($type, $entity));
+  db_delete('example_entity')
+    ->condition('type', $type)
+    ->condition('id', $id)
+    ->execute();
 }
 
 /**
@@ -2871,7 +2910,7 @@ function hook_install() {
  * to provide feedback regarding completion level.
  *
  * See the batch operations page for more information on how to use the batch API:
- * @link http://drupal.org/node/146843 http://drupal.org/node/146843 @endlink
+ * @link http://drupal.org/node/180528 http://drupal.org/node/180528 @endlink
  *
  * @throws DrupalUpdateException, PDOException
  *   In case of error, update hooks should throw an instance of DrupalUpdateException

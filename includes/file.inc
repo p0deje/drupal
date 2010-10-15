@@ -1,5 +1,5 @@
 <?php
-// $Id: file.inc,v 1.235 2010/10/05 06:23:18 webchick Exp $
+// $Id: file.inc,v 1.237 2010/10/15 03:36:21 webchick Exp $
 
 /**
  * @file
@@ -122,7 +122,12 @@ function file_get_stream_wrappers($filter = STREAM_WRAPPERS_ALL) {
         else {
           $wrappers[$scheme]['override'] = FALSE;
         }
-        stream_wrapper_register($scheme, $info['class']);
+        if (($info['type'] & STREAM_WRAPPERS_REMOTE) == STREAM_WRAPPERS_REMOTE) {
+          stream_wrapper_register($scheme, $info['class'], STREAM_IS_URL);
+        }
+        else {
+          stream_wrapper_register($scheme, $info['class']);
+        }
       }
       // Pre-populate the static cache with the filters most typically used.
       $wrappers_storage[STREAM_WRAPPERS_ALL][$scheme] = $wrappers[$scheme];
@@ -1185,6 +1190,7 @@ function file_delete(stdClass $file, $force = FALSE) {
 
   // Let other modules clean up any references to the deleted file.
   module_invoke_all('file_delete', $file);
+  module_invoke_all('entity_delete', $file, 'file');
 
   // Make sure the file is deleted before removing its row from the
   // database, so UIs can still find the file in the database.

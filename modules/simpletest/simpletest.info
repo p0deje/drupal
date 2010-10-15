@@ -1,4 +1,4 @@
-; $Id: simpletest.info,v 1.8.2.14 2010/10/08 02:41:34 boombatower Exp $
+; $Id: simpletest.info,v 1.25 2010/10/15 03:36:21 webchick Exp $
 name = Testing
 description = Provides a framework for unit and functional testing.
 package = Testing
