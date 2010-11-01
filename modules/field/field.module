@@ -1,5 +1,5 @@
 <?php
-// $Id: field.module,v 1.85 2010/10/15 03:48:32 webchick Exp $
+// $Id: field.module,v 1.89 2010/10/23 15:55:04 webchick Exp $
 /**
  * @file
  * Attach custom data fields to Drupal entities.
@@ -369,7 +369,7 @@ function _field_sort_items_value_helper($a, $b) {
  *       'extra_field_2' => ...
  *     ),
  *   ),
- * ),
+ * );
  * @endcode
  *
  * @param $entity_type
@@ -387,8 +387,8 @@ function field_bundle_settings($entity_type, $bundle, $settings = NULL) {
 
   if (isset($settings)) {
     $stored_settings[$entity_type][$bundle] = $settings;
+
     variable_set('field_bundle_settings', $stored_settings);
-    drupal_static_reset('field_view_mode_settings');
     field_info_cache_clear();
   }
   else {
@@ -396,6 +396,10 @@ function field_bundle_settings($entity_type, $bundle, $settings = NULL) {
     $settings += array(
       'view_modes' => array(),
       'extra_fields' => array(),
+    );
+    $settings['extra_fields'] += array(
+      'form' => array(),
+      'display' => array(),
     );
 
     return $settings;
@@ -965,4 +969,34 @@ function theme_field($variables) {
   $output = '<div class="' . $variables['classes'] . '"' . $variables['attributes'] . '>' . $output . '</div>';
 
   return $output;
+}
+
+/**
+ * Helper form element validator: integer.
+ */
+function _element_validate_integer($element, &$form_state) {
+  $value = $element['#value'];
+  if ($value !== '' && (!is_numeric($value) || intval($value) != $value)) {
+    form_error($element, t('%name must be an integer.', array('%name' => $element['#title'])));
+  }
+}
+
+/**
+ * Helper form element validator: integer > 0.
+ */
+function _element_validate_integer_positive($element, &$form_state) {
+  $value = $element['#value'];
+  if ($value !== '' && (!is_numeric($value) || intval($value) != $value || $value <= 0)) {
+    form_error($element, t('%name must be a positive integer.', array('%name' => $element['#title'])));
+  }
+}
+
+/**
+ * Helper form element validator: number.
+ */
+function _element_validate_number($element, &$form_state) {
+  $value = $element['#value'];
+  if ($value != '' && !is_numeric($value)) {
+    form_error($element, t('%name must be a number.', array('%name' => $element['#title'])));
+  }
 }

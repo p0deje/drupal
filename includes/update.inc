@@ -1,5 +1,5 @@
 <?php
-// $Id: update.inc,v 1.77 2010/10/12 02:50:03 dries Exp $
+// $Id: update.inc,v 1.80 2010/10/27 19:31:53 dries Exp $
 
 /**
  * @file
@@ -62,8 +62,7 @@ function update_check_incompatibility($name, $type = 'module') {
   if (!isset($file)
       || !isset($file->info['core'])
       || $file->info['core'] != DRUPAL_CORE_COMPATIBILITY
-      || version_compare(phpversion(), $file->info['php']) < 0
-      || ($type == 'module' && empty($file->info['files']))) {
+      || version_compare(phpversion(), $file->info['php']) < 0) {
     return TRUE;
   }
   return FALSE;
@@ -125,7 +124,11 @@ function update_prepare_d7_bootstrap() {
     $pdo_link = 'http://drupal.org/requirements/pdo#pecl';
   }
   // Check that the correct driver is loaded for the database being updated.
-  elseif (!in_array($databases['default']['default']['driver'], PDO::getAvailableDrivers())) {
+  // If we have no driver information (for example, if someone tried to create
+  // the Drupal 7 $databases array themselves but did not do it correctly),
+  // this message will be confusing, so do not perform the check; instead, just
+  // let the database connection fail in the code that follows.
+  elseif (isset($databases['default']['default']['driver']) && !in_array($databases['default']['default']['driver'], PDO::getAvailableDrivers())) {
     $message = '<h2>A PDO database driver is required!</h2><p>You need to enable the PDO_' . strtoupper($databases['default']['default']['driver']) . ' database driver for PHP ' . DRUPAL_MINIMUM_PHP . ' or higher so that Drupal 7 can access the database.</p>';
   }
   if ($message) {
@@ -879,7 +882,8 @@ function update_do_one($module, $number, $dependency_map, &$context) {
 
       require_once DRUPAL_ROOT . '/includes/errors.inc';
       $variables = _drupal_decode_exception($e);
-      $ret['#abort'] = array('success' => FALSE, 'query' => t('%type: %message in %function (line %line of %file).', $variables));
+      // The exception message is run through check_plain() by _drupal_decode_exception().
+      $ret['#abort'] = array('success' => FALSE, 'query' => t('%type: !message in %function (line %line of %file).', $variables));
     }
   }
 

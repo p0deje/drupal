@@ -1,5 +1,5 @@
 <?php
-// $Id: menu.admin.inc,v 1.88 2010/10/13 13:43:21 dries Exp $
+// $Id: menu.admin.inc,v 1.90 2010/10/20 07:40:59 webchick Exp $
 
 /**
  * @file
@@ -103,6 +103,8 @@ function _menu_overview_tree_form($tree) {
       $form[$mlid]['title']['#markup'] = l($item['title'], $item['href'], $item['localized_options']) . ($item['hidden'] ? ' (' . t('disabled') . ')' : '');
       $form[$mlid]['hidden'] = array(
         '#type' => 'checkbox',
+        '#title' => t('Enable @title menu link', array('@title' => $item['title'])),
+        '#title_display' => 'invisible',
         '#default_value' => !$item['hidden'],
       );
       $form[$mlid]['weight'] = array(
@@ -110,7 +112,7 @@ function _menu_overview_tree_form($tree) {
         '#delta' => 50,
         '#default_value' => $item['weight'],
         '#title_display' => 'invisible',
-        '#title' => t('Weight for @row', array('@row' => $item['title'])),
+        '#title' => t('Weight for @title', array('@title' => $item['title'])),
       );
       $form[$mlid]['mlid'] = array(
         '#type' => 'hidden',
@@ -677,7 +679,7 @@ function menu_configure() {
     '#empty_option' => t('No Secondary links'),
     '#options' => $menu_options,
     '#tree' => FALSE,
-    '#description' => t("Select the source for the Secondary links. An advanced option allows you to use the same source for both Main links (currently %main) and Secondary links: if your source menu has two levels of hierarchy, the top level menu links will appear in the Main links, and the children of the active link will appear in the Secondary links." , array('%main' => $main_options[$main])),
+    '#description' => t('Select the source for the Secondary links. An advanced option allows you to use the same source for both Main links (currently %main) and Secondary links: if your source menu has two levels of hierarchy, the top level menu links will appear in the Main links, and the children of the active link will appear in the Secondary links.', array('%main' => $menu_options[$main])),
   );
 
   return system_settings_form($form);

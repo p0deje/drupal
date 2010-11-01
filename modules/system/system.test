@@ -1,5 +1,5 @@
 <?php
-// $Id: system.test,v 1.148 2010/10/15 04:44:08 webchick Exp $
+// $Id: system.test,v 1.150 2010/10/28 01:33:41 dries Exp $
 
 /**
  * Helper class for module test cases.
@@ -1578,7 +1578,7 @@ class TokenReplaceTestCase extends DrupalWebTestCase {
     $tests['[site:slogan]'] = check_plain(variable_get('site_slogan', ''));
     $tests['[site:mail]'] = 'simpletest@example.com';
     $tests['[site:url]'] = url('<front>', $url_options);
-    $tests['[site:url-brief]'] = preg_replace('!^https?://!', '', url('<front>', $url_options));
+    $tests['[site:url-brief]'] = preg_replace(array('!^https?://!', '!/$!'), '', url('<front>', $url_options));
     $tests['[site:login-url]'] = url('user', $url_options);
 
     // Test to make sure that we generated something for each token.
@@ -1942,7 +1942,7 @@ class ShutdownFunctionsTest extends DrupalWebTestCase {
 
     // Make sure exceptions displayed through _drupal_render_exception_safe()
     // are correctly escaped.
-    $this->assertText('Drupal is &lt;blink&gt;awesome&lt;/blink&gt;.');
+    $this->assertRaw('Drupal is &amp;lt;blink&amp;gt;awesome&amp;lt;/blink&amp;gt;.');
   }
 }
 

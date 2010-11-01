@@ -1,5 +1,5 @@
 <?php
-// $Id: block.test,v 1.58 2010/08/30 00:22:03 webchick Exp $
+// $Id: block.test,v 1.60 2010/10/25 15:51:21 webchick Exp $
 
 /**
  * @file
@@ -87,8 +87,8 @@ class BlockTestCase extends DrupalWebTestCase {
 
     // Verify presence of configure and delete links for custom block.
     $this->drupalGet('admin/structure/block');
-    $this->assertRaw(l(t('configure'), 'admin/structure/block/manage/block/' . $bid . '/configure'), t('Custom block configure link found.'));
-    $this->assertRaw(l(t('delete'), 'admin/structure/block/manage/block/' . $bid . '/delete'), t('Custom block delete link found.'));
+    $this->assertLinkByHref('admin/structure/block/manage/block/' . $bid . '/configure', 0, t('Custom block configure link found.'));
+    $this->assertLinkByHref('admin/structure/block/manage/block/' . $bid . '/delete', 0, t('Custom block delete link found.'));
 
     // Set visibility only for authenticated users, to verify delete functionality.
     $edit = array();
@@ -254,7 +254,7 @@ class BlockTestCase extends DrupalWebTestCase {
       ':region-class' => 'region region-' . str_replace('_', '-', $region),
       ':block-id' => 'block-' . $block['module'] . '-' . $block['delta'],
     ));
-    $this->assertFieldByXPath($xpath, FALSE, t('Custom block found in %region_name region.', array('%region_name' => $region)));
+    $this->assertFieldByXPath($xpath, NULL, t('Custom block found in %region_name region.', array('%region_name' => $region)));
   }
 
   /**

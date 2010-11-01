@@ -1,5 +1,5 @@
 <?php
-// $Id: bootstrap.inc,v 1.429 2010/10/15 18:03:43 webchick Exp $
+// $Id: bootstrap.inc,v 1.433 2010/10/25 00:06:19 dries Exp $
 
 /**
  * @file
@@ -1561,7 +1561,8 @@ function watchdog_exception($type, Exception $exception, $message = NULL, $varia
 
    // Use a default value if $message is not set.
    if (empty($message)) {
-     $message = '%type: %message in %function (line %line of %file).';
+     // The exception message is run through check_plain() by _drupal_decode_exception().
+     $message = '%type: !message in %function (line %line of %file).';
    }
    // $variables must be an array so that we can add the exception information.
    if (!is_array($variables)) {
@@ -2467,7 +2468,8 @@ function request_path() {
  *
  * @return
  *   The component specified by $index, or NULL if the specified component was
- *   not found.
+ *   not found. If called without arguments, it returns an array containing all
+ *   the components of the current path.
  */
 function arg($index = NULL, $path = NULL) {
   // Even though $arguments doesn't need to be resettable for any functional

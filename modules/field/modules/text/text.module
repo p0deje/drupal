@@ -1,5 +1,5 @@
 <?php
-// $Id: text.module,v 1.65 2010/09/18 02:18:35 dries Exp $
+// $Id: text.module,v 1.67 2010/10/24 04:18:10 webchick Exp $
 
 /**
  * @file
@@ -171,7 +171,12 @@ function text_field_load($entity_type, $entities, $field, $instances, $langcode,
  */
 function text_field_is_empty($item, $field) {
   if (empty($item['value']) && (string) $item['value'] !== '0') {
-    return TRUE;
+    if ($field['type'] == 'text_with_summary') {
+      return (empty($item['summary']) && (string)$item['summary'] !== '0');
+    }
+    else {
+      return TRUE;
+    }
   }
   return FALSE;
 }
@@ -220,10 +225,10 @@ function text_field_formatter_settings_form($field, $instance, $view_mode, $form
   $display = $instance['display'][$view_mode];
   $settings = $display['settings'];
 
-  $form = array();
+  $element = array();
 
   if (strpos($display['type'], '_trimmed') !== FALSE) {
-    $form['trim_length'] = array(
+    $element['trim_length'] = array(
       '#title' => t('Trim length'),
       '#type' => 'textfield',
       '#size' => 10,
@@ -233,7 +238,7 @@ function text_field_formatter_settings_form($field, $instance, $view_mode, $form
     );
   }
 
-  return $form;
+  return $element;
 }
 
 /**

@@ -1,5 +1,5 @@
 <?php
-// $Id: system.admin.inc,v 1.320 2010/10/15 04:23:18 webchick Exp $
+// $Id: system.admin.inc,v 1.323 2010/10/20 16:19:24 webchick Exp $
 
 /**
  * @file
@@ -34,10 +34,6 @@ function system_admin_config_page() {
       }
       $block = $item;
       $block['content'] = '';
-      if ($item['block_callback'] && function_exists($item['block_callback'])) {
-        $function = $item['block_callback'];
-        $block['content'] .= $function();
-      }
       $block['content'] .= theme('admin_block_content', array('content' => system_admin_menu_block($item)));
       if (!empty($block['content'])) {
         $block['show'] = TRUE;
@@ -1250,6 +1246,8 @@ function system_modules_uninstall($form, $form_state = NULL) {
   if (!empty($options)) {
     $form['uninstall'] = array(
       '#type' => 'checkboxes',
+      '#title' => t('Modules'),
+      '#title_display' => 'invisible',
       '#options' => $options,
     );
     $form['actions'] = array('#type' => 'actions');
@@ -2930,7 +2928,10 @@ function system_actions_manage_form($form, &$form_state, $options = array()) {
   );
   $form['parent']['action'] = array(
     '#type' => 'select',
+    '#title' => t('Action'),
+    '#title_display' => 'invisible',
     '#options' => $options,
+    '#empty_option' => t('Choose an advanced action'),
   );
   $form['parent']['actions'] = array('#type' => 'actions');
   $form['parent']['actions']['submit'] = array(

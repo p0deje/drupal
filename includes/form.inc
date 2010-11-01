@@ -1,5 +1,5 @@
 <?php
-// $Id: form.inc,v 1.503 2010/10/13 13:43:21 dries Exp $
+// $Id: form.inc,v 1.507 2010/10/28 02:20:14 dries Exp $
 
 /**
  * @defgroup forms Form builder functions
@@ -163,7 +163,9 @@
  *   Any additional arguments are passed on to the functions called by
  *   drupal_get_form(), including the unique form constructor function. For
  *   example, the node_edit form requires that a node object is passed in here
- *   when it is called.
+ *   when it is called. These are available to implementations of 
+ *   hook_form_alter() and hook_form_FORM_ID_alter() as the array
+ *   $form_state['build_info']['args'].
  *
  * @return
  *   The form array.
@@ -1154,7 +1156,7 @@ function _form_validate(&$elements, &$form_state, $form_id = NULL) {
           $options = $elements['#options'];
         }
         if (is_array($elements['#value'])) {
-          $value = $elements['#type'] == 'checkboxes' ? array_keys($elements['#value']) : $elements['#value'];
+          $value = in_array($elements['#type'], array('checkboxes', 'tableselect')) ? array_keys($elements['#value']) : $elements['#value'];
           foreach ($value as $v) {
             if (!isset($options[$v])) {
               form_error($elements, $t('An illegal choice has been detected. Please contact the site administrator.'));
@@ -2071,11 +2073,29 @@ function form_type_image_button_value($form, $input, $form_state) {
  *   for this element. Return nothing to use the default.
  */
 function form_type_checkbox_value($element, $input = FALSE) {
-  if ($input !== FALSE) {
-    // Successful (checked) checkboxes are present with a value (possibly '0').
-    // http://www.w3.org/TR/html401/interact/forms.html#successful-controls
-    // For an unchecked checkbox, we return integer 0, so we can explicitly
-    // test for a value different than string '0'.
+  if ($input === FALSE) {
+    // Use #default_value as the default value of a checkbox, except change
+    // NULL to 0, because _form_builder_handle_input_element() would otherwise
+    // replace NULL with empty string, but an empty string is a potentially
+    // valid value for a checked checkbox.
+    return isset($element['#default_value']) ? $element['#default_value'] : 0;
+  }
+  else {
+    // Checked checkboxes are submitted with a value (possibly '0' or ''):
+    // http://www.w3.org/TR/html401/interact/forms.html#successful-controls.
+    // For checked checkboxes, browsers submit the string version of
+    // #return_value, but we return the original #return_value. For unchecked
+    // checkboxes, browsers submit nothing at all, but
+    // _form_builder_handle_input_element() detects this, and calls this
+    // function with $input=NULL. Returning NULL from a value callback means to
+    // use the default value, which is not what is wanted when an unchecked
+    // checkbox is submitted, so we use integer 0 as the value indicating an
+    // unchecked checkbox. Therefore, modules must not use integer 0 as a
+    // #return_value, as doing so results in the checkbox always being treated
+    // as unchecked. The string '0' is allowed for #return_value. The most
+    // common use-case for setting #return_value to either 0 or '0' is for the
+    // first option within a 0-indexed array of checkboxes, and for this,
+    // form_process_checkboxes() uses the string rather than the integer.
     return isset($input) ? $element['#return_value'] : 0;
   }
 }
@@ -2107,7 +2127,7 @@ function form_type_checkboxes_value($element, $input = FALSE) {
     // NULL elements from the array before constructing the return value, to
     // simulate the behavior of web browsers (which do not send unchecked
     // checkboxes to the server at all). This will not affect non-programmatic
-    // form submissions, since a checkbox can never legitimately be NULL.
+    // form submissions, since all values in $_POST are strings.
     foreach ($input as $key => $value) {
       if (!isset($value)) {
         unset($input[$key]);
@@ -2117,6 +2137,41 @@ function form_type_checkboxes_value($element, $input = FALSE) {
   }
   else {
     return array();
+  }
+}
+
+/**
+ * Helper function to determine the value for a tableselect form element.
+ *
+ * @param $element
+ *   The form element whose value is being populated.
+ * @param $input
+ *   The incoming input to populate the form element. If this is FALSE,
+ *   the element's default value should be returned.
+ * @return
+ *   The data that will appear in the $element_state['values'] collection
+ *   for this element. Return nothing to use the default.
+ */
+function form_type_tableselect_value($element, $input = FALSE) {
+  // If $element['#multiple'] == FALSE, then radio buttons are displayed and
+  // the default value handling is used.
+  if (isset($element['#multiple']) && $element['#multiple']) {
+    // Checkboxes are being displayed with the default value coming from the
+    // keys of the #default_value property. This differs from the checkboxes
+    // element which uses the array values.
+    if ($input === FALSE) {
+      $value = array();
+      $element += array('#default_value' => array());
+      foreach ($element['#default_value'] as $key => $flag) {
+        if ($flag) {
+          $value[$key] = $key;
+        }
+      }
+      return $value;
+    }
+    else {
+      return is_array($input) ? drupal_map_assoc($input) : array();
+    }
   }
 }
 
@@ -2656,19 +2711,24 @@ function form_process_date($element) {
     switch ($type) {
       case 'day':
         $options = drupal_map_assoc(range(1, 31));
+        $title = t('Day');
         break;
 
       case 'month':
         $options = drupal_map_assoc(range(1, 12), 'map_month');
+        $title = t('Month');
         break;
 
       case 'year':
         $options = drupal_map_assoc(range(1900, 2050));
+        $title = t('Year');
         break;
     }
 
     $element[$type] = array(
       '#type' => 'select',
+      '#title' => $title,
+      '#title_display' => 'invisible',
       '#value' => $element['#value'][$type],
       '#attributes' => $element['#attributes'],
       '#options' => $options,
@@ -2765,7 +2825,7 @@ function theme_checkbox($variables) {
   element_set_attributes($element, array('id', 'name', '#return_value' => 'value'));
 
   // Unchecked checkbox has #value of integer 0.
-  if (isset($element['#return_value']) && isset($element['#value']) && $element['#value'] !== 0 && $element['#value'] == $element['#return_value']) {
+  if (!empty($element['#checked'])) {
     $element['#attributes']['checked'] = 'checked';
   }
   _form_set_class($element, array('form-checkbox'));
@@ -2817,6 +2877,33 @@ function form_pre_render_conditional_form_element($element) {
   return $element;
 }
 
+/**
+ * Sets the #checked property of a checkbox element.
+ */
+function form_process_checkbox($element, $form_state) {
+  $value = $element['#value'];
+  $return_value = $element['#return_value'];
+  // On form submission, the #value of an available and enabled checked
+  // checkbox is #return_value, and the #value of an available and enabled
+  // unchecked checkbox is integer 0. On not submitted forms, and for
+  // checkboxes with #access=FALSE or #disabled=TRUE, the #value is
+  // #default_value (integer 0 if #default_value is NULL). Most of the time,
+  // a string comparison of #value and #return_value is sufficient for
+  // determining the "checked" state, but a value of TRUE always means checked
+  // (even if #return_value is 'foo'), and a value of FALSE or integer 0 always
+  // means unchecked (even if #return_value is '' or '0').
+  if ($value === TRUE || $value === FALSE || $value === 0) {
+    $element['#checked'] = (bool) $value;
+  }
+  else {
+    // Compare as strings, so that 15 is not considered equal to '15foo', but 1
+    // is considered equal to '1'. This cast does not imply that either #value
+    // or #return_value is expected to be a string.
+    $element['#checked'] = ((string) $value === (string) $return_value);
+  }
+  return $element;
+}
+
 function form_process_checkboxes($element) {
   $value = is_array($element['#value']) ? $element['#value'] : array();
   $element['#tree'] = TRUE;
@@ -2826,6 +2913,13 @@ function form_process_checkboxes($element) {
     }
     foreach ($element['#options'] as $key => $choice) {
       if (!isset($element[$key])) {
+        // Integer 0 is not a valid #return_value, so use '0' instead.
+        // @see form_type_checkbox_value().
+        // @todo For Drupal 8, cast all integer keys to strings for consistency
+        //   with form_process_radios().
+        if ($key === 0) {
+          $key = '0';
+        }
         $element[$key] = array(
           '#type' => 'checkbox',
           '#processed' => TRUE,
@@ -2998,9 +3092,16 @@ function form_process_tableselect($element) {
       // Do not overwrite manually created children.
       if (!isset($element[$key])) {
         if ($element['#multiple']) {
+          $title = '';
+          if (!empty($element['#options'][$key]['title']['data']['#title'])) {
+            $title = t('Update @title', array(
+              '@title' => $element['#options'][$key]['title']['data']['#title'],
+            ));
+          }
           $element[$key] = array(
             '#type' => 'checkbox',
-            '#title' => '',
+            '#title' => $title,
+            '#title_display' => 'invisible',
             '#return_value' => $key,
             '#default_value' => isset($value[$key]) ? $key : NULL,
             '#attributes' => $element['#attributes'],

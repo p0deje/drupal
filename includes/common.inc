@@ -1,5 +1,5 @@
 <?php
-// $Id: common.inc,v 1.1240 2010/10/11 23:49:48 dries Exp $
+// $Id: common.inc,v 1.1247 2010/10/28 02:00:27 dries Exp $
 
 /**
  * @file
@@ -726,46 +726,35 @@ function drupal_access_denied() {
  *
  * @param $url
  *   A string containing a fully qualified URI.
- * @param $options
- *   (optional) An array which can have one or more of following keys:
- *   - headers
- *       An array containing request headers to send as name/value pairs.
- *   - method
- *       A string containing the request method. Defaults to 'GET'.
- *   - data
- *       A string containing the request body. Defaults to NULL.
- *   - max_redirects
- *       An integer representing how many times a redirect may be followed.
- *       Defaults to 3.
- *   - timeout
- *       A float representing the maximum number of seconds the function call
- *       may take. The default is 30 seconds. If a timeout occurs, the error
- *       code is set to the HTTP_REQUEST_TIMEOUT constant.
- *   - context
- *       A context resource created with stream_context_create().
- * @return
- *   An object which can have one or more of the following parameters:
- *   - request
- *       A string containing the request body that was sent.
- *   - code
- *       An integer containing the response status code, or the error code if
- *       an error occurred.
- *   - protocol
- *       The response protocol (e.g. HTTP/1.1 or HTTP/1.0).
- *   - status_message
- *       The status message from the response, if a response was received.
- *   - redirect_code
- *       If redirected, an integer containing the initial response status code.
- *   - redirect_url
- *       If redirected, a string containing the redirection location.
- *   - error
- *       If an error occurred, the error message. Otherwise not set.
- *   - headers
- *       An array containing the response headers as name/value pairs. HTTP
- *       header names are case-insensitive (RFC 2616, section 4.2), so for easy
- *       access the array keys are returned in lower case.
- *   - data
- *       A string containing the response body that was received.
+ * @param array $options
+ *   (optional) An array that can have one or more of the following elements:
+ *   - headers: An array containing request headers to send as name/value pairs.
+ *   - method: A string containing the request method. Defaults to 'GET'.
+ *   - data: A string containing the request body, formatted as
+ *     'param=value&param=value&...'. Defaults to NULL.
+ *   - max_redirects: An integer representing how many times a redirect
+ *     may be followed. Defaults to 3.
+ *   - timeout: A float representing the maximum number of seconds the function
+ *     call may take. The default is 30 seconds. If a timeout occurs, the error
+ *     code is set to the HTTP_REQUEST_TIMEOUT constant.
+ *   - context: A context resource created with stream_context_create().
+ * 
+ * @return object
+ *   An object that can have one or more of the following components:
+ *   - request: A string containing the request body that was sent.
+ *   - code: An integer containing the response status code, or the error code
+ *     if an error occurred.
+ *   - protocol: The response protocol (e.g. HTTP/1.1 or HTTP/1.0).
+ *   - status_message: The status message from the response, if a response was
+ *     received.
+ *   - redirect_code: If redirected, an integer containing the initial response
+ *     status code.
+ *   - redirect_url: If redirected, a string containing the redirection location.
+ *   - error: If an error occurred, the error message. Otherwise not set.
+ *   - headers: An array containing the response headers as name/value pairs.
+ *     HTTP header names are case-insensitive (RFC 2616, section 4.2), so for
+ *     easy access the array keys are returned in lower case.
+ *   - data: A string containing the response body that was received.
  */
 function drupal_http_request($url, array $options = array()) {
   $result = new stdClass();
@@ -1241,7 +1230,7 @@ function drupal_strip_dangerous_protocols($uri) {
   static $allowed_protocols;
 
   if (!isset($allowed_protocols)) {
-    $allowed_protocols = array_flip(variable_get('filter_allowed_protocols', array('ftp', 'http', 'https', 'irc', 'mailto', 'news', 'nntp', 'rtsp', 'sftp', 'ssh', 'telnet', 'webcal')));
+    $allowed_protocols = array_flip(variable_get('filter_allowed_protocols', array('ftp', 'http', 'https', 'irc', 'mailto', 'news', 'nntp', 'rtsp', 'sftp', 'ssh', 'tel', 'telnet', 'webcal')));
   }
 
   // Iteratively remove any invalid protocol found.
@@ -3794,7 +3783,7 @@ function drupal_region_class($region) {
  *   - scope: The location in which you want to place the script. Possible
  *     values are 'header' or 'footer'. If your theme implements different
  *     regions, you can also use these. Defaults to 'header'.
- *   - 'group': A number identifying the group in which to add the JavaScript.
+ *   - group: A number identifying the group in which to add the JavaScript.
  *     Available constants are:
  *     - JS_LIBRARY: Any libraries, settings, or jQuery plugins.
  *     - JS_DEFAULT: Any module-layer JavaScript.
@@ -3802,7 +3791,7 @@ function drupal_region_class($region) {
  *     The group number serves as a weight: JavaScript within a lower weight
  *     group is presented on the page before JavaScript within a higher weight
  *     group.
- *  - 'every_page': For optimal front-end performance when aggregation is
+ *   - every_page: For optimal front-end performance when aggregation is
  *     enabled, this should be set to TRUE if the JavaScript is present on every
  *     page of the website for users for whom it is present at all. This
  *     defaults to FALSE. It is set to TRUE for JavaScript files that are added
@@ -4140,12 +4129,12 @@ function drupal_get_js($scope = 'header', $javascript = NULL, $skip_alter = FALS
 }
 
 /**
- * Add to the page all structures attached to a render() structure.
+ * Adds attachments to a render() structure.
  *
  * Libraries, JavaScript, CSS and other types of custom structures are attached
- * to elements using the #attached property. The #attached property contains an
- * associative array, where the keys are the the types of the structure, and
- * the value the attached data. For example:
+ * to elements using the #attached property. The #attached property is an
+ * associative array, where the keys are the the attachment types and the values
+ * are the attached data. For example:
  * @code
  * $build['#attached'] = array(
  *   'js' => array(drupal_get_path('module', 'taxonomy') . '/taxonomy.js'),
@@ -4156,7 +4145,6 @@ function drupal_get_js($scope = 'header', $javascript = NULL, $skip_alter = FALS
  * 'js', 'css', and 'library' are types that get special handling.  For any
  * other kind of attached data, the array key must be the full name of the
  * callback function and each value an array of arguments. For example:
- *
  * @code
  * $build['#attached']['drupal_add_http_header'] = array(
  *   array('Content-Type', 'application/rss+xml; charset=utf-8'),
@@ -4171,12 +4159,16 @@ function drupal_get_js($scope = 'header', $javascript = NULL, $skip_alter = FALS
  *   assigned to them.
  * @param $dependency_check
  *   When TRUE, will exit if a given library's dependencies are missing. When
- *   set to FALSE, will continue to add the libraries, even though one of the
+ *   set to FALSE, will continue to add the libraries, even though one or more
  *   dependencies are missing. Defaults to FALSE.
+ * @param $every_page
+ *   Set to TRUE to indicate that the attachments are added to every page on the
+ *   site. Only attachments with the every_page flag set to TRUE can participate
+ *   in JavaScript/CSS aggregation.
  *
  * @return
- *   Will return FALSE if there were any missing library dependencies. TRUE will
- *   be returned if all library dependencies were met.
+ *   FALSE if there were any missing library dependencies; TRUE if all library
+ *   dependencies were met.
  *
  * @see drupal_add_library()
  * @see drupal_add_js()
@@ -4388,16 +4380,20 @@ function drupal_process_states(&$elements) {
  * settings, and optionally requiring another library. For example, a library
  * can be a jQuery plugin, a JavaScript framework, or a CSS framework. This
  * function allows modules to load a library defined/shipped by itself or a
- * depending module; without having to add all files of the library separately.
+ * depending module, without having to add all files of the library separately.
  * Each library is only loaded once.
  *
  * @param $module
  *   The name of the module that registered the library.
  * @param $name
  *   The name of the library to add.
+ * @param $every_page
+ *   Set to TRUE if this library is added to every page on the site. Only items
+ *   with the every_page flag set to TRUE can participate in aggregation.
+ *
  * @return
- *   TRUE when the library was successfully added or FALSE if the library or one
- *   of its dependencies could not be added.
+ *   TRUE if the library was successfully added; FALSE if the library or one of
+ *   its dependencies could not be added.
  *
  * @see drupal_get_library()
  * @see hook_library()
@@ -5206,10 +5202,44 @@ function drupal_pre_render_conditional_comments($elements) {
  * @return
  *   The passed in elements containing a rendered link in '#markup'.
  */
-function drupal_pre_render_link($elements) {
-  $options = isset($elements['#options']) ? $elements['#options'] : array();
-  $elements['#markup'] = l($elements['#title'], $elements['#href'], $options);
-  return $elements;
+function drupal_pre_render_link($element) {
+  // By default, link options to pass to l() are normally set in #options.
+  $element += array('#options' => array());
+  // However, within the scope of renderable elements, #attributes is a valid
+  // way to specify attributes, too. Take them into account, but do not override
+  // attributes from #options.
+  if (isset($element['#attributes'])) {
+    $element['#options'] += array('attributes' => array());
+    $element['#options']['attributes'] += $element['#attributes'];
+  }
+
+  // This #pre_render callback can be invoked from inside or outside of a Form
+  // API context, and depending on that, a HTML ID may be already set in
+  // different locations. #options should have precedence over Form API's #id.
+  // #attributes have been taken over into #options above already.
+  if (isset($element['#options']['attributes']['id'])) {
+    $element['#id'] = $element['#options']['attributes']['id'];
+  }
+  elseif (isset($element['#id'])) {
+    $element['#options']['attributes']['id'] = $element['#id'];
+  }
+
+  // Conditionally invoke ajax_pre_render_element(), if #ajax is set.
+  if (isset($element['#ajax']) && !isset($element['#ajax_processed'])) {
+    // If no HTML ID was found above, automatically create one.
+    if (!isset($element['#id'])) {
+      $element['#id'] = $element['#options']['attributes']['id'] = drupal_html_id('ajax-link');
+    }
+    // If #ajax['path] was not specified, use the href as AJAX request URL.
+    if (!isset($element['#ajax']['path'])) {
+      $element['#ajax']['path'] = $element['#href'];
+      $element['#ajax']['options'] = $element['#options'];
+    }
+    $element = ajax_pre_render_element($element);
+  }
+
+  $element['#markup'] = l($element['#title'], $element['#href'], $element['#options']);
+  return $element;
 }
 
 /**
@@ -6249,7 +6279,7 @@ function drupal_common_theme() {
       'render element' => 'element',
     ),
     'form_required_marker' => array(
-      'arguments' => array('element' => NULL),
+      'render element' => 'element',
     ),
     'form_element_label' => array(
       'render element' => 'element',
@@ -6841,7 +6871,11 @@ function _drupal_flush_css_js() {
  */
 function debug($data, $label = NULL, $print_r = FALSE) {
   // Print $data contents to string.
-  $string = $print_r ? print_r($data, TRUE) : var_export($data, TRUE);
+  $string = check_plain($print_r ? print_r($data, TRUE) : var_export($data, TRUE));
+
+  // Display values with pre-formatting to increase readability.
+  $string = '<pre>' . $string . '</pre>';
+
   trigger_error(trim($label ? "$label: $string" : $string));
 }
 

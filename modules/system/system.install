@@ -1,5 +1,5 @@
 <?php
-// $Id: system.install,v 1.519 2010/10/15 18:03:43 webchick Exp $
+// $Id: system.install,v 1.521 2010/10/31 03:44:09 dries Exp $
 
 /**
  * @file
@@ -1092,13 +1092,6 @@ function system_schema() {
         'not null' => TRUE,
         'default' => 0,
       ),
-      'block_callback' => array(
-        'description' => 'Name of a function used to render the block on the system administration page for this item.',
-        'type' => 'varchar',
-        'length' => 255,
-        'not null' => TRUE,
-        'default' => '',
-      ),
       'description' => array(
         'description' => 'A description of this item.',
         'type' => 'text',
@@ -2092,10 +2085,10 @@ function system_update_7018() {
 }
 
 /**
- * Enable field module.
+ * Enable field and field_ui modules.
  */
 function system_update_7020() {
-  $module_list = array('field_sql_storage', 'field');
+  $module_list = array('field_sql_storage', 'field', 'field_ui');
   module_enable($module_list, FALSE);
 }
 
@@ -2899,6 +2892,13 @@ function system_update_7063() {
   foreach ($result as $record) {
     db_delete('menu_links')->condition('mlid', $record->mlid)->execute();
   }
+}
+
+/**
+ * Remove block_callback field from {menu_router}.
+ */
+function system_update_7064() {
+  db_drop_field('menu_router', 'block_callback');
 }
 
 /**

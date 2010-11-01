@@ -1,5 +1,5 @@
 <?php
-// $Id: user.module,v 1.1209 2010/10/15 03:36:21 webchick Exp $
+// $Id: user.module,v 1.1213 2010/10/23 15:30:34 webchick Exp $
 
 /**
  * @file
@@ -1789,10 +1789,28 @@ function user_menu_site_status_alter(&$menu_site_status, $path) {
  * Implements hook_menu_link_alter().
  */
 function user_menu_link_alter(&$link) {
+  // The path 'user' must be accessible for anonymous users, but only visible
+  // for authenticated users. Authenticated users should see "My account", but
+  // anonymous users should not see it at all. Therefore, invoke
+  // user_translated_menu_link_alter() to conditionally hide the link.
+  if ($link['link_path'] == 'user' && $link['module'] == 'system') {
+    $link['options']['alter'] = TRUE;
+  }
+
   // Force the Logout link to appear on the top-level of 'user-menu' menu by
   // default (i.e., unless it has been customized).
   if ($link['link_path'] == 'user/logout' && $link['module'] == 'system' && empty($link['customized'])) {
     $link['plid'] = 0;
+  }
+}
+
+/**
+ * Implements hook_translated_menu_link_alter().
+ */
+function user_translated_menu_link_alter(&$link) {
+  // Hide the "User account" link for anonymous users.
+  if ($link['link_path'] == 'user' && $link['module'] == 'system' && user_is_anonymous()) {
+    $link['hidden'] = 1;
   }
 }
 
@@ -1806,6 +1824,17 @@ function user_admin_paths() {
     'user/*/edit/*' => TRUE,
   );
   return $paths;
+}
+
+/**
+ * Returns $arg or the user ID of the current user if $arg is '%' or empty.
+ *
+ * Deprecated. Use %user_uid_optional instead.
+ *
+ * @todo D8: Remove.
+ */
+function user_uid_only_optional_to_arg($arg) {
+  return user_uid_optional_to_arg($arg);
 }
 
 /**
@@ -2423,7 +2452,8 @@ function user_view($account, $view_mode = 'full', $langcode = NULL) {
   );
 
   // Allow modules to modify the structured user.
-  drupal_alter('user_view', $build);
+  $type = 'user';
+  drupal_alter(array('user_view', 'entity_view'), $build, $type);
 
   return $build;
 }
@@ -2454,6 +2484,7 @@ function user_build_content($account, $view_mode = 'full', $langcode = NULL) {
 
   // Populate $account->content with a render() array.
   module_invoke_all('user_view', $account, $view_mode, $langcode);
+  module_invoke_all('entity_view', $account, 'user', $view_mode, $langcode);
 }
 
 /**
@@ -2832,19 +2863,23 @@ function user_permission_get_modules() {
  *
  * This function may be used to grant and revoke multiple permissions at once.
  * For example, when a form exposes checkboxes to configure permissions for a
- * role, the submitted values may be directly passed on in a form submit
- * handler.
+ * role, the form submit handler may directly pass the submitted values for the
+ * checkboxes form element to this function.
  *
  * @param $rid
  *   The ID of a user role to alter.
  * @param $permissions
- *   An array of permissions, where the key holds the permission name and the
- *   value is an integer or boolean that determines whether to grant or revoke
- *   the permission:
+ *   An associative array, where the key holds the permission name and the value
+ *   determines whether to grant or revoke that permission. Any value that
+ *   evaluates to TRUE will cause the permission to be granted. Any value that
+ *   evaluates to FALSE will cause the permission to be revoked.
  *   @code
  *     array(
- *       'administer nodes' => 0,
- *       'access user profiles' => 1,
+ *       'administer nodes' => 0,                // Revoke 'administer nodes'
+ *       'administer blocks' => FALSE,           // Revoke 'administer blocks'
+ *       'access user profiles' => 1,            // Grant 'access user profiles'
+ *       'access content' => TRUE,               // Grant 'access content'
+ *       'access comments' => 'access comments', // Grant 'access comments'
  *     )
  *   @endcode
  *   Existing permissions are not changed, unless specified in $permissions.
@@ -3685,5 +3720,29 @@ function user_rdf_mapping() {
 function user_file_download_access($field, $entity_type, $entity) {
   if ($entity_type == 'user') {
     return user_view_access($entity);
+  }
+}
+
+/**
+ * Implements hook_system_info_alter().
+ *
+ * Drupal 7 ships with two methods to add additional fields to users: Profile
+ * module, a legacy module dating back from 2002, and Field API integration
+ * with users. While Field API support for users currently provides less end
+ * user features, the inefficient data storage mechanism of Profile module, as
+ * well as its lack of consistency with the rest of the entity / field based
+ * systems in Drupal 7, make this a sub-optimal solution to those who were not
+ * using it in previous releases of Drupal.
+ *
+ * To prevent new Drupal 7 sites from installing Profile module, and
+ * unwittingly ending up with two completely different and incompatible methods
+ * of extending users, remove it from the available modules by setting it to
+ * hidden if the profile_* tables are not already present.
+ *
+ * @todo: Remove in D8, pending upgrade path.
+ */
+function user_system_info_alter(&$info, $file, $type) {
+  if ($type == 'module' && $file->name == 'profile' && !db_table_exists('profile_field')) {
+    $info['hidden'] = TRUE;
   }
 }

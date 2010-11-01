@@ -1,5 +1,5 @@
 <?php
-// $Id: filter.module,v 1.353 2010/10/13 02:10:50 dries Exp $
+// $Id: filter.module,v 1.358 2010/10/31 13:08:29 dries Exp $
 
 /**
  * @file
@@ -153,7 +153,11 @@ function _filter_disable_format_access($format) {
  *   The format ID.
  *
  * @return
- *   A fully-populated text format object.
+ *   A fully-populated text format object, if the requested format exists and
+ *   is enabled. If the format does not exist, or exists in the database but
+ *   has been marked as disabled, FALSE is returned.
+ *
+ * @see filter_format_exists()
  */
 function filter_format_load($format_id) {
   $formats = filter_formats();
@@ -165,9 +169,10 @@ function filter_format_load($format_id) {
  *
  * @param $format
  *   A format object using the properties:
+ *   - 'format': A machine-readable name representing the ID of the text format
+ *     to save. If this corresponds to an existing text format, that format
+ *     will be updated; otherwise, a new format will be created.
  *   - 'name': The title of the text format.
- *   - 'format': (optional) The internal ID of the text format. If omitted, a
- *     new text format is created.
  *   - 'weight': (optional) The weight of the text format, which controls its
  *     placement in text format lists. If omitted, the weight is set to 0.
  *   - 'filters': (optional) An associative, multi-dimensional array of filters
@@ -182,23 +187,31 @@ function filter_format_load($format_id) {
  *     - 'settings': (optional) An array of configured settings for the filter.
  *       See hook_filter_info() for details.
  */
-function filter_format_save(&$format) {
+function filter_format_save($format) {
   $format->name = trim($format->name);
   $format->cache = _filter_format_is_cacheable($format);
-  $format->status = 1;
+  if (!isset($format->status)) {
+    $format->status = 1;
+  }
+  if (!isset($format->weight)) {
+    $format->weight = 0;
+  }
+
+  // Insert or update the text format.
+  $return = db_merge('filter_format')
+    ->key(array('format' => $format->format))
+    ->fields(array(
+      'name' => $format->name,
+      'cache' => (int) $format->cache,
+      'status' => (int) $format->status,
+      'weight' => (int) $format->weight,
+    ))
+    ->execute();
+
   // Programmatic saves may not contain any filters.
   if (!isset($format->filters)) {
     $format->filters = array();
   }
-
-  // Add a new text format.
-  if (empty($format->format)) {
-    $return = drupal_write_record('filter_format', $format);
-  }
-  else {
-    $return = drupal_write_record('filter_format', $format, 'format');
-  }
-
   $filter_info = filter_get_filters();
   foreach ($filter_info as $name => $filter) {
     // Add new filters without weight to the bottom.
@@ -241,8 +254,8 @@ function filter_format_save(&$format) {
     module_invoke_all('filter_format_update', $format);
     // Explicitly indicate that the format was updated. We need to do this
     // since if the filters were updated but the format object itself was not,
-    // the call to drupal_write_record() above would not return an indication
-    // that anything had changed.
+    // the merge query above would not return an indication that anything had
+    // changed.
     $return = SAVED_UPDATED;
 
     // Clear the filter cache whenever a text format is updated.
@@ -258,9 +271,9 @@ function filter_format_save(&$format) {
  * Disable a text format.
  *
  * There is no core facility to re-enable a disabled format. It is not deleted
- * to keep information for contrib and to make sure the format auto increment
- * id is never reused. As there might be content using the disabled format,
- * this would lead to data corruption.
+ * to keep information for contrib and to make sure the format ID is never
+ * reused. As there might be content using the disabled format, this would lead
+ * to data corruption.
  *
  * @param $format
  *   The text format object to be disabled.
@@ -277,6 +290,23 @@ function filter_format_disable($format) {
   // Clear the filter cache whenever a text format is disabled.
   filter_formats_reset();
   cache_clear_all($format->format . ':', 'cache_filter', TRUE);
+}
+
+/**
+ * Determines if a text format exists.
+ *
+ * @param $format_id
+ *   The ID of the text format to check.
+ *
+ * @return
+ *   TRUE if the text format exists, FALSE otherwise. Note that for disabled
+ *   formats filter_format_exists() will return TRUE while filter_format_load()
+ *   will return FALSE.
+ *
+ * @see filter_format_load()
+ */
+function filter_format_exists($format_id) {
+  return (bool) db_query_range('SELECT 1 FROM {filter_format} WHERE format = :format', 0, 1, array(':format' => $format_id))->fetchField();
 }
 
 /**
@@ -326,15 +356,6 @@ function filter_permission_name($format) {
     return 'use text format ' . $format->format;
   }
   return FALSE;
-}
-
-/**
- * Implements hook_cron().
- *
- * Expire outdated filter cache entries
- */
-function filter_cron() {
-  cache_clear_all(NULL, 'cache_filter');
 }
 
 /**
@@ -517,7 +538,7 @@ function filter_default_format($account = NULL) {
 function filter_fallback_format() {
   // This variable is automatically set in the database for all installations
   // of Drupal. In the event that it gets disabled or deleted somehow, there
-  // is no safe default to return, since we do not want to risk making an 
+  // is no safe default to return, since we do not want to risk making an
   // existing (and potentially unsafe) text format on the site automatically
   // available to all users. Returning NULL at least guarantees that this
   // cannot happen.
@@ -1016,8 +1037,9 @@ function _filter_tips($format_id, $long = FALSE) {
  *   A DOMDocument that represents the loaded (X)HTML snippet.
  */
 function filter_dom_load($text) {
+  $dom_document = new DOMDocument();
   // Ignore warnings during HTML soup loading.
-  $dom_document = @DOMDocument::loadHTML('<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /></head><body>' . $text . '</body></html>');
+  @$dom_document->loadHTML('<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /></head><body>' . $text . '</body></html>');
 
   return $dom_document;
 }
@@ -1271,14 +1293,12 @@ function _filter_html_tips($filter, $format, $long = FALSE) {
   $header = array(t('Tag Description'), t('You Type'), t('You Get'));
   preg_match_all('/<([a-z0-9]+)[^a-z0-9]/i', $allowed_html, $out);
   foreach ($out[1] as $tag) {
-    if (array_key_exists($tag, $tips)) {
-      if ($tips[$tag]) {
-        $rows[] = array(
-          array('data' => $tips[$tag][0], 'class' => array('description')),
-          array('data' => '<code>' . check_plain($tips[$tag][1]) . '</code>', 'class' => array('type')),
-          array('data' => $tips[$tag][1], 'class' => array('get'))
-        );
-      }
+    if (!empty($tips[$tag])) {
+      $rows[] = array(
+        array('data' => $tips[$tag][0], 'class' => array('description')),
+        array('data' => '<code>' . check_plain($tips[$tag][1]) . '</code>', 'class' => array('type')),
+        array('data' => $tips[$tag][1], 'class' => array('get'))
+      );
     }
     else {
       $rows[] = array(
