@@ -1,5 +1,5 @@
 <?php
-// $Id: field.api.php,v 1.93 2010/10/31 12:11:59 dries Exp $
+// $Id: field.api.php,v 1.96 2010/11/18 05:37:47 dries Exp $
 
 /**
  * @ingroup field_fieldable_type
@@ -227,11 +227,14 @@ function hook_field_info_alter(&$info) {
  *     settings when possible. No assumptions should be made on how storage
  *     engines internally use the original column name to structure their
  *     storage.
- *   - indexes: An array of Schema API indexes definitions. Only columns that
- *     appear in the 'columns' array are allowed. Those indexes will be used as
- *     default indexes. Callers of field_create_field() can specify additional
- *     indexes, or, at their own risk, modify the default indexes specified by
- *     the field-type module. Some storage engines might not support indexes.
+ *   - indexes: (optional) An array of Schema API indexes definitions. Only
+ *     columns that appear in the 'columns' array are allowed. Those indexes
+ *     will be used as default indexes. Callers of field_create_field() can
+ *     specify additional indexes, or, at their own risk, modify the default
+ *     indexes specified by the field-type module. Some storage engines might
+ *     not support indexes.
+ *   - foreign keys: (optional) An array of Schema API foreign keys
+ *     definitions.
  */
 function hook_field_schema($field) {
   if ($field['type'] == 'text_long') {
@@ -263,6 +266,12 @@ function hook_field_schema($field) {
     'columns' => $columns,
     'indexes' => array(
       'format' => array('format'),
+    ),
+    'foreign keys' => array(
+      'format' => array(
+        'table' => 'filter_format',
+        'columns' => array('format' => 'format'),
+      ),
     ),
   );
 }
@@ -764,7 +773,7 @@ function hook_field_widget_info_alter(&$info) {
  * definitions returned by field_info_field() and field_info_instance().
  * Examples: mono-value widget even if the field is multi-valued, non-required
  * widget even if the field is 'required'...
-
+ *
  * Therefore, the FAPI element callbacks (such as #process, #element_validate,
  * #value_callback...) used by the widget cannot use the field_info_field()
  * or field_info_instance() functions to retrieve the $field or $instance
@@ -2239,7 +2248,7 @@ function hook_field_widget_properties_alter(&$widget, $context) {
  *   An associative array containing:
  *   - entity_type: The entity type; e.g. 'node' or 'user'.
  *   - entity: The entity object.
-     - field: The field that the widget belongs to.
+ *   - field: The field that the widget belongs to.
  *   - instance: The instance of the field.
  *
  * @see hook_field_widget_properties_alter()

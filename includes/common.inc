@@ -1,5 +1,5 @@
 <?php
-// $Id: common.inc,v 1.1247 2010/10/28 02:00:27 dries Exp $
+// $Id: common.inc,v 1.1255 2010/11/17 04:15:37 dries Exp $
 
 /**
  * @file
@@ -2210,9 +2210,7 @@ function drupal_http_header_attributes(array $attributes = array()) {
  */
 function drupal_attributes(array $attributes = array()) {
   foreach ($attributes as $attribute => &$data) {
-    if (is_array($data)) {
-      $data = implode(' ', $data);
-    }
+    $data = implode(' ', (array) $data);
     $data = $attribute . '="' . check_plain($data) . '"';
   }
   return $attributes ? ' ' . implode(' ', $attributes) : '';
@@ -3329,10 +3327,19 @@ function drupal_build_css_cache($css) {
       // Only 'file' stylesheets can be aggregated.
       if ($stylesheet['type'] == 'file') {
         $contents = drupal_load_stylesheet($stylesheet['data'], TRUE);
-        // Return the path to where this CSS file originated from.
-        $base = base_path() . dirname($stylesheet['data']) . '/';
-        _drupal_build_css_path(NULL, $base);
-        // Prefix all paths within this CSS file, ignoring external and absolute paths.
+
+        // Build the base URL of this CSS file: start with the full URL.
+        $css_base_url = file_create_url($stylesheet['data']);
+        // Move to the parent.
+        $css_base_url = substr($css_base_url, 0, strrpos($css_base_url, '/'));
+        // Simplify to a relative URL if the stylesheet URL starts with the
+        // base URL of the website.
+        if (substr($css_base_url, 0, strlen($GLOBALS['base_root'])) == $GLOBALS['base_root']) {
+          $css_base_url = substr($css_base_url, strlen($GLOBALS['base_root']));
+        }
+
+        _drupal_build_css_path(NULL, $css_base_url . '/');
+        // Anchor all paths in the CSS with its base URL, ignoring external and absolute paths.
         $data .= preg_replace_callback('/url\(\s*[\'"]?(?![a-z]+:|\/+)([^\'")]+)[\'"]?\s*\)/i', '_drupal_build_css_path', $contents);
       }
     }
@@ -3408,34 +3415,40 @@ function _drupal_build_css_path($matches, $base = NULL) {
  *   Name of the stylesheet to be processed.
  * @param $optimize
  *   Defines if CSS contents should be compressed or not.
+ * @param $reset_basepath
+ *   Used internally to facilitate recursive resolution of @import commands.
+ *
  * @return
  *   Contents of the stylesheet, including any resolved @import commands.
  */
-function drupal_load_stylesheet($file, $optimize = NULL) {
-  // $_optimize does not use drupal_static as it is set by $optimize.
-  static $_optimize;
-  // Store optimization parameter for preg_replace_callback with nested @import loops.
+function drupal_load_stylesheet($file, $optimize = NULL, $reset_basepath = TRUE) {
+  // These statics are not cache variables, so we don't use drupal_static().
+  static $_optimize, $basepath;
+  if ($reset_basepath) {
+    $basepath = '';
+  }
+  // Store the value of $optimize for preg_replace_callback with nested
+  // @import loops.
   if (isset($optimize)) {
     $_optimize = $optimize;
   }
 
-  $contents = '';
-  if (file_exists($file)) {
-    // Load the local CSS stylesheet.
-    $contents = file_get_contents($file);
+  // Stylesheets are relative one to each other. Start by adding a base path
+  // prefix provided by the parent stylesheet (if necessary).
+  if ($basepath && !file_uri_scheme($file)) {
+    $file = $basepath . '/' . $file;
+  }
+  $basepath = dirname($file);
 
-    // Change to the current stylesheet's directory.
-    $cwd = getcwd();
-    chdir(dirname($file));
-
-    // Process the stylesheet.
-    $contents = drupal_load_stylesheet_content($contents, $_optimize);
-
-    // Change back directory.
-    chdir($cwd);
+  // Load the CSS stylesheet. We suppress errors because themes may specify
+  // stylesheets in their .info file that don't exist in the theme's path,
+  // but are merely there to disable certain module CSS files.
+  if ($contents = @file_get_contents($file)) {
+    // Return the processed stylesheet.
+    return drupal_load_stylesheet_content($contents, $_optimize);
   }
 
-  return $contents;
+  return '';
 }
 
 /**
@@ -3490,6 +3503,7 @@ function drupal_load_stylesheet_content($contents, $optimize = FALSE) {
       $contents
     );
     // End the file with a new line.
+    $contents = trim($contents);
     $contents .= "\n";
   }
 
@@ -3508,7 +3522,7 @@ function drupal_load_stylesheet_content($contents, $optimize = FALSE) {
 function _drupal_load_stylesheet($matches) {
   $filename = $matches[1];
   // Load the imported stylesheet and replace @import commands in there as well.
-  $file = drupal_load_stylesheet($filename);
+  $file = drupal_load_stylesheet($filename, NULL, FALSE);
 
   // Determine the file's directory.
   $directory = dirname($filename);
@@ -5243,6 +5257,97 @@ function drupal_pre_render_link($element) {
 }
 
 /**
+ * #pre_render callback that collects child links into a single array.
+ *
+ * This function can be added as a pre_render callback for a renderable array,
+ * usually one which will be themed by theme_links(). It iterates through all
+ * unrendered children of the element, collects any #links properties it finds,
+ * merges them into the parent element's #links array, and prevents those
+ * children from being rendered separately.
+ *
+ * The purpose of this is to allow links to be logically grouped into related
+ * categories, so that each child group can be rendered as its own list of
+ * links if drupal_render() is called on it, but calling drupal_render() on the
+ * parent element will still produce a single list containing all the remaining
+ * links, regardless of what group they were in.
+ *
+ * A typical example comes from node links, which are stored in a renderable
+ * array similar to this:
+ * @code
+ * $node->content['links'] = array(
+ *   '#theme' => 'links__node',
+ *   '#pre_render' = array('drupal_pre_render_links'),
+ *   'comment' => array(
+ *     '#theme' => 'links__node__comment',
+ *     '#links' => array(
+ *       // An array of links associated with node comments, suitable for
+ *       // passing in to theme_links().
+ *     ),
+ *   ),
+ *   'statistics' => array(
+ *     '#theme' => 'links__node__statistics',
+ *     '#links' => array(
+ *       // An array of links associated with node statistics, suitable for
+ *       // passing in to theme_links().
+ *     ),
+ *   ),
+ *   'translation' => array(
+ *     '#theme' => 'links__node__translation',
+ *     '#links' => array(
+ *       // An array of links associated with node translation, suitable for
+ *       // passing in to theme_links().
+ *     ),
+ *   ),
+ * );
+ * @endcode
+ *
+ * In this example, the links are grouped by functionality, which can be
+ * helpful to themers who want to display certain kinds of links independently.
+ * For example, adding this code to node.tpl.php will result in the comment
+ * links being rendered as a single list:
+ * @code
+ * print render($content['links']['comment']);
+ * @endcode
+ *
+ * (where $node->content has been transformed into $content before handing
+ * control to the node.tpl.php template).
+ *
+ * The pre_render function defined here allows the above flexibility, but also
+ * allows the following code to be used to render all remaining links into a
+ * single list, regardless of their group:
+ * @code
+ * print render($content['links']);
+ * @endcode
+ *
+ * In the above example, this will result in the statistics and translation
+ * links being rendered together in a single list (but not the comment links,
+ * which were rendered previously on their own).
+ *
+ * Because of the way this function works, the individual properties of each
+ * group (for example, a group-specific #theme property such as
+ * 'links__node__comment' in the example above, or any other property such as
+ * #attributes or #pre_render that is attached to it) are only used when that
+ * group is rendered on its own. When the group is rendered together with other
+ * children, these child-specific properties are ignored, and only the overall
+ * properties of the parent are used.
+ */
+function drupal_pre_render_links($element) {
+  $element += array('#links' => array());
+  foreach (element_children($element) as $key) {
+    $child = &$element[$key];
+    // If the child has links which have not been printed yet and the user has
+    // access to it, merge its links in to the parent.
+    if (isset($child['#links']) && empty($child['#printed']) && (!isset($child['#access']) || $child['#access'])) {
+      $element['#links'] += $child['#links'];
+      // Mark the child as having been printed already (so that its links
+      // cannot be mistakenly rendered twice).
+      $child['#printed'] = TRUE;
+    }
+  }
+  return $element;
+}
+
+/**
  * #pre_render callback to append contents in #markup to #children.
  *
  * This needs to be a #pre_render callback, because eventually assigned
@@ -5756,6 +5861,9 @@ function element_sort_by_title($a, $b) {
 
 /**
  * Retrieve the default properties for the defined element type.
+ *
+ * @param $type
+ *   An element type as defined by hook_element_info().
  */
 function element_info($type) {
   // Use the advanced drupal_static() pattern, since this is called very often.
@@ -5778,6 +5886,21 @@ function element_info($type) {
 }
 
 /**
+ * Retrieve a single property for the defined element type.
+ *
+ * @param $type
+ *   An element type as defined by hook_element_info().
+ * @param $property_name
+ *   The property within the element type that should be returned.
+ * @param $default
+ *   (Optional) The value to return if the element type does not specify a
+ *   value for the property. Defaults to NULL.
+ */
+function element_info_property($type, $property_name, $default = NULL) {
+  return (($info = element_info($type)) && array_key_exists($property_name, $info)) ? $info[$property_name] : $default;
+}
+
+/**
  * Function used by uasort to sort structured arrays by weight, without the property weight prefix.
  */
 function drupal_sort_weight($a, $b) {
@@ -5787,6 +5910,19 @@ function drupal_sort_weight($a, $b) {
     return 0;
   }
   return ($a_weight < $b_weight) ? -1 : 1;
+}
+
+/**
+ * Array sorting callback; sorts elements by 'title' key.
+ */
+function drupal_sort_title($a, $b) {
+  if (!isset($b['title'])) {
+    return -1;
+  }
+  if (!isset($a['title'])) {
+    return 1;
+  }
+  return strcasecmp($a['title'], $b['title']);
 }
 
 /**
@@ -5958,14 +6094,22 @@ function element_set_attributes(array &$element, array $map) {
  *   An array of parent keys, starting with the outermost key.
  * @param $value
  *   The value to set.
+ * @param $force
+ *   (Optional) If TRUE, the value is forced into the structure even if it
+ *   requires the deletion of an already existing non-array parent value. If
+ *   FALSE, PHP throws an error if trying to add into a value that is not an
+ *   array. Defaults to FALSE.
  *
  * @see drupal_array_get_nested_value()
  */
-function drupal_array_set_nested_value(array &$array, array $parents, $value) {
+function drupal_array_set_nested_value(array &$array, array $parents, $value, $force = FALSE) {
   $ref = &$array;
   foreach ($parents as $parent) {
-    // Note that PHP is fine with referencing a not existing array key - in this
-    // case it just creates an entry with NULL as value.
+    // PHP auto-creates container arrays and NULL entries without error if $ref
+    // is NULL, but throws an error if $ref is set, but not an array.
+    if ($force && isset($ref) && !is_array($ref)) {
+      $ref = array();
+    }
     $ref = &$ref[$parent];
   }
   $ref = $value;
@@ -6029,10 +6173,7 @@ function drupal_array_set_nested_value(array &$array, array $parents, $value) {
 function drupal_array_get_nested_value(array &$array, array $parents, &$key_exists = NULL) {
   $ref = &$array;
   foreach ($parents as $parent) {
-    // array_key_exists() is slower than isset() and triggers notices if the
-    // second argument is not an array, so only call it when absolutely
-    // necessary.
-    if (isset($ref[$parent]) || (is_array($ref) && array_key_exists($parent, $ref))) {
+    if (is_array($ref) && array_key_exists($parent, $ref)) {
       $ref = &$ref[$parent];
     }
     else {
@@ -6618,7 +6759,7 @@ function drupal_write_record($table, &$record, $primary_keys = array()) {
  * - name: The real name of the theme for display purposes
  * - description: Brief description
  * - screenshot: Path to screenshot relative to the theme's .info file.
- * - engine: Theme engine, typically: engine = phptemplate
+ * - engine: Theme engine; typically phptemplate.
  * - base: Name of a base theme, if applicable, eg: base = zen
  * - regions: Listed regions eg: region[left] = Left sidebar
  * - features: Features available eg: features[] = logo

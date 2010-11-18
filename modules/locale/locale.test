@@ -1,5 +1,5 @@
 <?php
-// $Id: locale.test,v 1.83 2010/10/26 15:24:50 dries Exp $
+// $Id: locale.test,v 1.85 2010/11/14 19:53:21 webchick Exp $
 
 /**
  * @file
@@ -612,7 +612,7 @@ class LocaleImportFunctionalTest extends DrupalWebTestCase {
     $this->assertRaw(t('The language %language has been created.', array('%language' => 'French')), t('The language has been automatically created.'));
 
     // The import should have created 7 strings.
-    $this->assertRaw(t('The translation was successfully imported. There are %number newly created translated strings, %update strings were updated and %delete strings were removed.', array('%number' => 7, '%update' => 0, '%delete' => 0)), t('The translation file was successfully imported.'));
+    $this->assertRaw(t('The translation was successfully imported. There are %number newly created translated strings, %update strings were updated and %delete strings were removed.', array('%number' => 9, '%update' => 0, '%delete' => 0)), t('The translation file was successfully imported.'));
 
     // This import should have saved plural forms to have 2 variants.
     $this->assert(db_query("SELECT plurals FROM {languages} WHERE language = 'fr'")->fetchField() == 2, t('Plural number initialized.'));
@@ -814,6 +814,11 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\\n"
 "Content-Transfer-Encoding: 8bit\\n"
 "Plural-Forms: nplurals=2; plural=(n > 1);\\n"
+
+msgid "One sheep"
+msgid_plural "@count sheep"
+msgstr[0] "un mouton"
+msgstr[1] "@count moutons"
 
 msgid "Monday"
 msgstr "lundi"
@@ -1730,15 +1735,14 @@ class LocaleUILanguageNegotiationTest extends DrupalWebTestCase {
     parent::setUp('locale', 'locale_test');
     require_once DRUPAL_ROOT . '/includes/language.inc';
     drupal_load('module', 'locale');
+    $admin_user = $this->drupalCreateUser(array('administer languages', 'translate interface', 'access administration pages', 'administer blocks'));
+    $this->drupalLogin($admin_user);
   }
 
   /**
    * Tests for language switching by URL path.
    */
   function testUILanguageNegotiation() {
-    $admin_user = $this->drupalCreateUser(array('administer languages', 'translate interface', 'access administration pages'));
-    $this->drupalLogin($admin_user);
-
     // A few languages to switch to.
     // This one is unknown, should get the default lang version.
     $language_unknown = 'blah-blah';
@@ -1891,6 +1895,50 @@ class LocaleUILanguageNegotiationTest extends DrupalWebTestCase {
     }
     $this->drupalGet($test['path'], array(), $test['http_header']);
     $this->assertText($test['expect'], $test['message']);
+  }
+
+  /**
+   * Test URL language detection when the requested URL has no language.
+   */
+  function testUrlLanguageFallback() {
+    // Add the Italian language.
+    $language_browser_fallback = 'it';
+    locale_add_language($language_browser_fallback);
+    $languages = language_list();
+
+    // Enable the path prefix for the default language: this way any unprefixed
+    // URL must have a valid fallback value.
+    $edit = array('prefix' => 'en');
+    $this->drupalPost('admin/config/regional/language/edit/en', $edit, t('Save language'));
+
+    // Enable browser and URL language detection.
+    $edit = array(
+      'language[enabled][locale-browser]' => TRUE,
+      'language[enabled][locale-url]' => TRUE,
+      'language[weight][locale-browser]' => -8,
+      'language[weight][locale-url]' => -10,
+    );
+    $this->drupalPost('admin/config/regional/language/configure', $edit, t('Save settings'));
+    $this->drupalGet('admin/config/regional/language/configure');
+
+    // Enable the language switcher block.
+    $edit = array('blocks[locale_language][region]' => 'sidebar_first');
+    $this->drupalPost('admin/structure/block', $edit, t('Save blocks'));
+
+    // Access the front page without specifying any valid URL language prefix
+    // and having as browser language preference a non-default language.
+    $http_header = array("Accept-Language: $language_browser_fallback;q=1");
+    $this->drupalGet('', array(), $http_header);
+
+    // Check that the language switcher active link matches the given browser
+    // language.
+    $args = array(':url' => base_path() . (!empty($GLOBALS['conf']['clean_url']) ? $language_browser_fallback : "?q=$language_browser_fallback"));
+    $fields = $this->xpath('//div[@id="block-locale-language"]//a[@class="language-link active" and @href=:url]', $args);
+    $this->assertTrue($fields[0] == $languages[$language_browser_fallback]->native, t('The browser language is the URL active language'));
+
+    // Check that URLs are rewritten using the given browser language.
+    $fields = $this->xpath('//div[@id="site-name"]//a[@rel="home" and @href=:url]//span', $args);
+    $this->assertTrue($fields[0] == 'Drupal', t('URLs are rewritten using the browser language.'));
   }
 }
 
@@ -2163,4 +2211,3 @@ class LocaleDateFormatsFunctionalTest extends DrupalWebTestCase {
     $this->assertText($french_date, t('French date format appears'));
   }
 }
-

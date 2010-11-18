@@ -1,5 +1,5 @@
 <?php
-// $Id: node.module,v 1.1315 2010/10/31 12:45:27 dries Exp $
+// $Id: node.module,v 1.1319 2010/11/14 21:04:45 webchick Exp $
 
 /**
  * @file
@@ -1123,7 +1123,7 @@ function node_save($node) {
     db_ignore_slave();
   }
   catch (Exception $e) {
-    $transaction->rollback('node');
+    $transaction->rollback();
     watchdog_exception('node', $e);
     throw $e;
   }
@@ -1164,41 +1164,48 @@ function node_delete($nid) {
  *   An array of node IDs.
  */
 function node_delete_multiple($nids) {
+  $transaction = db_transaction();
   if (!empty($nids)) {
     $nodes = node_load_multiple($nids, array());
 
-    foreach ($nodes as $nid => $node) {
-      // Call the node-specific callback (if any):
-      node_invoke($node, 'delete');
-      module_invoke_all('node_delete', $node);
-      module_invoke_all('entity_delete', $node, 'node');
-      field_attach_delete('node', $node);
+    try {
+      foreach ($nodes as $nid => $node) {
+        // Call the node-specific callback (if any):
+        node_invoke($node, 'delete');
+        module_invoke_all('node_delete', $node);
+        module_invoke_all('entity_delete', $node, 'node');
+        field_attach_delete('node', $node);
 
-      // Remove this node from the search index if needed.
-      // This code is implemented in node module rather than in search module,
-      // because node module is implementing search module's API, not the other
-      // way around.
-      if (module_exists('search')) {
-        search_reindex($nid, 'node');
+        // Remove this node from the search index if needed.
+        // This code is implemented in node module rather than in search module,
+        // because node module is implementing search module's API, not the other
+        // way around.
+        if (module_exists('search')) {
+          search_reindex($nid, 'node');
+        }
       }
+
+      // Delete after calling hooks so that they can query node tables as needed.
+      db_delete('node')
+        ->condition('nid', $nids, 'IN')
+        ->execute();
+      db_delete('node_revision')
+        ->condition('nid', $nids, 'IN')
+        ->execute();
+      db_delete('history')
+        ->condition('nid', $nids, 'IN')
+        ->execute();
+      db_delete('node_access')
+       ->condition('nid', $nids, 'IN')
+       ->execute();
+    }
+    catch (Exception $e) {
+      $transaction->rollback();
+      watchdog_exception('node', $e);
+      throw $e;
     }
 
-    // Delete after calling hooks so that they can query node tables as needed.
-    db_delete('node')
-      ->condition('nid', $nids, 'IN')
-      ->execute();
-    db_delete('node_revision')
-      ->condition('nid', $nids, 'IN')
-      ->execute();
-    db_delete('history')
-      ->condition('nid', $nids, 'IN')
-      ->execute();
-    db_delete('node_access')
-      ->condition('nid', $nids, 'IN')
-      ->execute();
-
     // Clear the page and block and node_load_multiple caches.
-    cache_clear_all();
     entity_get_controller('node')->resetCache();
   }
 }
@@ -1329,6 +1336,11 @@ function node_build_content($node, $view_mode = 'full', $langcode = NULL) {
   // Always display a read more link on teasers because we have no way
   // to know when a teaser view is different than a full view.
   $links = array();
+  $node->content['links'] = array(
+    '#theme' => 'links__node',
+    '#pre_render' => array('drupal_pre_render_links'),
+    '#attributes' => array('class' => array('links', 'inline')),
+  );
   if ($view_mode == 'teaser') {
     $links['node-readmore'] = array(
       'title' => t('Read more'),
@@ -1336,8 +1348,8 @@ function node_build_content($node, $view_mode = 'full', $langcode = NULL) {
       'attributes' => array('rel' => 'tag', 'title' => strip_tags($node->title))
     );
   }
-  $node->content['links'] = array(
-    '#theme' => 'links__node',
+  $node->content['links']['node'] = array(
+    '#theme' => 'links__node__node',
     '#links' => $links,
     '#attributes' => array('class' => array('links', 'inline')),
   );
@@ -2075,6 +2087,7 @@ function node_block_info() {
   $blocks['syndicate']['cache'] = DRUPAL_NO_CACHE;
 
   $blocks['recent']['info'] = t('Recent content');
+  $blocks['recent']['properties']['administrative'] = TRUE;
 
   return $blocks;
 }
@@ -3004,13 +3017,30 @@ function node_access_grants($op, $account = NULL) {
 }
 
 /**
- * Determine whether the user has a global viewing grant for all nodes.
+ * Determines whether the user has a global viewing grant for all nodes.
+ *
+ * Checks to see whether any module grants 'view' for nid = 0. The node module
+ * provides this record if no node access modules are enabled. Other modules
+ * can replicate this behavior by providing their own conditional grant for
+ * nid = 0. For example, hook_node_grants() can return the following array to
+ * give the 'view' privilege to all nodes:
+ * @code
+ * if ($op == 'view') {
+ *   $grants['example_realm'] = array(0);
+ * }
+ * @endcode
+ *
+ * @return
+ *   TRUE if 'view' access to all nodes is granted, FALSE otherwise.
+ *
+ * @see hook_node_grants()
+ * @see _node_query_node_access_alter()
  */
 function node_access_view_all_nodes() {
   $access = &drupal_static(__FUNCTION__);
 
   if (!isset($access)) {
-    // If no modules implement the node access system, access is always true.
+    // If no modules implement the node access system, access is always TRUE.
     if (!module_implements('node_grants')) {
       $access = TRUE;
     }
@@ -3096,6 +3126,10 @@ function _node_query_node_access_alter($query, $base_table, $type) {
     return;
   }
   if (!count(module_implements('node_grants'))) {
+    return;
+  }
+  // If viewing nodes, make sure access rules should be enforced.
+  if ($op == 'view' && node_access_view_all_nodes()) {
     return;
   }
 

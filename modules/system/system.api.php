@@ -1,5 +1,5 @@
 <?php
-// $Id: system.api.php,v 1.211 2010/10/28 02:27:09 dries Exp $
+// $Id: system.api.php,v 1.214 2010/11/15 08:29:03 webchick Exp $
 
 /**
  * @file
@@ -286,7 +286,7 @@ function hook_entity_load($entities, $type) {
 function hook_entity_insert($entity, $type) {
   // Insert the new entity into a fictional table of all entities.
   $info = entity_get_info($type);
-  $id = reset(entity_extract_ids($type, $entity));
+  list($id) = entity_extract_ids($type, $entity);
   db_insert('example_entity')
     ->fields(array(
       'type' => $type,
@@ -308,7 +308,7 @@ function hook_entity_insert($entity, $type) {
 function hook_entity_update($entity, $type) {
   // Update the entity's entry in a fictional table of all entities.
   $info = entity_get_info($type);
-  $id = reset(entity_extract_ids($type, $entity));
+  list($id) = entity_extract_ids($type, $entity);
   db_update('example_entity')
     ->fields(array(
       'updated' => REQUEST_TIME,
@@ -329,7 +329,7 @@ function hook_entity_update($entity, $type) {
 function hook_entity_delete($entity, $type) {
   // Delete the entity's entry from a fictional table of all entities.
   $info = entity_get_info($type);
-  $id = reset(entity_extract_ids($type, $entity));
+  list($id) = entity_extract_ids($type, $entity);
   db_delete('example_entity')
     ->condition('type', $type)
     ->condition('id', $id)
@@ -350,6 +350,13 @@ function hook_entity_delete($entity, $type) {
  *   engines. Also, the default implementation presumes entities are stored in
  *   SQL, but the execute callback could instead query any other entity storage,
  *   local or remote.
+ *
+ *   Note the $query->altered attribute which is TRUE in case the query has
+ *   already been altered once. This happens with cloned queries.
+ *   If there is a pager, then such a cloned query will be executed to count
+ *   all elements. This query can be detected by checking for
+ *   ($query->pager && $query->count), allowing the driver to return 0 from
+ *   the count query and disable the pager.
  */
 function hook_entity_query_alter($query) {
   $query->executeCallback = 'my_module_query_callback';
@@ -839,6 +846,38 @@ function hook_page_build(&$page) {
       '#markup' => t('Acme, Inc. is not responsible for the contents of this sample code.'),
       '#weight' => 25,
     );
+  }
+}
+
+/**
+ * Alter a menu router item right after it has been retrieved from the database or cache.
+ *
+ * This hook is invoked by menu_get_item() and allows for run-time alteration of router
+ * information (page_callback, title, and so on) before it is translated and checked for
+ * access. The passed in $router_item is statically cached for the current request, so this
+ * hook is only invoked once for any router item that is retrieved via menu_get_item().
+ *
+ * Usually, modules will only want to inspect the router item and conditionally
+ * perform other actions (such as preparing a state for the current request).
+ * Note that this hook is invoked for any router item that is retrieved by
+ * menu_get_item(), which may or may not be called on the path itself, so implementations
+ * should check the $path parameter if the alteration should fire for the current request
+ * only.
+ *
+ * @param $router_item
+ *   The menu router item for $path.
+ * @param $path
+ *   The originally passed path, for which $router_item is responsible.
+ * @param $original_map
+ *   The path argument map, as contained in $path.
+ *
+ * @see menu_get_item()
+ */
+function hook_menu_get_item_alter(&$router_item, $path, $original_map) {
+  // When retrieving the router item for the current path...
+  if ($path == $_GET['q']) {
+    // ...call a function that prepares something for this request.
+    mymodule_prepare_something();
   }
 }
 

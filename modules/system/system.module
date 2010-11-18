@@ -1,5 +1,5 @@
 <?php
-// $Id: system.module,v 1.986 2010/10/31 22:02:20 webchick Exp $
+// $Id: system.module,v 1.989 2010/11/15 17:47:50 webchick Exp $
 
 /**
  * @file
@@ -1080,7 +1080,7 @@ function system_library() {
   $libraries['jquery'] = array(
     'title' => 'jQuery',
     'website' => 'http://jquery.com',
-    'version' => '1.4.3',
+    'version' => '1.4.4',
     'js' => array(
       'misc/jquery.js' => array('group' => JS_LIBRARY, 'weight' => -20),
     ),
@@ -1100,7 +1100,7 @@ function system_library() {
   $libraries['form'] = array(
     'title' => 'jQuery Form Plugin',
     'website' => 'http://malsup.com/jquery/form/',
-    'version' => '2.36',
+    'version' => '2.49',
     'js' => array(
       'misc/jquery.form.js' => array(),
     ),
@@ -2410,6 +2410,7 @@ function _system_rebuild_theme_data() {
 
   // Set defaults for theme info.
   $defaults = array(
+    'engine' => 'phptemplate',
     'regions' => array(
       'sidebar_first' => 'Left sidebar',
       'sidebar_second' => 'Right sidebar',
@@ -2443,7 +2444,7 @@ function _system_rebuild_theme_data() {
     if (!empty($themes[$key]->info['base theme'])) {
       $sub_themes[] = $key;
     }
-    if (empty($themes[$key]->info['engine'])) {
+    if ($themes[$key]->info['engine'] == 'theme') {
       $filename = dirname($themes[$key]->uri) . '/' . $themes[$key]->name . '.theme';
       if (file_exists($filename)) {
         $themes[$key]->owner = $filename;

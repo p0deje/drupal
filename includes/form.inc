@@ -1,5 +1,5 @@
 <?php
-// $Id: form.inc,v 1.507 2010/10/28 02:20:14 dries Exp $
+// $Id: form.inc,v 1.511 2010/11/17 04:10:51 dries Exp $
 
 /**
  * @defgroup forms Form builder functions
@@ -1031,10 +1031,29 @@ function drupal_validate_form($form_id, &$form, &$form_state) {
         drupal_array_set_nested_value($values, $section, $value);
       }
     }
-    // For convenience we always make the value of the pressed button available.
+    // A button's #value does not require validation, so for convenience we
+    // allow the value of the clicked button to be retained in its normal
+    // $form_state['values'] locations, even if these locations are not included
+    // in #limit_validation_errors.
     if (isset($form_state['triggering_element']['#button_type'])) {
-      $values[$form_state['triggering_element']['#name']] = $form_state['triggering_element']['#value'];
-      drupal_array_set_nested_value($values, $form_state['triggering_element']['#parents'], $form_state['triggering_element']['#value']);
+      $button_value = $form_state['triggering_element']['#value'];
+
+      // Like all input controls, the button value may be in the location
+      // dictated by #parents. If it is, copy it to $values, but do not override
+      // what may already be in $values.
+      $parents = $form_state['triggering_element']['#parents'];
+      if (!drupal_array_nested_key_exists($values, $parents) && drupal_array_get_nested_value($form_state['values'], $parents) === $button_value) {
+        drupal_array_set_nested_value($values, $parents, $button_value);
+      }
+
+      // Additionally, form_builder() places the button value in
+      // $form_state['values'][BUTTON_NAME]. If it's still there, after
+      // validation handlers have run, copy it to $values, but do not override
+      // what may already be in $values.
+      $name = $form_state['triggering_element']['#name'];
+      if (!isset($values[$name]) && isset($form_state['values'][$name]) && $form_state['values'][$name] === $button_value) {
+        $values[$name] = $button_value;
+      }
     }
     $form_state['values'] = $values;
   }
@@ -1427,8 +1446,10 @@ function form_set_error($name = NULL, $message = '', $limit_validation_errors = 
         // reconstructed #parents begin with the same keys as the specified
         // section, then the element's values are within the part of
         // $form_state['values'] that the clicked button requires to be valid,
-        // so errors for this element must be recorded.
-        if (array_slice(explode('][', $name), 0, count($section)) === $section) {
+        // so errors for this element must be recorded. As the exploded array
+        // will all be strings, we need to cast every value of the section
+        // array to string.
+        if (array_slice(explode('][', $name), 0, count($section)) === array_map('strval', $section)) {
           $record = TRUE;
           break;
         }
@@ -2301,7 +2322,7 @@ function form_type_token_value($element, $input = FALSE) {
  *   Form state array where the value change should be recorded.
  */
 function form_set_value($element, $value, &$form_state) {
-  drupal_array_set_nested_value($form_state['values'], $element['#parents'], $value);
+  drupal_array_set_nested_value($form_state['values'], $element['#parents'], $value, TRUE);
 }
 
 /**
@@ -2786,22 +2807,28 @@ function weight_value(&$form) {
  */
 function form_process_radios($element) {
   if (count($element['#options']) > 0) {
+    $weight = 0;
     foreach ($element['#options'] as $key => $choice) {
-      if (!isset($element[$key])) {
-        // Generate the parents as the autogenerator does, so we will have a
-        // unique id for each radio button.
-        $parents_for_id = array_merge($element['#parents'], array($key));
-        $element[$key] = array(
-          '#type' => 'radio',
-          '#title' => $choice,
-          '#return_value' => check_plain($key),
-          '#default_value' => isset($element['#default_value']) ? $element['#default_value'] : NULL,
-          '#attributes' => $element['#attributes'],
-          '#parents' => $element['#parents'],
-          '#id' => drupal_html_id('edit-' . implode('-', $parents_for_id)),
-          '#ajax' => isset($element['#ajax']) ? $element['#ajax'] : NULL,
-        );
-      }
+      // Maintain order of options as defined in #options, in case the element
+      // defines custom option sub-elements, but does not define all option
+      // sub-elements.
+      $weight += 0.001;
+
+      $element += array($key => array());
+      // Generate the parents as the autogenerator does, so we will have a
+      // unique id for each radio button.
+      $parents_for_id = array_merge($element['#parents'], array($key));
+      $element[$key] += array(
+        '#type' => 'radio',
+        '#title' => $choice,
+        '#return_value' => check_plain($key),
+        '#default_value' => isset($element['#default_value']) ? $element['#default_value'] : NULL,
+        '#attributes' => $element['#attributes'],
+        '#parents' => $element['#parents'],
+        '#id' => drupal_html_id('edit-' . implode('-', $parents_for_id)),
+        '#ajax' => isset($element['#ajax']) ? $element['#ajax'] : NULL,
+        '#weight' => $weight,
+      );
     }
   }
   return $element;
@@ -2911,25 +2938,30 @@ function form_process_checkboxes($element) {
     if (!isset($element['#default_value']) || $element['#default_value'] == 0) {
       $element['#default_value'] = array();
     }
+    $weight = 0;
     foreach ($element['#options'] as $key => $choice) {
-      if (!isset($element[$key])) {
-        // Integer 0 is not a valid #return_value, so use '0' instead.
-        // @see form_type_checkbox_value().
-        // @todo For Drupal 8, cast all integer keys to strings for consistency
-        //   with form_process_radios().
-        if ($key === 0) {
-          $key = '0';
-        }
-        $element[$key] = array(
-          '#type' => 'checkbox',
-          '#processed' => TRUE,
-          '#title' => $choice,
-          '#return_value' => $key,
-          '#default_value' => isset($value[$key]) ? $key : NULL,
-          '#attributes' => $element['#attributes'],
-          '#ajax' => isset($element['#ajax']) ? $element['#ajax'] : NULL,
-        );
+      // Integer 0 is not a valid #return_value, so use '0' instead.
+      // @see form_type_checkbox_value().
+      // @todo For Drupal 8, cast all integer keys to strings for consistency
+      //   with form_process_radios().
+      if ($key === 0) {
+        $key = '0';
       }
+      // Maintain order of options as defined in #options, in case the element
+      // defines custom option sub-elements, but does not define all option
+      // sub-elements.
+      $weight += 0.001;
+
+      $element += array($key => array());
+      $element[$key] += array(
+        '#type' => 'checkbox',
+        '#title' => $choice,
+        '#return_value' => $key,
+        '#default_value' => isset($value[$key]) ? $key : NULL,
+        '#attributes' => $element['#attributes'],
+        '#ajax' => isset($element['#ajax']) ? $element['#ajax'] : NULL,
+        '#weight' => $weight,
+      );
     }
   }
   return $element;
