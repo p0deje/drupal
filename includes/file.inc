@@ -1,5 +1,5 @@
 <?php
-// $Id: file.inc,v 1.240 2010/11/18 16:22:30 webchick Exp $
+// $Id: file.inc,v 1.242 2010/11/30 19:31:46 dries Exp $
 
 /**
  * @file
@@ -519,15 +519,21 @@ function file_create_htaccess($directory, $private = TRUE) {
  * @param $fids
  *   An array of file IDs.
  * @param $conditions
- *   An array of conditions to match against the {file_managed} table.
- *   These should be supplied in the form array('field_name' =>
- *   'field_value').
+ *   (deprecated) An associative array of conditions on the {file_managed}
+ *   table, where the keys are the database fields and the values are the
+ *   values those fields must have. Instead, it is preferable to use
+ *   EntityFieldQuery to retrieve a list of entity IDs loadable by
+ *   this function.
  *
  * @return
  *   An array of file objects, indexed by fid.
  *
  * @see hook_file_load()
  * @see file_load()
+ * @see entity_load()
+ * @see EntityFieldQuery
+ *
+ * @todo Remove $conditions in Drupal 8.
  */
 function file_load_multiple($fids = array(), $conditions = array()) {
   return entity_load('file', $fids, $conditions);
@@ -568,6 +574,11 @@ function file_save(stdClass $file) {
   $file->timestamp = REQUEST_TIME;
   $file->filesize = filesize($file->uri);
 
+  // Load the stored entity, if any.
+  if (!empty($file->fid) && !isset($file->original)) {
+    $file->original = entity_load_unchanged('file', $file->fid);
+  }
+
   if (empty($file->fid)) {
     drupal_write_record('file_managed', $file);
     // Inform modules about the newly added file.
@@ -581,6 +592,7 @@ function file_save(stdClass $file) {
     module_invoke_all('entity_update', $file, 'file');
   }
 
+  unset($file->original);
   return $file;
 }
 

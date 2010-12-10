@@ -1,5 +1,5 @@
 <?php
-// $Id: field.api.php,v 1.96 2010/11/18 05:37:47 dries Exp $
+// $Id: field.api.php,v 1.100 2010/12/07 05:09:58 webchick Exp $
 
 /**
  * @ingroup field_fieldable_type
@@ -392,19 +392,18 @@ function hook_field_prepare_view($entity_type, $entities, $field, $instances, $l
  * @param $items
  *   $entity->{$field['field_name']}[$langcode], or an empty array if unset.
  * @param $errors
- *   The array of errors, keyed by field name and by value delta, that have
- *   already been reported for the entity. The function should add its errors
- *   to this array. Each error is an associative array, with the following
+ *   The array of errors (keyed by field name, language code, and delta) that
+ *   have already been reported for the entity. The function should add its
+ *   errors to this array. Each error is an associative array with the following
  *   keys and values:
- *   - error: An error code (should be a string, prefixed with the module
- *     name).
+ *   - error: An error code (should be a string prefixed with the module name).
  *   - message: The human readable message to be displayed.
  */
 function hook_field_validate($entity_type, $entity, $field, $instance, $langcode, $items, &$errors) {
   foreach ($items as $delta => $item) {
     if (!empty($item['value'])) {
       if (!empty($field['settings']['max_length']) && drupal_strlen($item['value']) > $field['settings']['max_length']) {
-        $errors[$field['field_name']][$delta][] = array(
+        $errors[$field['field_name']][$langcode][$delta][] = array(
           'error' => 'text_max_length',
           'message' => t('%name: the value may not be longer than %max characters.', array('%name' => $instance['label'], '%max' => $field['settings']['max_length'])),
         );
@@ -789,7 +788,8 @@ function hook_field_widget_info_alter(&$info) {
  * @see field_widget_instance()
  *
  * @param $form
- *   The entire form array.
+ *   The form structure where widgets are being attached to. This might be a
+ *   full form structure, or a sub-element of a larger form.
  * @param $form_state
  *   An associative array containing the current state of the form.
  * @param $field
@@ -808,6 +808,12 @@ function hook_field_widget_info_alter(&$info) {
  *   - #bundle: The name of the field bundle the field is contained in.
  *   - #field_name: The name of the field.
  *   - #language: The language the field is being edited in.
+ *   - #field_parents: The 'parents' space for the field in the form. Most
+ *       widgets can simply overlook this property. This identifies the
+ *       location where the field values are placed within
+ *       $form_state['values'], and is used to access processing information
+ *       for the field through the field_form_get_state() and
+ *       field_form_set_state() functions.
  *   - #columns: A list of field storage columns of the field.
  *   - #title: The sanitized element label for the field instance, ready for
  *     output.
@@ -844,7 +850,8 @@ function hook_field_widget_form(&$form, &$form_state, $field, $instance, $langco
  *     errors to different form elements inside the widget.
  *   - message: the human readable message to be displayed.
  * @param $form
- *   The form array.
+ *   The form structure where field elements are attached to. This might be a
+ *   full form structure, or a sub-element of a larger form.
  * @param $form_state
  *   An associative array containing the current state of the form.
  */
@@ -1079,7 +1086,7 @@ function hook_field_formatter_view($entity_type, $entity, $field, $instance, $la
  */
 
 /**
- * Act on field_attach_form.
+ * Act on field_attach_form().
  *
  * This hook is invoked after the field module has performed the operation.
  * Implementing modules should alter the $form or $form_state parameters.
@@ -1087,10 +1094,15 @@ function hook_field_formatter_view($entity_type, $entity, $field, $instance, $la
  * @param $entity_type
  *   The type of $entity; for example, 'node' or 'user'.
  * @param $entity
- *   The entity for which to load form elements, used to initialize
- *   default form values.
+ *   The entity for which an edit form is being built.
  * @param $form
- *   The form structure to fill in.
+ *   The form structure where field elements are attached to. This might be a
+ *   full form structure, or a sub-element of a larger form. The
+ *   $form['#parents'] property can be used to identify the corresponding part
+ *   of $form_state['values']. Hook implementations that need to act on the
+ *   top-level properties of the global form (like #submit, #validate...) can
+ *   add a #process callback to the array received in the $form parameter, and
+ *   act on the $complete_form parameter in the process callback.
  * @param $form_state
  *   An associative array containing the current state of the form.
  * @param $langcode
@@ -1098,7 +1110,12 @@ function hook_field_formatter_view($entity_type, $entity, $field, $instance, $la
  *   is provided the default site language will be used.
  */
 function hook_field_attach_form($entity_type, $entity, &$form, &$form_state, $langcode) {
-  // @todo Needs function body.
+  // Add a checkbox allowing a given field to be emptied.
+  // See hook_field_attach_submit() for the corresponding processing code.
+  $form['empty_field_foo'] = array(
+    '#type' => 'checkbox',
+    '#title' => t("Empty the 'field_foo' field"),
+  );
 }
 
 /**
@@ -1136,10 +1153,26 @@ function hook_field_attach_validate($entity_type, $entity, &$errors) {
  *
  * This hook is invoked after the field module has performed the operation.
  *
- * See field_attach_submit() for details and arguments.
+ * @param $entity_type
+ *   The type of $entity; for example, 'node' or 'user'.
+ * @param $entity
+ *   The entity for which an edit form is being submitted. The incoming form
+ *   values have been extracted as field values of the $entity object.
+ * @param $form
+ *   The form structure where field elements are attached to. This might be a
+ *   full form structure, or a sub-part of a larger form. The $form['#parents']
+ *   property can be used to identify the corresponding part of
+ *   $form_state['values'].
+ * @param $form_state
+ *   An associative array containing the current state of the form.
  */
 function hook_field_attach_submit($entity_type, $entity, $form, &$form_state) {
-  // @todo Needs function body.
+  // Sample case of an 'Empty the field' checkbox added on the form, allowing
+  // a given field to be emptied.
+  $values = drupal_array_get_nested_value($form_state['values'], $form['#parents']);
+  if (!empty($values['empty_field_foo'])) {
+    unset($entity->field_foo);
+  }
 }
 
 /**
@@ -1244,7 +1277,7 @@ function hook_field_attach_purge($entity_type, $entity, $field, $instance) {
 }
 
 /**
- * Perform alterations on field_attach_view().
+ * Perform alterations on field_attach_view() or field_view_field().
  *
  * This hook is invoked after the field module has performed the operation.
  *
@@ -1254,7 +1287,13 @@ function hook_field_attach_purge($entity_type, $entity, $field, $instance) {
  *   An associative array containing:
  *   - entity_type: The type of $entity; for example, 'node' or 'user'.
  *   - entity: The entity with fields to render.
- *   - view_mode: View mode, for example, 'full' or 'teaser'.
+ *   - view_mode: View mode; for example, 'full' or 'teaser'.
+ *   - display: Either a view mode string or an array of display settings. If
+ *     this hook is being invoked from field_attach_view(), the 'display'
+ *     element is set to the view mode string. If this hook is being invoked
+ *     from field_view_field(), this element is set to the $display argument
+ *     and the view_mode element is set to '_custom'. See field_view_field()
+ *     for more information on what its $display argument contains.
  *   - language: The language code used for rendering.
  */
 function hook_field_attach_view_alter(&$output, $context) {
@@ -2131,6 +2170,7 @@ function hook_field_info_max_weight($entity_type, $bundle, $context) {
  *   - entity_type: The entity type; e.g. 'node' or 'user'.
  *   - field: The field being rendered.
  *   - instance: The instance being rendered.
+ *   - entity: The entity being rendered.
  *   - view_mode: The view mode, e.g. 'full', 'teaser'...
  *
  * @see hook_field_display_ENTITY_TYPE_alter()
@@ -2165,6 +2205,7 @@ function hook_field_display_alter(&$display, $context) {
  *   - entity_type: The entity type; e.g. 'node' or 'user'.
  *   - field: The field being rendered.
  *   - instance: The instance being rendered.
+ *   - entity: The entity being rendered.
  *   - view_mode: The view mode, e.g. 'full', 'teaser'...
  *
  * @see hook_field_display_alter()

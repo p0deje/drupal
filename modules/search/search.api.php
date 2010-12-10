@@ -1,5 +1,5 @@
 <?php
-// $Id: search.api.php,v 1.31 2010/11/18 05:38:39 dries Exp $
+// $Id: search.api.php,v 1.33 2010/11/21 20:36:36 dries Exp $
 
 /**
  * @file
@@ -181,13 +181,14 @@ function hook_search_admin() {
  *   An array of search results. To use the default search result
  *   display, each item should have the following keys':
  *   - 'link': Required. The URL of the found item.
- *   - 'type': The type of item.
+ *   - 'type': The type of item (such as the content type).
  *   - 'title': Required. The name of the item.
  *   - 'user': The author of the item.
  *   - 'date': A timestamp when the item was last modified.
  *   - 'extra': An array of optional extra information items.
  *   - 'snippet': An excerpt or preview to show with the result (can be
  *     generated with search_excerpt()).
+ *   - 'language': Language code for the item (usually two characters).
  *
  * @ingroup search
  */
@@ -272,8 +273,8 @@ function hook_search_page($results) {
 
   foreach ($results as $entry) {
     $output[] = array(
-      '#theme' => 'search_result', 
-      '#result' => $entry, 
+      '#theme' => 'search_result',
+      '#result' => $entry,
       '#module' => 'my_module_name',
     );
   }

@@ -1,5 +1,5 @@
 <?php
-// $Id: system.api.php,v 1.214 2010/11/15 08:29:03 webchick Exp $
+// $Id: system.api.php,v 1.221 2010/12/09 01:51:16 dries Exp $
 
 /**
  * @file
@@ -88,10 +88,15 @@ function hook_hook_info_alter(&$hooks) {
  *     uri elements of the entity, e.g. 'path' and 'options'. The actual entity
  *     uri can be constructed by passing these elements to url().
  *   - label callback: (optional) A function taking an entity as argument and
- *     returning the label of the entity; e.g., $node->title or
- *     $comment->subject. A callback should be specified when the label is the
- *     result of complex logic. Otherwise, the 'label' property of the
- *     'entity keys' the property should be used.
+ *     returning the label of the entity. The entity label is the main string
+ *     associated with an entity; for example, the title of a node or the
+ *     subject of a comment. If there is an entity object property that defines
+ *     the label, use the 'label' element of the 'entity keys' return
+ *     value component to provide this information (see below). If more complex
+ *     logic is needed to determine the label of an entity, you can instead
+ *     specify a callback function here, which will be called to determine the
+ *     entity label. See also the entity_label() function, which implements this
+ *     logic.
  *   - fieldable: Set to TRUE if you want your entity type to be fieldable.
  *   - translation: An associative array of modules registered as field
  *     translation handlers. Array keys are the module names, array values
@@ -112,11 +117,11 @@ function hook_hook_info_alter(&$hooks) {
  *       omitted if this entity type exposes a single bundle (all entities have
  *       the same collection of fields). The name of this single bundle will be
  *       the same as the entity type.
- *     - label: The property name of the entity that contains the label. For
+ *     - label: The name of the property that contains the entity label. For
  *       example, if the entity's label is located in $entity->subject, then
- *       'subect' should be specified here. In case complex logic is required to
- *       build the label, a 'label callback' should be implemented instead. See
- *       entity_label() for details.
+ *       'subject' should be specified here. If complex logic is required to
+ *       build the label, a 'label callback' should be defined instead (see
+ *       the 'label callback' section above for details).
  *   - bundle keys: An array describing how the Field API can extract the
  *     information it needs from the bundle objects for this type (e.g
  *     $vocabulary objects for terms; not applicable for nodes). This entry can
@@ -1002,21 +1007,22 @@ function hook_menu_get_item_alter(&$router_item, $path, $original_map) {
  * $items['admin/config/foo'] = array(
  *   'title' => 'Foo settings',
  *   'type' => MENU_NORMAL_ITEM,
- *   // page callback, etc. need to be added here
+ *   // Page callback, etc. need to be added here.
  * );
  * // Make "Global settings" the main tab on the "Foo settings" page
  * $items['admin/config/foo/global'] = array(
  *   'title' => 'Global settings',
  *   'type' => MENU_DEFAULT_LOCAL_TASK,
- *   // access callback, page callback, and theme callback will be inherited
- *   // from 'admin/config/foo', if not specified here to override
+ *   // Access callback, page callback, and theme callback will be inherited
+ *   // from 'admin/config/foo', if not specified here to override.
  * );
  * // Make an additional tab called "Node settings" on "Foo settings"
  * $items['admin/config/foo/node'] = array(
  *   'title' => 'Node settings',
  *   'type' => MENU_LOCAL_TASK,
- *   // access callback, page callback, and theme callback will be inherited
- *   // from 'admin/config/foo', if not specified here to override
+ *   // Page callback and theme callback will be inherited from
+ *   // 'admin/config/foo', if not specified here to override.
+ *   // Need to add access callback or access arguments.
  * );
  * @endcode
  *
@@ -1045,17 +1051,27 @@ function hook_menu_get_item_alter(&$router_item, $path, $original_map) {
  *     rights to this menu item, and FALSE if not. It can also be a boolean
  *     constant instead of a function, and you can also use numeric values
  *     (will be cast to boolean). Defaults to user_access() unless a value is
- *     inherited from a parent menu item.
+ *     inherited from the parent menu item; only MENU_DEFAULT_LOCAL_TASK items
+ *     can inherit access callbacks. To use the user_access() default callback,
+ *     you must specify the permission to check as 'access arguments' (see
+ *     below).
  *   - "access arguments": An array of arguments to pass to the access callback
- *     function, with path component substitution as described above.
+ *     function, with path component substitution as described above. If the
+ *     access callback is inherited (see above), the access arguments will be
+ *     inherited with it, unless overridden in the child menu item.
  *   - "theme callback": (optional) A function returning the machine-readable
- *     name of the default theme that will be used to render the page. If this
- *     function is provided, it is expected to return a currently-active theme
- *     on the site (otherwise, the main site theme will be used instead). If no
- *     function is provided, the main site theme will also be used, unless a
- *     value is inherited from a parent menu item. In all cases, the results of
- *     this function can be dynamically overridden for a particular page
- *     request by modules which implement hook_custom_theme().
+ *     name of the theme that will be used to render the page. If not provided,
+ *     the value will be inherited from a parent menu item. If there is no
+ *     theme callback, or if the function does not return the name of a current
+ *     active theme on the site, the theme for this page will be determined by
+ *     either hook_custom_theme() or the default theme instead. As a general
+ *     rule, the use of theme callback functions should be limited to pages
+ *     whose functionality is very closely tied to a particular theme, since
+ *     they can only be overridden by modules which specifically target those
+ *     pages in hook_menu_alter(). Modules implementing more generic theme
+ *     switching functionality (for example, a module which allows the theme to
+ *     be set dynamically based on the current user's role) should use
+ *     hook_custom_theme() instead.
  *   - "theme arguments": An array of arguments to pass to the theme callback
  *     function, with path component substitution as described above.
  *   - "file": A file that will be included before the page callback is called;
@@ -1478,13 +1494,13 @@ function hook_menu_contextual_links_alter(&$links, $router_item, $root_path) {
  *
  * @code
  *   // Node body.
- *   $page['content']['nodes'][$nid]['body']
+ *   $page['content']['system_main']['nodes'][$nid]['body']
  *   // Array of links attached to the node (add comments, read more).
- *   $page['content']['nodes'][$nid]['links']
+ *   $page['content']['system_main']['nodes'][$nid]['links']
  *   // The node object itself.
- *   $page['content']['nodes'][$nid]['#node']
+ *   $page['content']['system_main']['nodes'][$nid]['#node']
  *   // The results pager.
- *   $page['content']['pager']
+ *   $page['content']['system_main']['pager']
  * @endcode
  *
  * Blocks may be referenced by their module/delta pair within a region:
@@ -2050,10 +2066,12 @@ function hook_theme_registry_alter(&$theme_registry) {
  * Return the machine-readable name of the theme to use for the current page.
  *
  * This hook can be used to dynamically set the theme for the current page
- * request. It overrides the default theme as well as any per-page or
- * per-section theme set by the theme callback function in hook_menu(). This
- * should be used by modules which need to override the theme based on dynamic
- * conditions.
+ * request. It should be used by modules which need to override the theme
+ * based on dynamic conditions (for example, a module which allows the theme to
+ * be set based on the current user's role). The return value of this hook will
+ * be used on all pages except those which have a valid per-page or per-section
+ * theme set via a theme callback function in hook_menu(); the themes on those
+ * pages can only be overridden using hook_menu_alter().
  *
  * Since only one theme can be used at a time, the last (i.e., highest
  * weighted) module which returns a valid theme name from this hook will
@@ -2692,7 +2710,8 @@ function hook_file_url_alter(&$uri) {
     }
   }
 }
-                                                                                                      /**
+
+/**
  * Check installation requirements and do status reporting.
  *
  * This hook has two closely related uses, determined by the $phase argument:
@@ -2726,24 +2745,25 @@ function hook_file_url_alter(&$uri) {
  * result in a notice on the the administration overview page.
  *
  * @param $phase
- *   The phase in which hook_requirements is run:
- *   - 'install': the module is being installed.
- *   - 'runtime': the runtime requirements are being checked and shown on the
- *              status report page.
+ *   The phase in which requirements are checked:
+ *   - install: The module is being installed.
+ *   - update: The module is enabled and update.php is run.
+ *   - runtime: The runtime requirements are being checked and shown on the
+ *     status report page.
  *
  * @return
  *   A keyed array of requirements. Each requirement is itself an array with
  *   the following items:
- *     - 'title': the name of the requirement.
- *     - 'value': the current value (e.g. version, time, level, ...). During
- *       install phase, this should only be used for version numbers, do not set
- *       it if not applicable.
- *     - 'description': description of the requirement/status.
- *     - 'severity': the requirement's result/severity level, one of:
- *         - REQUIREMENT_INFO:    For info only.
- *         - REQUIREMENT_OK:      The requirement is satisfied.
- *         - REQUIREMENT_WARNING: The requirement failed with a warning.
- *         - REQUIREMENT_ERROR:   The requirement failed with an error.
+ *   - title: The name of the requirement.
+ *   - value: The current value (e.g., version, time, level, etc). During
+ *     install phase, this should only be used for version numbers, do not set
+ *     it if not applicable.
+ *   - description: The description of the requirement/status.
+ *   - severity: The requirement's result/severity level, one of:
+ *     - REQUIREMENT_INFO: For info only.
+ *     - REQUIREMENT_OK: The requirement is satisfied.
+ *     - REQUIREMENT_WARNING: The requirement failed with a warning.
+ *     - REQUIREMENT_ERROR: The requirement failed with an error.
  */
 function hook_requirements($phase) {
   $requirements = array();
@@ -3661,7 +3681,7 @@ function hook_archiver_info_alter(&$info) {
 }
 
 /**
- * Defines additional date types.
+ * Define additional date types.
  *
  * Next to the 'long', 'medium' and 'short' date types defined in core, any
  * module can define additional types that can be used when displaying dates. A
@@ -3673,7 +3693,8 @@ function hook_archiver_info_alter(&$info) {
  * can consist of letters, numbers and underscores.
  *
  * @return
- *   A list of date types in 'key' => 'label' format.
+ *   An array of date types where the keys are the machine-readable names and
+ *   the values are the human-readable labels.
  *
  * @see hook_date_formats()
  * @see format_date()
@@ -3687,72 +3708,65 @@ function hook_date_format_types() {
 }
 
 /**
- * Modify existing date format types.
+ * Modify existing date types.
  *
- * Allows other modules to modify existing date types like 'long'. Called
- * by _system_date_format_types_build(). For instance, A module may use this
- * hook to apply settings across all date format types, such as locking all
- * date format types so they appear to be provided by the system.
+ * Allows other modules to modify existing date types like 'long'. Called by
+ * _system_date_format_types_build(). For instance, A module may use this hook
+ * to apply settings across all date types, such as locking all date types so
+ * they appear to be provided by the system.
  *
  * @param $types
- *   An associative array of date format types containing:
- *   - types:  An array of date format types including configuration settings
- *     for each type:
- *     - is_new: Set to FALSE to override previous settings.
- *     - module: The name of the module that created the date format type.
- *     - type: The date type name.
- *     - title: The title of the date type.
- *     - locked: Specifies that the date type is system-provided.
+ *   A list of date types. Each date type is keyed by name and the values are
+ *   associative arrays containing:
+ *   - is_new: Set to FALSE to override previous settings.
+ *   - module: The name of the module that created the date format type.
+ *   - type: The date type name.
+ *   - title: The title of the date type.
+ *   - locked: Specifies that the date type is system-provided.
  */
 function hook_date_format_types_alter(&$types) {
-  foreach ($types as $type_name => $type) {
-    $types[$type_name]['locked'] = 1;
+  foreach ($types as $name => $type) {
+    $types[$name]['locked'] = 1;
   }
 }
 
 /**
- * Defines additional date formats.
+ * Define additional date formats.
  *
- * Next to the 'long', 'medium' and 'short' date types defined in core, any
- * module can define additional types that can be used when displaying dates. A
- * date type is a key which can be passed to format_date() to return a date in
- * the configured displayed format. A date format is a string defining the date
- * and time elements to use. For example, a date type could be
- * 'mymodule_extra_long', while a date format is like 'Y-m-d'.
+ * This hook is used to define the date format strings that are used to format
+ * date types for different locales. Next to the 'long', 'medium' and 'short'
+ * date types defined in core, any module can define additional date types in
+ * hook_date_format_types(). For example, a date type could be
+ * 'mymodule_extra_long' (defined in mymodule_date_format_types()), while a date
+ * format string is like 'Y-m-d' and can be defined with this hook.
  *
- * New date types must first be declared using hook_date_format_types(). It is
- * then possible to define one or more date formats for each.
+ * A module may use this hook to provide date format strings for its own date
+ * types provided in hook_date_format_types() or add date format strings to a
+ * date type provided by another module or to the 'long', 'medium' and 'short'
+ * date types provided by core.
  *
- * A module may also extend the list date formats defined for a date type
- * provided by another module.
- *
- * There may be more than one format for the same locale. For example d/m/Y and
- * Y/m/d work equally well in some locales. It may also be necessary to define
- * multiple versions of the same date format, for example, one using AM, one
- * with PM and one without the time at all.
- *
- * However at the same time you may wish to define some additional date formats
- * that aren't specific to any one locale, for example, "Y m". For these cases
- * the locales field should be omitted.
+ * Since date formats can be locale-specific, you can specify the locales that
+ * each date format string applies to. There may be more than one locale for a
+ * format. There may also be more than one format for the same locale. For
+ * example d/m/Y and Y/m/d work equally well in some locales. You may wish to
+ * define some additional date formats that aren't specific to any one locale,
+ * for example, "Y m". For these cases the locales component should be omitted.
  *
  * @return
- *   A list of date formats. Each date format is a keyed array
- *   consisting of three elements:
- *   - 'type': the date type is a key used to identify which date format to
- *     display. It consists of letters, numbers and underscores, e.g. 'long',
- *     'short', 'mymodule_extra_long'. It must first be declared in
- *     hook_date_format_types() unless extending a type provided by another
- *     module.
- *   - 'format': a string defining the date and time elements to use. It
+ *   A list of date formats. Each date format is a keyed array consisting of
+ *   three elements:
+ *   - 'type': The date type name, as declared in an implementation of
+ *     hook_date_format_types().
+ *   - 'format': A PHP date format string to use when formatting dates. It
  *     can contain any of the formatting options described at
  *     http://php.net/manual/en/function.date.php
- *   - 'locales': (optional) an array of 2 and 5 character language codes, for
+ *   - 'locales': (optional) An array of 2 and 5 character locale codes; for
  *     example, 'en', 'en-us'. The language codes are used to determine which
- *     date format to display for the user's current language. If more than one
+ *     date format to display for the user's current locale. If more than one
  *     date format is suggested for the same date type and locale, then the
- *     first one will be used unless overridden via
+ *     first one will be used unless overridden via the administrative UI at
  *     admin/config/regional/date-time/locale. If your date format is not
- *     language specific, leave this field empty.
+ *     language-specific, leave this array empty.
  *
  * @see hook_date_format_types()
  */
@@ -3777,7 +3791,7 @@ function hook_date_formats() {
 }
 
 /**
- * Alters date types and formats declared by another module.
+ * Alter date formats declared by another module.
  *
  * Called by _system_date_format_types_build() to allow modules to alter the
  * return values from implementations of hook_date_formats().
@@ -4270,52 +4284,6 @@ function hook_countries_alter(&$countries) {
 }
 
 /**
- * Provide information on available file transfer backends.
- *
- * File transfer backends are used by modules to transfer files from remote
- * locations to Drupal sites. For instance, update.module uses a file transfer
- * backend to download new versions of modules and themes from drupal.org.
- *
- * @return
- *   An associative array of information about the file transfer backend(s).
- *   being provided. This array can contain the following keys:
- *   - title: Title of the backend to be shown to the end user.
- *   - class: Name of the PHP class which implements this backend.
- *   - settings_form: An optional callback function that provides additional
- *     configuration information required by this backend (for instance a port
- *     number.)
- *   - weight: Controls what order the backends are presented to the user.
- *
- * @see authorize.php
- * @see FileTransfer
- */
-function hook_filetransfer_backends() {
-  $backends = array();
-
-  // This is the default, will be available on most systems.
-  if (function_exists('ftp_connect')) {
-    $backends['ftp'] = array(
-      'title' => t('FTP'),
-      'class' => 'FileTransferFTP',
-      'settings_form' => 'system_filetransfer_backend_form_ftp',
-      'weight' => 0,
-    );
-  }
-
-  // SSH2 lib connection is only available if the proper PHP extension is
-  // installed.
-  if (function_exists('ssh2_connect')) {
-    $backends['ssh'] = array(
-      'title' => t('SSH'),
-      'class' => 'FileTransferSSH',
-      'settings_form' => 'system_filetransfer_backend_form_ssh',
-      'weight' => 20,
-    );
-  }
-  return $backends;
-}
-
-/**
  * Control site status before menu dispatching.
  *
  * The hook is called after checking whether the site is offline but before
@@ -4337,6 +4305,69 @@ function hook_menu_site_status_alter(&$menu_site_status, $path) {
   // Allow access to my_module/authentication even if site is in offline mode.
   if ($menu_site_status == MENU_SITE_OFFLINE && user_is_anonymous() && $path == 'my_module/authentication') {
     $menu_site_status = MENU_SITE_ONLINE;
+  }
+}
+
+/**
+ * Register information about FileTransfer classes provided by a module.
+ *
+ * The FileTransfer class allows transfering files over a specific type of
+ * connection. Core provides classes for FTP and SSH. Contributed modules are
+ * free to extend the FileTransfer base class to add other connection types,
+ * and if these classes are registered via hook_filetransfer_info(), those
+ * connection types will be available to site administrators using the Update
+ * manager when they are redirected to the authorize.php script to authorize
+ * the file operations.
+ *
+ * @return array
+ *   Nested array of information about FileTransfer classes. Each key is a
+ *   FileTransfer type (not human readable, used for form elements and
+ *   variable names, etc), and the values are subarrays that define properties
+ *   of that type. The keys in each subarray are:
+ *   - 'title': Required. The human-readable name of the connection type.
+ *   - 'class': Required. The name of the FileTransfer class. The constructor
+ *     will always be passed the full path to the root of the site that should
+ *     be used to restrict where file transfer operations can occur (the $jail)
+ *     and an array of settings values returned by the settings form.
+ *   - 'file': Required. The include file containing the FileTransfer class.
+ *     This should be a separate .inc file, not just the .module file, so that
+ *     the minimum possible code is loaded when authorize.php is running.
+ *   - 'file path': Optional. The directory (relative to the Drupal root)
+ *     where the include file lives. If not defined, defaults to the base
+ *     directory of the module implementing the hook.
+ *   - 'weight': Optional. Integer weight used for sorting connection types on
+ *     the authorize.php form.
+ *
+ * @see FileTransfer
+ * @see authorize.php
+ * @see hook_filetransfer_info_alter()
+ * @see drupal_get_filetransfer_info()
+ */
+function hook_filetransfer_info() {
+  $info['sftp'] = array(
+    'title' => t('SFTP (Secure FTP)'),
+    'file' => 'sftp.filetransfer.inc',
+    'class' => 'FileTransferSFTP',
+    'weight' => 10,
+  );
+  return $info;
+}
+
+/**
+ * Alter the FileTransfer class registry.
+ *
+ * @param array $filetransfer_info
+ *   Reference to a nested array containing information about the FileTransfer
+ *   class registry.
+ *
+ * @see hook_filetransfer_info()
+ */
+function hook_filetransfer_info_alter(&$filetransfer_info) {
+  if (variable_get('paranoia', FALSE)) {
+    // Remove the FTP option entirely.
+    unset($filetransfer_info['ftp']);
+    // Make sure the SSH option is listed first.
+    $filetransfer_info['ssh']['weight'] = -10;
   }
 }
 
