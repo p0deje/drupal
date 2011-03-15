@@ -1,4 +1,3 @@
-; $Id: simpletest_monitor.info,v 1.1.2.1 2010/10/08 02:42:38 boombatower Exp $
 
 name = Testing API Monitor
 description = Ensure that 2.x style tests are removed when core API is being used.
