@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 /**
  * @ingroup field_fieldable_type
@@ -1271,7 +1270,7 @@ function hook_field_attach_delete_revision($entity_type, $entity) {
  */
 function hook_field_attach_purge($entity_type, $entity, $field, $instance) {
   // find the corresponding data in mymodule and purge it
-  if($entity_type == 'node' && $field->field_name == 'my_field_name') {
+  if ($entity_type == 'node' && $field->field_name == 'my_field_name') {
     mymodule_remove_mydata($entity->nid);
   }
 }
@@ -2416,7 +2415,7 @@ function hook_field_delete_instance($instance) {
  * @param $field
  *   The field record just read from the database.
  */
-function hook_field_read_field(&$field) {
+function hook_field_read_field($field) {
   // @todo Needs function body.
 }
 

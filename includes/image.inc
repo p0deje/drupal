@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 /**
  * @file
@@ -9,6 +8,8 @@
 /**
  * @defgroup image Image toolkits
  * @{
+ * Functions for image file manipulations.
+ *
  * Drupal's image toolkits provide an abstraction layer for common image file
  * manipulations like scaling, cropping, and rotating. The abstraction frees
  * module authors from the need to support multiple image libraries, and it

@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 /**
  * Root directory of Drupal installation.
@@ -179,11 +178,11 @@ function update_results_page() {
 
   // Output a list of queries executed.
   if (!empty($_SESSION['update_results'])) {
-    $output .= '<div id="update-results">';
-    $output .= '<h2>The following updates returned messages</h2>';
+    $all_messages = '';
     foreach ($_SESSION['update_results'] as $module => $updates) {
       if ($module != '#abort') {
-        $output .= '<h3>' . $module . ' module</h3>';
+        $module_has_message = FALSE;
+        $query_messages = '';
         foreach ($updates as $number => $queries) {
           $messages = array();
           foreach ($queries as $query) {
@@ -191,6 +190,7 @@ function update_results_page() {
             if (empty($query['query'])) {
               continue;
             }
+
             if ($query['success']) {
               $messages[] = '<li class="success">' . $query['query'] . '</li>';
             }
@@ -200,13 +200,24 @@ function update_results_page() {
           }
 
           if ($messages) {
-            $output .= '<h4>Update #' . $number . "</h4>\n";
-            $output .= '<ul>' . implode("\n", $messages) . "</ul>\n";
+            $module_has_message = TRUE;
+            $query_messages .= '<h4>Update #' . $number . "</h4>\n";
+            $query_messages .= '<ul>' . implode("\n", $messages) . "</ul>\n";
           }
+        }
+
+        // If there were any messages in the queries then prefix them with the
+        // module name and add it to the global message list.
+        if ($module_has_message) {
+          $all_messages .= '<h3>' . $module . " module</h3>\n" . $query_messages;
         }
       }
     }
-    $output .= '</div>';
+    if ($all_messages) {
+      $output .= '<div id="update-results"><h2>The following updates returned messages</h2>';
+      $output .= $all_messages;
+      $output .= '</div>';
+    }
   }
   unset($_SESSION['update_results']);
   unset($_SESSION['update_success']);
@@ -337,8 +348,17 @@ require_once DRUPAL_ROOT . '/includes/entity.inc';
 require_once DRUPAL_ROOT . '/includes/unicode.inc';
 update_prepare_d7_bootstrap();
 
+// Temporarily disable configurable timezones so the upgrade process uses the
+// site-wide timezone. This prevents a PHP notice during session initlization
+// and before offsets have been converted in user_update_7002().
+$configurable_timezones = variable_get('configurable_timezones', 1);
+$conf['configurable_timezones'] = 0;
+
 // Determine if the current user has access to run update.php.
 drupal_bootstrap(DRUPAL_BOOTSTRAP_SESSION);
+
+// Reset configurable timezones.
+$conf['configurable_timezones'] = $configurable_timezones;
 
 // Only allow the requirements check to proceed if the current user has access
 // to run updates (since it may expose sensitive information about the site's

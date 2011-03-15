@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 /**
  * @file
@@ -9,6 +8,8 @@
 /**
  * @defgroup queue Queue operations
  * @{
+ * Queue items to allow later processing.
+ *
  * The queue system allows placing items in a queue and processing them later.
  * The system tries to ensure that only one consumer can process an item.
  *

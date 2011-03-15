@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 /**
  * @file
@@ -93,7 +92,14 @@ function dblog_schema() {
 }
 
 /**
- * @defgroup updates-6.x-to-7.x database logging updates from 6.x to 7.x
+ * Implements hook_uninstall().
+ */
+function dblog_uninstall() {
+  variable_del('dblog_row_limit');
+}
+
+/**
+ * @addtogroup updates-6.x-to-7.x
  * @{
  */
 
@@ -132,6 +138,5 @@ function dblog_update_7001() {
 }
 
 /**
- * @} End of "defgroup updates-6.x-to-7.x"
- * The next series of updates should start at 8000.
+ * @} End of "addtogroup updates-6.x-to-7.x"
  */

@@ -1,4 +1,3 @@
-/* $Id$ */
 
 fieldset legend {
   left: 6px;
@@ -10,11 +9,6 @@ ul.action-links li a,
 }
 .comment .attribution {
   float: right;
-}
-.comment-text {
-  float: right;
-  margin-left: 0;
-  margin-right: 25px;
 }
 .comment .comment-arrow {
   position: absolute;

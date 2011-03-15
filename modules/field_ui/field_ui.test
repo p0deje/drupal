@@ -1,9 +1,8 @@
 <?php
-// $Id$
 
 /**
  * @file
- * Unit test file for fields in core UI.
+ * Tests for field_ui.module.
  */
 
 /**

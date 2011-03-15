@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 /**
  * @file
@@ -73,6 +72,7 @@ function comment_admin_overview($form, &$form_state, $arg) {
   $query = db_select('comment', 'c')->extend('PagerDefault')->extend('TableSort');
   $query->join('node', 'n', 'n.nid = c.nid');
   $query->addField('n', 'title', 'node_title');
+  $query->addTag('node_access');
   $result = $query
     ->fields('c', array('cid', 'subject', 'name', 'changed'))
     ->condition('c.status', $status)

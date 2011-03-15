@@ -1,4 +1,3 @@
-/* $Id$ */
 
 html.js {
   background: transparent !important;
@@ -67,11 +66,6 @@ html.js body {
   /* Replace with position:fixed to get a scrolling close button. */
   position: absolute;
   width: 26px;
-}
-#overlay-title:active,
-#overlay-close:hover,
-#overlay-close:focus {
-  padding: 0;
 }
 
 /**

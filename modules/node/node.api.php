@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 /**
  * @file
@@ -9,9 +8,7 @@
 /**
  * @defgroup node_api_hooks Node API Hooks
  * @{
- * The Node API allows modules to define content types, to modify content
- * types created in the user interface, and to modify content types created by
- * other modules.
+ * Functions to define and modify content types.
  *
  * Each content type is maintained by a primary module, which is either
  * node.module (for content types created in the user interface) or the

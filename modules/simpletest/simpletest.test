@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Provides tests for SimpleTest functionality.
+ * Tests for simpletest.module.
  */
 
 class SimpleTestFunctionalTest extends DrupalWebTestCase {

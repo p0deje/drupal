@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 /**
  * @file
@@ -7,7 +6,7 @@
  */
 
 /**
- * @defgroup field_language Field language API
+ * @defgroup field_language Field Language API
  * @{
  * Handling of multilingual fields.
  *

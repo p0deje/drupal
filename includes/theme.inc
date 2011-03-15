@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 /**
  * @file
@@ -104,7 +103,7 @@ function drupal_theme_initialize() {
   drupal_static_reset('drupal_alter');
 
   // Provide the page with information about the theme that's used, so that a
-  // later AJAX request can be rendered using the same theme.
+  // later Ajax request can be rendered using the same theme.
   // @see ajax_base_page_theme()
   $setting['ajaxPageState'] = array(
     'theme' => $theme_key,
@@ -1263,8 +1262,6 @@ function theme_enable($theme_list) {
 
   // Invoke hook_themes_enabled after the themes have been enabled.
   module_invoke_all('themes_enabled', $theme_list);
-
-  return;
 }
 
 /**
@@ -1298,8 +1295,6 @@ function theme_disable($theme_list) {
 
   // Invoke hook_themes_enabled after the themes have been enabled.
   module_invoke_all('themes_disabled', $theme_list);
-
-  return;
 }
 
 /**
@@ -2042,6 +2037,9 @@ function _theme_table_cell($cell, $header = FALSE) {
  * Adds a default set of helper variables for variable processors and templates.
  * This comes in before any other preprocess function which makes it possible to
  * be used in default theme implementations (non-overridden theme functions).
+ *
+ * For more detailed information, see theme().
+ *
  */
 function template_preprocess(&$variables, $hook) {
   global $user;
@@ -2119,6 +2117,9 @@ function _template_preprocess_default_variables() {
 
 /**
  * A default process function used to alter variables as late as possible.
+ *
+ * For more detailed information, see theme().
+ *
  */
 function template_process(&$variables, $hook) {
   // Flatten out classes.
@@ -2364,8 +2365,19 @@ function theme_get_suggestions($args, $base, $delimiter = '__') {
   $suggestions = array();
   $prefix = $base;
   foreach ($args as $arg) {
-    // Remove slashes or null per SA-CORE-2009-003.
-    $arg = str_replace(array("/", "\\", "\0"), '', $arg);
+    // Remove slashes or null per SA-CORE-2009-003 and change - (hyphen) to _
+    // (underscore).
+    //
+    // When we discover templates in @see drupal_find_theme_templates,
+    // hyphens (-) are converted to underscores (_) before the theme hook
+    // is registered. We do this because the hyphens used for delimiters
+    // in hook suggestions cannot be used in the function names of the
+    // associated preprocess functions. Any page templates designed to be used
+    // on paths that contain a hyphen are also registered with these hyphens
+    // converted to underscores so here we must convert any hyphens in path
+    // arguments to underscores here before fetching theme hook suggestions
+    // to ensure the templates are appropriately recognized.
+    $arg = str_replace(array("/", "\\", "\0", '-'), array('', '', '', '_'), $arg);
     // The percent acts as a wildcard for numeric arguments since
     // asterisks are not valid filename characters on many filesystems.
     if (is_numeric($arg)) {

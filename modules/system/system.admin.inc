@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 /**
  * @file
@@ -158,7 +157,6 @@ function system_themes_page() {
           'alt' => t('Screenshot for !theme theme', array('!theme' => $theme->info['name'])),
           'title' => t('Screenshot for !theme theme', array('!theme' => $theme->info['name'])),
           'attributes' => array('class' => array('screenshot')),
-          'getsize' => FALSE,
         );
         break;
       }
@@ -1182,11 +1180,6 @@ function system_modules_submit($form, &$form_state) {
   }
 
   $form_state['redirect'] = 'admin/modules';
-
-  // Notify locale module about module changes, so translations can be
-  // imported. This might start a batch, and only return to the redirect
-  // path after that.
-  module_invoke('locale', 'system_update', $actions['install']);
 }
 
 /**
@@ -2039,7 +2032,6 @@ function theme_system_date_time_settings($variables) {
     $row = array();
     $row[] = $form['format'][$key]['#title'];
     $form['format'][$key]['#title_display'] = 'invisible';
-    $row[] = $form['format'][$key]['#title_display'];
     $row[] = array('data' => drupal_render($form['format'][$key]));
     $row[] = array('data' => drupal_render($form['delete'][$delete_key]));
     $rows[] = $row;
