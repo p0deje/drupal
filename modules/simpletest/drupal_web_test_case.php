@@ -1,5 +1,5 @@
 <?php
-// $Id$
+// $Id: drupal_web_test_case.php,v 1.256 2010/12/22 21:34:13 webchick Exp $
 
 /**
  * Global variable that holds information about the tests being run.
@@ -12,6 +12,11 @@
  * @var array
  */
 global $drupal_test_info;
+
+/**
+ * @file
+ * Provides DrupalTestCase, DrupalUnitTestCase, and DrupalWebTestCase classes.
+ */
 
 /**
  * Base class for Drupal tests.
@@ -1205,6 +1210,7 @@ class DrupalWebTestCase extends DrupalTestCase {
     $this->originalLanguageDefault = variable_get('language_default');
     $this->originalFileDirectory = variable_get('file_public_path', conf_path() . '/files');
     $this->originalProfile = drupal_get_profile();
+    $this->removeTables = variable_get('simpletest_remove_tables', TRUE);
     $clean_url_original = variable_get('clean_url', 0);
 
     // Save and clean shutdown callbacks array because it static cached and
@@ -1241,6 +1247,47 @@ class DrupalWebTestCase extends DrupalTestCase {
     $test_info['test_run_id'] = $this->databasePrefix;
     $test_info['in_child_site'] = FALSE;
 
+    $this->setUpInstall(func_get_args(), $public_files_directory, $private_files_directory, $temp_files_directory);
+
+    // Rebuild caches.
+    drupal_static_reset();
+    drupal_flush_all_caches();
+
+    // Register actions declared by any modules.
+    actions_synchronize();
+
+    // Reload global $conf array and permissions.
+    $this->refreshVariables();
+    $this->checkPermissions(array(), TRUE);
+
+    // Reset statically cached schema for new database prefix.
+    drupal_get_schema(NULL, TRUE);
+
+    // Run cron once in that environment, as install.php does at the end of
+    // the installation process.
+    drupal_cron_run();
+
+    // Log in with a clean $user.
+    $this->originalUser = $user;
+    drupal_save_session(FALSE);
+    $user = user_load(1);
+
+    $this->setUpVariables($clean_url_original);
+
+    // Set up English language.
+    unset($GLOBALS['conf']['language_default']);
+    $language = language_default();
+
+    // Use the test mail class instead of the default mail handler class.
+    variable_set('mail_system', array('default-system' => 'TestingMailSystem'));
+
+    drupal_set_time_limit($this->timeLimit);
+  }
+
+  /**
+   * Perform Drupal installation.
+   */
+  protected function setUpInstall(array $modules, $public_files_directory, $private_files_directory, $temp_files_directory) {
     include_once DRUPAL_ROOT . '/includes/install.inc';
     drupal_install_system();
 
@@ -1262,7 +1309,6 @@ class DrupalWebTestCase extends DrupalTestCase {
     // either a single array argument or a variable number of string arguments.
     // @todo Remove this compatibility layer in Drupal 8, and only accept
     // $modules as a single array argument.
-    $modules = func_get_args();
     if (isset($modules[0]) && is_array($modules[0])) {
       $modules = $modules[0];
     }
@@ -1289,20 +1335,17 @@ class DrupalWebTestCase extends DrupalTestCase {
     $this->originalUser = $user;
     drupal_save_session(FALSE);
     $user = user_load(1);
+  }
 
+  /**
+   * Set post-installation variables.
+   */
+  protected function setUpVariables($clean_url_original) {
     // Restore necessary variables.
     variable_set('install_task', 'done');
     variable_set('clean_url', $clean_url_original);
     variable_set('site_mail', 'simpletest@example.com');
     variable_set('date_default_timezone', date_default_timezone_get());
-    // Set up English language.
-    unset($GLOBALS['conf']['language_default']);
-    $language = language_default();
-
-    // Use the test mail class instead of the default mail handler class.
-    variable_set('mail_system', array('default-system' => 'TestingMailSystem'));
-
-    drupal_set_time_limit($this->timeLimit);
   }
 
   /**
@@ -2047,7 +2090,7 @@ class DrupalWebTestCase extends DrupalTestCase {
    */
   protected function handleForm(&$post, &$edit, &$upload, $submit, $form) {
     // Retrieve the form elements.
-    $elements = $form->xpath('.//input[not(@disabled)]|.//textarea[not(@disabled)]|.//select[not(@disabled)]');
+    $elements = $form->xpath('.//input[not(@disabled)]|.//textarea[not(@disabled)]|.//select[not(@disabled)]|.//button[not(@disabled)]');
     $submit_matches = FALSE;
     foreach ($elements as $element) {
       // SimpleXML objects need string casting all the time.
@@ -2282,7 +2325,7 @@ class DrupalWebTestCase extends DrupalTestCase {
    *   TRUE if the assertion succeeded, FALSE otherwise.
    */
   protected function assertLink($label, $index = 0, $message = '', $group = 'Other') {
-    $links = $this->xpath('//a[normalize-space(text())=:label]', array(':label' => $label));
+    $links = $this->xpath('//a[normalize-space(text())=:label]|//a[.//*[normalize-space(text())=:label]]', array(':label' => $label));
     $message = ($message ?  $message : t('Link with label %label found.', array('%label' => $label)));
     return $this->assert(isset($links[$index]), $message, $group);
   }
@@ -2302,7 +2345,7 @@ class DrupalWebTestCase extends DrupalTestCase {
    *   TRUE if the assertion succeeded, FALSE otherwise.
    */
   protected function assertNoLink($label, $message = '', $group = 'Other') {
-    $links = $this->xpath('//a[normalize-space(text())=:label]', array(':label' => $label));
+    $links = $this->xpath('//a[normalize-space(text())=:label]|//a[.//*[normalize-space(text())=:label]]', array(':label' => $label));
     $message = ($message ?  $message : t('Link with label %label not found.', array('%label' => $label)));
     return $this->assert(empty($links), $message, $group);
   }
@@ -2364,7 +2407,7 @@ class DrupalWebTestCase extends DrupalTestCase {
    */
   protected function clickLink($label, $index = 0) {
     $url_before = $this->getUrl();
-    $urls = $this->xpath('//a[normalize-space(text())=:label]', array(':label' => $label));
+    $urls = $this->xpath('//a[normalize-space(text())=:label]|//a[.//*[normalize-space(text())=:label]]', array(':label' => $label));
 
     if (isset($urls[$index])) {
       $url_target = $this->getAbsoluteUrl($urls[$index]['href']);
@@ -3288,6 +3331,342 @@ class DrupalWebTestCase extends DrupalTestCase {
     for ($i = sizeof($mails) -1; $i >= sizeof($mails) - $count && $i >= 0; $i--) {
       $mail = $mails[$i];
       $this->verbose(t('Email:') . '<pre>' . print_r($mail, TRUE) . '</pre>');
+    }
+  }
+}
+
+
+/**
+ * Clone an existing database and use it for testing.
+ */
+class DrupalCloneTestCase extends DrupalWebTestCase {
+
+  /**
+   * Tables to exlude during data cloning, only their structure will be cloned.
+   *
+   * @var array
+   */
+  protected $excludeTables = array(
+    'cache',
+    'cache_block',
+    'cache_bootstrap',
+    'cache_field',
+    'cache_filter',
+    'cache_form',
+    'cache_image',
+    'cache_menu',
+    'cache_page',
+    'cache_path',
+    'cache_update',
+    'watchdog',
+  );
+
+  protected function setUpInstall() {
+    global $db_prefix;
+
+    // Store new database prefix.
+    $db_prefix_new = $db_prefix;
+    $db_prefix = $this->originalPrefix;
+
+    // Rebuild schema based on prefixed database and such.
+    $schemas = drupal_get_schema(NULL, TRUE);
+    // Create a list of prefixed source table names.
+    $sources = array();
+    foreach ($schemas as $name => $schema) {
+      $sources[$name] = Database::getConnection()->prefixTables('{' . $name . '}');
+    }
+
+    // Return to new prefix before performing cloning.
+    $db_prefix = $db_prefix_new;
+
+    // Clone each table into the new database.
+    foreach ($schemas as $name => $schema) {
+      $this->cloneTable($name, $sources[$name], $schema);
+    }
+  }
+
+  protected function setUpVariables() {
+    // Do nothing.
+  }
+
+  /**
+   * Clone an existing table structure and data.
+   *
+   * @param $name
+   *   Table name.
+   * @param $source
+   *   Source table name.
+   * @param $schema
+   *   A Schema API definition array.
+   */
+  protected function cloneTable($name, $source, $schema) {
+    db_create_table($name, $schema);
+
+    $target = Database::getConnection()->prefixTables('{' . $name . '}');
+    if (!in_array($name, $this->excludeTables)) {
+      db_query('INSERT INTO ' . $target . ' SELECT * FROM ' . $source);
+    }
+  }
+}
+
+/**
+ * Base class used for writing atomic remote tests.
+ *
+ * The test cases are written in such a way that they can be run against a
+ * staging or live environment and will clean up after themselves by reverting
+ * all peformed actions. The tests should be performed through a set of actions
+ * defined in the test method. For example:
+ * <code>
+ * protected function testFoo() {
+ *   $this->actions[] = 'login';
+ * }
+ *
+ * protected function performLogin();
+ * protected function revertLogin();
+ * </code>
+ *
+ * The setUp() and tearDown() methods will not create an environment, but
+ * instead direct the internal browser to the remote URL,
+ * 'simpletest_remote_url'. The tests will be run against the specified URL
+ * instead of the local machine.
+ *
+ * The test can also be run against the local development environment by
+ * leaving the variable blank. If not specified the remote URL will be filled
+ * with the local environment's URL.
+ */
+class DrupalRemoteTestCase extends DrupalWebTestCase {
+
+  /**
+   * URL variables that need to be changed when running against remote server.
+   *
+   * @var array
+   */
+  protected static $URL_VARIABLES = array('base_url', 'base_secure_url', 'base_insecure_url');
+
+  /**
+   * Prefix to be added to all random strings.
+   */
+  protected static $REMOTE_PREFIX;
+
+  /**
+   * URL of the remote server.
+   *
+   * @var string
+   */
+  protected $remoteUrl;
+
+  /**
+   * Associative array of original values for the URL variables.
+   *
+   * @var array
+   */
+  protected $originalUrls = array();
+
+  /**
+   * List of actions to perform.
+   *
+   * @var array
+   */
+  protected $actions = array();
+
+  /**
+   * Determine when to run against remote environment.
+   */
+  protected function setUp() {
+//     // BEGIN: Excerpt from DrupalUnitTestCase.
+//     global $conf;
+//
+    // Set to that verbose mode works properly.
+    $this->originalFileDirectory = variable_get('file_public_path', conf_path() . '/files');
+//
+//     spl_autoload_register('db_autoload');
+//
+//     // Reset all statics so that test is performed with a clean environment.
+//     drupal_static_reset();
+//
+//     // Generate temporary prefixed database to ensure that tests have a clean starting point.
+//     $this->databasePrefix = Database::getConnection()->prefixTables('{simpletest' . mt_rand(1000, 1000000) . '}');
+//     $conf['file_public_path'] = $this->originalFileDirectory . '/' . $this->databasePrefix;
+//
+    // Clone the current connection and replace the current prefix.
+    $connection_info = Database::getConnectionInfo('default');
+    Database::renameConnection('default', 'simpletest_original_default');
+    foreach ($connection_info as $target => $value) {
+      $connection_info[$target]['prefix'] = array(
+        'default' => $value['prefix']['default'] . $this->databasePrefix,
+      );
+    }
+    Database::addConnectionInfo('default', 'default', $connection_info['default']);
+//
+//     // Set user agent to be consistent with web test case.
+//     $_SERVER['HTTP_USER_AGENT'] = $this->databasePrefix;
+//
+//     // If locale is enabled then t() will try to access the database and
+//     // subsequently will fail as the database is not accessible.
+//     $module_list = module_list();
+//     if (isset($module_list['locale'])) {
+//       $this->originalModuleList = $module_list;
+//       unset($module_list['locale']);
+//       module_list(TRUE, FALSE, FALSE, $module_list);
+//     }
+//     // END: Excerpt from DrupalUnitTestCase.
+
+    if (!$this->remoteUrl && !($this->remoteUrl = variable_get('simpletest_remote_url', FALSE))) {
+      $this->remoteUrl = url('', array('absolute' => TRUE));
+    }
+    // Point the internal browser to the staging site.
+    foreach (self::$URL_VARIABLES as $variable) {
+      $this->originalUrls[$variable] = $GLOBALS[$variable];
+      $GLOBALS[$variable] = $this->remoteUrl;
+    }
+    $GLOBALS['base_secure_url'] = str_replace('http://', 'https://', $GLOBALS['base_secure_url']);
+
+    // Generate unique remote prefix.
+    self::$REMOTE_PREFIX = 'test' . mt_rand(100, 100000);
+
+    // Set the time-limit for the test case.
+    drupal_set_time_limit($this->timeLimit);
+  }
+
+  /**
+   * Perform and revert actions, then tear down based on what setUp() did.
+   */
+  protected function tearDown() {
+    // Perform all actions as part of the test and revert them.
+    $this->performActions();
+    $this->revertActions();
+
+    // Revert all URL variables to their original values.
+    foreach (self::$URL_VARIABLES as $variable) {
+      $GLOBALS[$variable] = $this->originalUrls[$variable];
+    }
+
+    // BEGIN: Excerpt from DrupalUnitTestCase.
+    global $conf;
+
+    // Get back to the original connection.
+    Database::removeConnection('default');
+    Database::renameConnection('simpletest_original_default', 'default');
+
+    $conf['file_public_path'] = $this->originalFileDirectory;
+//     // Restore modules if necessary.
+//     if (isset($this->originalModuleList)) {
+//       module_list(TRUE, FALSE, FALSE, $this->originalModuleList);
+//     }
+//     // END: Excerpt from DrupalUnitTestCase.
+  }
+
+  /**
+   * Perform all actions listed in the $actions array.
+   */
+  protected function performActions() {
+    foreach ($this->actions as $action) {
+      call_user_func(array($this, 'perform' . ucfirst($action)));
+    }
+  }
+
+  /**
+   * Revert all actions listed in the $actions array.
+   */
+  protected function revertActions() {
+    foreach ($this->actions as $action) {
+      if (method_exists($this, 'revert' . ucfirst($action))) {
+        call_user_func(array($this, 'revert' . ucfirst($action)));
+      }
+    }
+  }
+
+  /**
+   * Set the user agent to Drupal.
+   */
+  protected function curlInitialize() {
+    parent::curlInitialize();
+    curl_setopt($this->curlHandle, CURLOPT_USERAGENT, 'Drupal (+http://drupal.org/)');
+  }
+
+  /**
+   * Set the remote URL base.
+   *
+   * @param $url
+   *   Base of the remote URL, for example: http://example.com
+   */
+  protected function setUrl($url) {
+    $prefix = self::$REMOTE_PREFIX;
+    $this->tearDown();
+    $this->remoteUrl = $url;
+    $this->setUp();
+    self::$REMOTE_PREFIX = $prefix;
+  }
+
+  /**
+   * Reset the remote URL base to the value in 'simpletest_remote_url'.
+   */
+  protected function resetUrl() {
+    $this->setUrl(variable_get('simpletest_remote_url', FALSE));
+  }
+
+//  /**
+//   * Set url() option 'alias' to TRUE to ensure no path lookup.
+//   */
+//  protected function drupalGet($path, array $options = array(), array $headers = array()) {
+//    $options['alias'] = TRUE;
+//    return parent::drupalGet($path, $options, $headers);
+//  }
+//
+//  /**
+//   * Set url() option 'alias' to TRUE to ensure no path lookup.
+//   */
+//  protected function drupalPost($path, $edit, $submit, array $options = array(), array $headers = array(), $form_html_id = NULL) {
+//    $options['alias'] = TRUE;
+//    return parent::drupalPost($path, $edit, $submit, $options, $headers, $form_html_id);
+//  }
+//
+//  /**
+//   * Set url() option 'alias' to TRUE to ensure no path lookup.
+//   */
+//  protected function drupalPostAJAX($path, $edit, $triggering_element, $ajax_path = 'system/ajax', array $options = array(), array $headers = array(), $form_html_id = NULL, $ajax_settings = array()) {
+//    $options['alias'] = TRUE;
+//    parent::drupalPostAJAX($path, $edit, $triggering_element, $ajax_path, $options, $headers, $form_html_id, $ajax_settings);
+//  }
+
+  /**
+   * Override to ensure not database activity.
+   */
+  protected function refreshVariables() {
+    // Do nothing.
+  }
+
+  /**
+   * Add remote prefix.
+   */
+  public static function randomName($length = 8) {
+    return self::$REMOTE_PREFIX . parent::randomName($length);
+  }
+
+  /**
+   * Add remote prefix.
+   */
+  public static function randomString($length = 8) {
+    return self::$REMOTE_PREFIX . parent::randomString($length);
+  }
+
+  /**
+   * Temporarily revert the global URL variables so verbose links will print.
+   */
+  protected function verbose($message) {
+    if ($this->remoteUrl) {
+      foreach (self::$URL_VARIABLES as $variable) {
+        $GLOBALS[$variable] = $this->originalUrls[$variable];
+      }
+    }
+
+    parent::verbose($message);
+
+    if ($this->remoteUrl) {
+      foreach (self::$URL_VARIABLES as $variable) {
+        $GLOBALS[$variable] = $this->remoteUrl;
+      }
+      $GLOBALS['base_secure_url'] = str_replace('http://', 'https://', $GLOBALS['base_secure_url']);
     }
   }
 }

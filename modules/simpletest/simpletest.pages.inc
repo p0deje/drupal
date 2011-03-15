@@ -1,5 +1,5 @@
 <?php
-// $Id$
+// $Id: simpletest.pages.inc,v 1.33 2010/10/20 01:31:07 dries Exp $
 
 /**
  * @file
@@ -196,13 +196,23 @@ function _simpletest_sort_by_title($a, $b) {
 function simpletest_test_form_submit($form, &$form_state) {
   // Get list of tests.
   $tests_list = array();
+  $not_found = FALSE;
   foreach ($form_state['values'] as $class_name => $value) {
     // Since class_exists() will likely trigger an autoload lookup,
     // we do the fast check first.
     if ($value === 1 && class_exists($class_name)) {
       $tests_list[] = $class_name;
     }
+    else {
+      $not_found = TRUE;
+    }
   }
+
+  if ($not_found) {
+    drupal_flush_all_caches();
+    drupal_set_message(t('One or more of the test classes was not found. The cache has been cleared to correct the issue.'), 'error');
+  }
+
   if (count($tests_list) > 0 ) {
     $test_id = simpletest_run_tests($tests_list, 'drupal');
     $form_state['redirect'] = 'admin/config/development/testing/results/' . $test_id;
@@ -254,7 +264,7 @@ function simpletest_result_form($form, &$form_state, $test_id) {
     $info = call_user_func(array($group, 'getInfo'));
     $form['result']['results'][$group] = array(
       '#type' => 'fieldset',
-      '#title' => $info['name'],
+      '#title' => $info['group'] . ': ' . $info['name'],
       '#description' => $info['description'],
       '#collapsible' => TRUE,
     );
@@ -453,6 +463,12 @@ function simpletest_settings_form($form, &$form_state) {
     '#description' => t('By default SimpleTest will clear the results after they have been viewed on the results page, but in some cases it may be useful to leave the results in the database. The results can then be viewed at <em>admin/config/development/testing/[test_id]</em>. The test ID can be found in the database, simpletest table, or kept track of when viewing the results the first time. Additionally, some modules may provide more analysis or features that require this setting to be disabled.'),
     '#default_value' => variable_get('simpletest_clear_results', TRUE),
   );
+  $form['general']['simpletest_remove_tables'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Remove prefixed tables after each complete test suite run'),
+    '#description' => t('By default SimpleTest will remove the prefixed tables created during testing, but in some cases it may be useful to leave the tables in the database.'),
+    '#default_value' => variable_get('simpletest_remove_tables', TRUE),
+  );
   $form['general']['simpletest_verbose'] = array(
     '#type' => 'checkbox',
     '#title' => t('Provide verbose information when running tests'),
@@ -489,6 +505,19 @@ function simpletest_settings_form($form, &$form_state) {
     '#type' => 'textfield',
     '#title' => t('Password'),
     '#default_value' => variable_get('simpletest_httpauth_password', ''),
+  );
+  $form['remote'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Remote'),
+    '#description' => t('Settings related to remote testing.'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+  );
+  $form['remote']['simpletest_remote_url'] = array(
+    '#type' => 'textfield',
+    '#title' => t('URL'),
+    '#description' => t('Remote URL to perform testing against, leave blank for local url.'),
+    '#default_value' => variable_get('simpletest_remote_url', ''),
   );
 
   return system_settings_form($form);

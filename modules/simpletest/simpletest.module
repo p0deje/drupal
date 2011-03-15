@@ -1,5 +1,5 @@
 <?php
-// $Id$
+// $Id: simpletest.module,v 1.97 2010/11/12 03:06:52 dries Exp $
 
 /**
  * @file
@@ -30,7 +30,7 @@ function simpletest_help($path, $arg) {
  */
 function simpletest_menu() {
   $items['admin/config/development/testing'] = array(
-    'title' => 'Testing',
+    'title' => 'Testing 2.x',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('simpletest_test_form'),
     'description' => 'Run tests against Drupal core and your active modules. These tests help assure that your site code is working as designed.',
@@ -364,13 +364,24 @@ function simpletest_registry_files_alter(&$files, $modules) {
   foreach ($modules as $module) {
     // Only add test files for disabled modules, as enabled modules should
     // already include any test files they provide.
-    if (!$module->status) {
-      $dir = $module->dir;
-      if (!empty($module->info['files'])) {
-        foreach ($module->info['files'] as $file) {
-          if (substr($file, -5) == '.test') {
-            $files["$dir/$file"] = array('module' => $module->name, 'weight' => $module->weight);
+    if (!empty($module->info['testing_api']) && $module->info['testing_api'] == '2.x') {
+      if (!$module->status) {
+        $dir = $module->dir;
+        if (!empty($module->info['files'])) {
+          foreach ($module->info['files'] as $file) {
+            if (substr($file, -5) == '.test') {
+              $files["$dir/$file"] = array('module' => $module->name, 'weight' => $module->weight);
+            }
           }
+        }
+      }
+    }
+    else {
+      // Remove non 2.x compatible test files.
+      foreach ($module->info['files'] as $file) {
+        if (substr($file, -5) == '.test') {
+          $dir = $module->dir;
+          unset($files["$dir/$file"]);
         }
       }
     }
