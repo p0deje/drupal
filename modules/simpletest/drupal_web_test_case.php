@@ -434,6 +434,25 @@ abstract class DrupalTestCase {
     }
   }
 
+ /**
+  * Parses PHPDoc block of method for test annotation.
+  *
+  * @param $method_info
+  *   ReflectionMethod object of method.
+  * @return
+  *   TRUE if method has test annotation,
+  *   FALSE otherwise.
+  */
+  public static function parseAnnotaion($method_info) {
+    $annotation = $method_info->getDocComment();
+    if (preg_match('/@test/', $annotation)) {
+      return TRUE;
+    }
+    else {
+      return FALSE;
+    }
+  }
+
   /**
    * Run all tests in this class.
    *
@@ -468,11 +487,11 @@ abstract class DrupalTestCase {
       $class_methods = array_intersect($class_methods, $methods);
     }
     foreach ($class_methods as $method) {
+      $method_info = new ReflectionMethod($class, $method);
       // If the current method starts with "test", run it - it's a test.
-      if (strtolower(substr($method, 0, 4)) == 'test') {
+      if ((strtolower(substr($method, 0, 4)) == 'test') || (self::parseAnnotaion($method_info))) {
         // Insert a fail record. This will be deleted on completion to ensure
         // that testing completed.
-        $method_info = new ReflectionMethod($class, $method);
         $caller = array(
           'file' => $method_info->getFileName(),
           'line' => $method_info->getStartLine(),
